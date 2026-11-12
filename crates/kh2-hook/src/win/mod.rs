@@ -1,5 +1,7 @@
 //! Windows (64-bit) side: the KH2 check, the log, and the way in (Panacea's `OnInit`).
 
+mod build;
+mod hook;
 mod sys;
 
 use std::ffi::c_void;
@@ -42,12 +44,25 @@ pub fn exe_dir() -> String {
     p.rsplit_once('\\').map_or(".".to_string(), |(d, _)| d.to_string())
 }
 
-/// The PE header's link stamp (`TimeDateStamp`) of the loaded exe: which build of KH2 this is.
-/// Read for the log only; the Steam and Epic stamps get matched once the first hook needs them
-/// (Assumption until then: the stamp tells the two builds apart, as it does for KH1).
-unsafe fn link_stamp(base: usize) -> u32 {
-    let pe = base + *((base + 0x3C) as *const u32) as usize;
-    *((pe + 8) as *const u32)
+static SETTINGS: std::sync::OnceLock<crate::settings::Settings> = std::sync::OnceLock::new();
+
+/// The settings as the game started (`kh2-kh1.ini`; all KH2 until read).
+pub fn settings() -> &'static crate::settings::Settings {
+    SETTINGS.get_or_init(crate::settings::Settings::default)
+}
+
+/// Reads `kh2-kh1.ini` next to the game, writing the default one first if there is none.
+fn load_settings() -> crate::settings::Settings {
+    let path = format!("{}\\kh2-kh1.ini", exe_dir());
+    match std::fs::read_to_string(&path) {
+        Ok(text) => crate::settings::Settings::parse(&text),
+        Err(_) => {
+            let s = crate::settings::Settings::default();
+            let _ = std::fs::write(&path, s.render());
+            log!("wrote the default {path}");
+            s
+        }
+    }
 }
 
 /// Panacea calls this with the game's mod folder once our DLL is loaded.
@@ -81,7 +96,17 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         log!("kh2-kh1 {} loaded (build {}) in {exe}", crate::VERSION, env!("KH2_KH1_BUILD"));
         std::panic::set_hook(Box::new(|info| log!("PANIC in kh2-kh1: {info}")));
         let base = GetModuleHandleA(std::ptr::null()) as usize;
-        log!("KH2 at {base:#x}, link stamp {:#010x}; no hooks in this version, nothing was changed", link_stamp(base));
+        let b = build::detect(base);
+        log!("KH2 at {base:#x}, link stamp {:#010x}: {b:?} build", build::stamp(base));
+        let s = SETTINGS.get_or_init(load_settings);
+        for ((k, _), st) in crate::settings::SYSTEMS.iter().zip(&s.styles) {
+            log!("setting {k} = {}", st.name());
+        }
+        if b != build::Build::Steam {
+            log!("not the Steam build: nothing will be changed (Steam only for now)");
+            return 1;
+        }
+        log!("no hooks in this version: nothing was changed");
     }
     1
 }

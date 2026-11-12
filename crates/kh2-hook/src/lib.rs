@@ -4,14 +4,17 @@
 //! Panacea (OpenKH's mod loader) loads every DLL in `<mods>\kh2\dll\` into KH2 only and calls
 //! `OnInit`. Everything we add goes into KH2's own systems (`docs/design-philosophy-instructions.md`).
 //!
-//! Stage 1 (now): load, write `kh2-kh1.log`, note the game build. No hooks, nothing in the game
-//! is changed.
+//! Now (t2): load, write `kh2-kh1.log`, tell the Steam and Epic builds apart, read `kh2-kh1.ini`
+//! (one KH2 / KH1 toggle per system), and the byte-checked hook installer. No hooks go in yet:
+//! nothing in the game is changed.
 
 #![allow(clippy::missing_safety_doc)]
 
+pub mod settings;
+
 /// The mod's version as the user sees it (the log): the stage of the latest `AGENTS.md` entry,
 /// bumped with every change to the source (a test checks). `t` for the testing branch.
-pub const VERSION: &str = "t1";
+pub const VERSION: &str = "t2";
 
 #[cfg(all(windows, target_arch = "x86_64"))]
 mod win;

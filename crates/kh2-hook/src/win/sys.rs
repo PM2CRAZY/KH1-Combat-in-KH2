@@ -6,4 +6,8 @@ use std::ffi::c_void;
 extern "system" {
     pub fn GetModuleFileNameW(module: *mut c_void, buf: *mut u16, size: u32) -> u32;
     pub fn GetModuleHandleA(name: *const u8) -> *mut c_void;
+    pub fn VirtualAlloc(addr: *mut c_void, size: usize, kind: u32, prot: u32) -> *mut c_void;
+    pub fn VirtualProtect(addr: *mut c_void, size: usize, prot: u32, old: *mut u32) -> i32;
+    pub fn FlushInstructionCache(process: *mut c_void, addr: *const c_void, size: usize) -> i32;
+    pub fn GetCurrentProcess() -> *mut c_void;
 }
