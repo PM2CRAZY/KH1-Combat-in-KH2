@@ -2,6 +2,7 @@
 
 mod arc;
 mod build;
+mod highjump;
 mod hook;
 mod prty;
 mod sora;
@@ -133,6 +134,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         if s.style("movement") == crate::settings::Style::Kh1 {
             arc::install(base);
             prty::install(base);
+            highjump::install(base);
         }
     }
     1

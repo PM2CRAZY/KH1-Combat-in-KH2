@@ -10,6 +10,8 @@ pub const KH1_FALL_CAP: f32 = 20.0;
 /// KH1 Sora's jump height: 190 (290 with KH1's High Jump). Checked (trace): the sister mod's KH1
 /// traces, the takeoff's `h = -190`, `T = 28.0` (= `apex_time(190)`) and `h = -290`, `T = 34.592`.
 pub const KH1_JUMP: f32 = 190.0;
+/// KH1 Sora's jump height with KH1's High Jump. Checked (trace), as `KH1_JUMP`.
+pub const KH1_HIGH_JUMP: f32 = 290.0;
 /// KH1 Sora's turn rate on the ground, radians a 60 Hz frame: π/16. Checked (trace): the most his
 /// facing turns in one frame in the KH1 traces (0.196 / 0.197).
 pub const KH1_TURN: f32 = std::f32::consts::PI / 16.0;
@@ -36,7 +38,7 @@ mod tests {
         assert_eq!(apex_time(-100.0), apex_time(100.0));
         // The KH1 traces' takeoffs.
         assert!((apex_time(KH1_JUMP) - 28.0).abs() < 1e-3);
-        assert!((apex_time(290.0) - 34.592).abs() < 1e-3);
+        assert!((apex_time(KH1_HIGH_JUMP) - 34.592).abs() < 1e-3);
         assert!((KH1_AIR_DRAG.sqrt() - 0.97468).abs() < 1e-4);
     }
 }
