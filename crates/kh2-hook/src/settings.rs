@@ -34,11 +34,13 @@ pub const SYSTEMS: &[(&str, &str)] = &[
 pub struct Settings {
     /// One per `SYSTEMS` entry, same order.
     pub styles: Vec<Style>,
+    /// The debug trace (`trace = on`): F10 starts and stops a recording of Sora each frame.
+    pub trace: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { styles: vec![Style::Kh2; SYSTEMS.len()] }
+        Settings { styles: vec![Style::Kh2; SYSTEMS.len()], trace: false }
     }
 }
 
@@ -56,6 +58,10 @@ impl Settings {
             let line = line.split(['#', ';']).next().unwrap_or("").trim();
             let Some((k, v)) = line.split_once('=') else { continue };
             let (k, v) = (k.trim().to_ascii_lowercase(), v.trim().to_ascii_lowercase());
+            if k == "trace" {
+                s.trace = v == "on";
+                continue;
+            }
             let Some(i) = SYSTEMS.iter().position(|(key, _)| *key == k) else { continue };
             match v.as_str() {
                 "kh1" => s.styles[i] = Style::Kh1,
@@ -64,6 +70,15 @@ impl Settings {
             }
         }
         s
+    }
+
+    /// Whether `text` lacks a row this version knows (an ini from an older version): then it is
+    /// written again with the values it had and the new rows at their defaults.
+    pub fn missing_rows(text: &str) -> bool {
+        let has = |key: &str| {
+            text.lines().any(|l| l.trim_start().to_ascii_lowercase().strip_prefix(key).is_some_and(|r| r.trim_start().starts_with('=')))
+        };
+        !(SYSTEMS.iter().all(|(k, _)| has(k)) && has("trace"))
     }
 
     /// The ini as written on first launch (and the layout `parse` reads).
@@ -75,6 +90,10 @@ impl Settings {
         for ((k, what), st) in SYSTEMS.iter().zip(&self.styles) {
             out.push_str(&format!("# {what}\n{k} = {}\n\n", st.name()));
         }
+        out.push_str(&format!(
+            "# Debug: F10 starts / stops a trace of Sora each frame (kh2-kh1-trace-N.csv)\ntrace = {}\n",
+            if self.trace { "on" } else { "off" }
+        ));
         out
     }
 }
@@ -93,6 +112,10 @@ mod tests {
         let mut s = Settings::default();
         s.styles[1] = Style::Kh1;
         assert_eq!(Settings::parse(&s.render()), s);
+        s.trace = true;
+        assert_eq!(Settings::parse(&s.render()), s);
+        assert!(!Settings::missing_rows(&s.render()));
+        assert!(Settings::missing_rows("movement = kh1\n"));
         let p = Settings::parse("Combos = KH1 ; note\nmovement=kh3\nnope = kh1\n# camera = kh1");
         assert_eq!(p.style("combos"), Style::Kh1);
         assert_eq!(p.style("movement"), Style::Kh2);

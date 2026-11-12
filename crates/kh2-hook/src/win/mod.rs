@@ -3,6 +3,7 @@
 mod build;
 mod hook;
 mod sys;
+mod trace;
 
 use std::ffi::c_void;
 use std::fs::OpenOptions;
@@ -55,13 +56,29 @@ pub fn settings() -> &'static crate::settings::Settings {
 fn load_settings() -> crate::settings::Settings {
     let path = format!("{}\\kh2-kh1.ini", exe_dir());
     match std::fs::read_to_string(&path) {
-        Ok(text) => crate::settings::Settings::parse(&text),
+        Ok(text) => {
+            let s = crate::settings::Settings::parse(&text);
+            if crate::settings::Settings::missing_rows(&text) {
+                let _ = std::fs::write(&path, s.render());
+                log!("added this version's new rows to {path}");
+            }
+            s
+        }
         Err(_) => {
             let s = crate::settings::Settings::default();
             let _ = std::fs::write(&path, s.render());
             log!("wrote the default {path}");
             s
         }
+    }
+}
+
+/// Panacea calls this once a game frame (Assumption for KH2: as it does for KH1; the trace's
+/// rows show it). Only the trace runs here, and only with `trace = on`.
+#[no_mangle]
+pub extern "C" fn OnFrame() {
+    if IN_KH2.load(Ordering::Relaxed) {
+        trace::frame();
     }
 }
 
@@ -106,7 +123,10 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
             log!("not the Steam build: nothing will be changed (Steam only for now)");
             return 1;
         }
-        log!("no hooks in this version: nothing was changed");
+        if s.trace {
+            trace::enable(base);
+        }
+        log!("no hooks in this version: nothing in the game was changed");
     }
     1
 }
