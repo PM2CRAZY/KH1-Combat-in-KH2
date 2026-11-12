@@ -47,3 +47,17 @@ address.
 
 Throughout: KH2-only systems (Drive Forms, Reaction Commands, Limits, summons) keep working at either
 setting, and everything KH2's events read stays fed.
+
+## The Config menu (the owner, 2026-11-12: "Have a similar config menu button as the KH2 combat in KH1 mod")
+
+Plan, modelled on the sister mod's KH1 work (`KH2-Combat-in-KH1` `docs/kh1-config-menu.md` §6: one
+button in KH1's Config list opening our own lists, built from KH1's own window, text and save
+code). In KH2, research so far (Checked (decomp)): the pause menu is KH2's "camp" menu
+(`camp.2ld`, its update `0x140303CD0`, which runs each sub-screen's update: `0x140323FA0`,
+`0x14034E470`, `0x1403564C0`, `0x1403201F0`, `0x14035B110`, `0x140360750`, `0x140365120`,
+`0x140366810`, `0x140368600`, `0x1403521B0`). Still to find: which is Config, its row table, where
+KH2 keeps the Config values in the save, and its text ids. Then, one version each:
+1. A "KH1 in KH2" button in KH2's Config list, opening a list of our rows.
+2. Our rows (Movement, Combos, Defence, MP, Magic, Abilities, Camera: KH2 / KH1), read by the mod
+   in place of the ini, kept in the save's spare config space (or the ini, if the save has none).
+3. Live switching: a row's change takes effect at once (today the ini is read at start).
