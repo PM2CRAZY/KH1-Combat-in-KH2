@@ -21,17 +21,15 @@ static BASE: AtomicUsize = AtomicUsize::new(0);
 static O_PREF_SET: AtomicUsize = AtomicUsize::new(0);
 
 unsafe fn patch_row() {
-    let table = *((BASE.load(Ordering::Relaxed) + PRTY) as *const usize);
-    if table == 0 {
+    if *((BASE.load(Ordering::Relaxed) + PRTY) as *const usize) == 0 {
         return;
     }
-    let count = *(table as *const i32) as usize;
-    let off = *((table + 4 * (SORA_ROW + 1)) as *const i32) as usize;
-    if SORA_ROW >= count || off == 0 {
+    let at = super::sora::prty_row(SORA_ROW);
+    if at == 0 {
         log!("movement kh1: prty has no row {SORA_ROW}");
         return;
     }
-    let row = (table + off) as *mut f32;
+    let row = at as *mut f32;
     let have = [*row, *row.add(1), *row.add(2), *row.add(3)];
     let kh2 = [2.0f32, 8.0, 185.0, 0.262];
     if have.iter().zip(kh2).any(|(a, b)| (a - b).abs() > 0.001) {

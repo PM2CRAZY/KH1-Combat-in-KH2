@@ -64,3 +64,17 @@ owner's three KH1 traces, Checked (trace):
 - Walking off a ledge: KH1 falls from rest and keeps its sideways speed capped at 8
   (`0x14043089C`, KH1 RVA `0x42F94C` = 8.0, Checked (exe)); KH2's `0x1403B4780` starts the fall
   with a downward speed `+0xA3C`. To do.
+
+## Drive Forms keep KH2's movement (the owner, 2026-11-12, answer 2a)
+
+The KH1 numbers go only on base Sora: `win/sora.rs` tells him from a Drive Form by his movement
+block's `prty` row pointer `+0x148` (`0x14040A480` stores the row it loads, Checked (decomp)):
+row 1 is Sora's; a form loads its own. Assumption: every Drive Form loads a row other than 1
+(t6's log line on a Sora built on another row says when one is seen).
+
+## High Jump at KH1 (the owner, 2026-11-12, answer 1a)
+
+KH2 asks the jump height of `0x1403B59B0 (actor, &motion)` and `0x1403B5A40 (actor)`: Sora's
+`+0x130`, or with a High Jump level that level's `fmab` row's height (`0x1403E92D0`) and motion 201
+(the flip). Checked (decomp). `fmab` is shared with the forms, so it stays: for base Sora any High
+Jump level's height becomes KH1's 290 (t7, `win/highjump.rs`).

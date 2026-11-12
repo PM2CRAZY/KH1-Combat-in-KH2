@@ -1,5 +1,6 @@
 //! KH1's jump and fall arc on Sora (`movement = kh1`): KH2's own arc functions run, and for Sora
-//! only, the parts that differ from KH1 are put right after them. Everything else (every other
+//! only (base Sora: a Drive Form keeps KH2's arc), the parts that differ from KH1 are put right
+//! after them. Everything else (every other
 //! object, Sora at `movement = kh2`) runs KH2's functions untouched.
 //!
 //! What differs (`docs/movement.md`; KH1 Checked (decomp + exe) on Steam):
@@ -25,7 +26,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::kh1::{apex_time, KH1_FALL_CAP, KH1_GRAVITY};
 
-const SORA_PTR: usize = 0x2AE_9A28;
 const SORA_NEW: usize = 0x40_5030;
 const LAUNCH_H: usize = 0x3C_BC30;
 const LAUNCH_V: usize = 0x3C_BB00;
@@ -45,8 +45,9 @@ static O_STEP_C: AtomicUsize = AtomicUsize::new(0);
 static SAID_LAUNCH: AtomicBool = AtomicBool::new(false);
 static SAID_FALL: AtomicBool = AtomicBool::new(false);
 
+/// Base Sora only: Drive Forms keep KH2's arc (the owner, 2026-11-12, answer 2a).
 fn is_sora(actor: usize) -> bool {
-    actor != 0 && unsafe { *((BASE.load(Ordering::Relaxed) + SORA_PTR) as *const usize) } == actor
+    super::sora::is_base_sora(actor)
 }
 
 unsafe fn f(actor: usize, off: usize) -> *mut f32 {
@@ -97,8 +98,12 @@ unsafe extern "system" fn sora_new(a: usize, b: usize, c: u64, d: u64, e: u64, g
     let o: NewFn = std::mem::transmute(O_SORA_NEW.load(Ordering::Acquire));
     let r = o(a, b, c, d, e, g);
     if ON.load(Ordering::Relaxed) && a != 0 {
-        *f(a, 0x138) = KH1_FALL_CAP;
-        log!("movement kh1: Sora built at {a:#x}, fall cap 20");
+        if super::sora::is_base_sora(a) || *((a + 0x148) as *const usize) == 0 {
+            *f(a, 0x138) = KH1_FALL_CAP;
+            log!("movement kh1: Sora built at {a:#x}, fall cap 20");
+        } else {
+            log!("movement kh1: Sora built at {a:#x} on another prty row (a form?): KH2's fall cap kept");
+        }
     }
     r
 }

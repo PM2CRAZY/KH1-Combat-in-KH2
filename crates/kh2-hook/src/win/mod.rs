@@ -4,6 +4,7 @@ mod arc;
 mod build;
 mod hook;
 mod prty;
+mod sora;
 mod sys;
 mod trace;
 
@@ -115,6 +116,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         log!("kh2-kh1 {} loaded (build {}) in {exe}", crate::VERSION, env!("KH2_KH1_BUILD"));
         std::panic::set_hook(Box::new(|info| log!("PANIC in kh2-kh1: {info}")));
         let base = GetModuleHandleA(std::ptr::null()) as usize;
+        sora::set_base(base);
         let b = build::detect(base);
         log!("KH2 at {base:#x}, link stamp {:#010x}: {b:?} build", build::stamp(base));
         let s = SETTINGS.get_or_init(load_settings);
