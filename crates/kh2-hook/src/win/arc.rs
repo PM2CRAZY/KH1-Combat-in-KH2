@@ -42,7 +42,8 @@ static O_LAUNCH_V: AtomicUsize = AtomicUsize::new(0);
 static O_STEP_A: AtomicUsize = AtomicUsize::new(0);
 static O_STEP_B: AtomicUsize = AtomicUsize::new(0);
 static O_STEP_C: AtomicUsize = AtomicUsize::new(0);
-static SAID: AtomicBool = AtomicBool::new(false);
+static SAID_LAUNCH: AtomicBool = AtomicBool::new(false);
+static SAID_FALL: AtomicBool = AtomicBool::new(false);
 
 fn is_sora(actor: usize) -> bool {
     actor != 0 && unsafe { *((BASE.load(Ordering::Relaxed) + SORA_PTR) as *const usize) } == actor
@@ -85,7 +86,8 @@ unsafe fn set_down(actor: usize, d: f32) {
 }
 
 fn said(what: &str) {
-    if !SAID.swap(true, Ordering::Relaxed) {
+    let flag = if what == "launch" { &SAID_LAUNCH } else { &SAID_FALL };
+    if !flag.swap(true, Ordering::Relaxed) {
         log!("movement kh1: KH1's arc on Sora ({what})");
     }
 }

@@ -25,16 +25,26 @@ project's `docs/kh1-physics.md` and were re-checked here.
 | Fall | `y0 + h + g/2 (t − T)²` | the same | Checked (decomp) both |
 | Gravity `g` | 0.48469388 (RVA `0x3E9D14`) | 20/49 (RVA `0x5CBD84`, shared by every object) | Checked (exe) both |
 | Fall cap | 20 × frame step (RVA `0x42F968`) | Sora's `+0x138` × frame step (from `sstm`, 16) | Checked (exe) KH1; KH2 Checked (decomp), its 16 from the OG rewrite (files) |
-| Jump height | Sora's stats `+0x10` | `prty` row → Sora `+0x130` (185) | KH1's value: **not yet read** (runtime only) |
+| Jump height | 190; 290 with KH1's High Jump (stats `+0x10`) | `prty` row 1 → Sora `+0x130` (185); High Jump from `fmab` | Checked (trace) both: KH1 `h = -190, T = 28.0` / `h = -290, T = 34.592` (motion 9, the High Jump jump); KH2 t3 trace |
+| Early release | button let go, `t ≥ 6` and more than 5 frames before the apex: a launch at speed 5 (`0x1402A7B30` → `0x1402AF8F0`), a hop of `g/2 · 25` (6.06) | the same window (OG rewrite); its hop goes through Sora's class (`0x1403CB680`) | KH1 Checked (decomp + trace: the cut 6 frames before the apex); KH2's hop gravity: next trace |
 
-t4 puts KH1's gravity and fall cap on Sora's arc (`win/arc.rs`).
+t4 puts KH1's gravity and fall cap on Sora's arc (`win/arc.rs`). Checked (trace, t4): the launch's
+time to the apex fits 27.6 frames at height 185 (KH1's gravity; KH2's would be 30.1), and past the
+apex the drop grows by 1.9385 a 2-frame step = 0.4846 a frame² (KH1's).
 
-## Still to read from KH1 (a KH1 trace with physics KH1)
+KH2's physics on Steam runs on a 30 Hz step at 60 fps: Sora's position changes by the same amount
+on two frames in a row (t3 trace, frames 16.7 ms apart). Checked (trace). Time is still counted in
+60 Hz frames (the step is 2).
 
-KH1 fills Sora's stats block at runtime; the value isn't in the exe or in `btltbl.bin` as plain
-numbers (searched, Checked (exe / files)). Needed: jump height `+0x10`, air acceleration `+0x14`,
-air drag `+0x18`. The sister mod's trace columns `kh1_arc_3` (−H at takeoff) and `kh1_vel_*` (the
-air velocity each frame) give all three, from one jump with the stick held then let go.
+## Read from KH1 traces (the sister mod, physics KH1, 2026-11-12)
+
+KH1 fills Sora's stats at runtime (not in the exe or `btltbl.bin` as plain numbers). From the
+owner's three KH1 traces, Checked (trace):
+- jump height 190, 290 with High Jump (above);
+- air acceleration 0.1: from rest, stick full, +0.8 a frame (0.1 × the stick's speed 8) to the
+  run speed 8;
+- air drag 0.95 a 30 Hz frame: let go, ×0.97468 a frame (√0.95);
+- turn rate on the ground π/16 (0.196 a frame at most), against KH2's 0.262 (π/12).
 
 ## Air control
 
@@ -48,9 +58,9 @@ air velocity each frame) give all three, from one jump with the stick held then 
 
 ## Ground
 
-- Walk 2, run 8 in both (KH1 stats `+4` / `+8`, the sister project's runtime log; KH2 `prty`
-  row 1, Checked (files) by the OG rewrite). Same numbers: nothing to change. KH1 Assumption
-  until a KH1 trace shows them.
+- Walk 2, run 8 in both (KH2 `prty` row 1, Checked (trace) t3; KH1 run 8 Checked (trace): the air
+  speed holds at 8 with the stick held). Same numbers: nothing to change.
+- Turn rate and jump height: t5 writes KH1's into Sora's `prty` row (`win/prty.rs`).
 - Walking off a ledge: KH1 falls from rest and keeps its sideways speed capped at 8
   (`0x14043089C`, KH1 RVA `0x42F94C` = 8.0, Checked (exe)); KH2's `0x1403B4780` starts the fall
   with a downward speed `+0xA3C`. To do.

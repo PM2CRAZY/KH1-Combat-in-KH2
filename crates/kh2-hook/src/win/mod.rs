@@ -3,6 +3,7 @@
 mod arc;
 mod build;
 mod hook;
+mod prty;
 mod sys;
 mod trace;
 
@@ -129,6 +130,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         }
         if s.style("movement") == crate::settings::Style::Kh1 {
             arc::install(base);
+            prty::install(base);
         }
     }
     1
