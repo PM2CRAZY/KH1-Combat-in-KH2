@@ -47,3 +47,23 @@ ability bits, KH1's combo length) goes into KH2's row check as a wrapper.
    windows as KH2 motion triggers on the motions of step 1; the Keyblade's hit shape.
 5. **KH1's combo windows and lunge**: when the next press is taken, how far a swing lunges.
 6. Trails, effects, sounds of KH1's swings (with Phase 7's effect and sound work).
+
+## Step 2 (t13): KH1's swings on Sora's own `ptya` rows
+
+Checked (decomp): Sora's set is his `+0xD50` (PARTY constructor `0x1403D5840`, from `ptya` by his
+moveset), read by the selector `0x1404028D0`; the row check `0x140402750` (motion set, ability
+`+0x40` equipped, flag bit 0 air, flag bit 2 the finisher test `0x1403D7780 (actor, combo offset)`:
+count `+0xD74` + offset ≥ length `+0x200` / `+0x201`; else `0x1403D7850`: count < length).
+Checked (files), the owner's `00battle.bin`: Sora's set (moveset 1) has 37 rows; the plain ones
+(ability 0): ground swings ids 4 (152, kind 2), 5 (151, kind 3, the fallback), 6 (153, kind 1,
+180..300 away); finishers 2 (154) and 3 (155); the air swing 10 (182) and fallback 9 (181); air
+finishers 7 (184) and 8 (183); the jump approaches 0 (182) and 1 (181).
+KH1's rows (`btltbl.bin +0xA9F0`, 0x14 each, Checked (files)): 13 `0xC8` (plain), 11 `0xC9`,
+14 `0xCA`, 8 `0xCB` (finisher); air 18 `0xCC` (plain), 17 `0xCD`, 16 `0xCE` (finisher), 15 `0xD1`
+(ability finisher); dashes 0 / 1; lunges 0 on the ground, 20 / 40 in the air.
+
+t13 (`win/combos.rs`): after KH2's table loader `0x1403F4C30`, the plain rows' motions become
+KH1's (210..216); the ability rows, windows and order stay KH2's. Only when this launch's build
+made the motions. Open (Assumptions): KH1 request `0xC8 + n` → KH1 motion `98 + n`; KH1's target
+tests vs KH2's windows; KH1's combo length (stats `+0xD4` / `+0xD5`, runtime: a KH1 combo trace
+reads it); the jump approaches still KH2's.

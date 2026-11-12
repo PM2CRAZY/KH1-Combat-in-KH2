@@ -3,6 +3,7 @@
 mod airsteer;
 mod arc;
 mod build;
+mod combos;
 mod highjump;
 mod hook;
 mod prty;
@@ -115,8 +116,14 @@ fn assets(mod_path: &str) {
     if settings().style("combos") == crate::settings::Style::Kh1 {
         let t = std::time::Instant::now();
         match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION) {
-            Ok(Some(b)) => log!("assets: built {} bytes into {} in {} ms: KH1 motions {:?}", b.bytes, dir.join("obj").display(), t.elapsed().as_millis(), b.motions),
-            Ok(None) => log!("assets: KH1 motions already built ({})", dir.join("obj").join("P_EX100.mset").display()),
+            Ok(Some(b)) => {
+                log!("assets: built {} bytes into {} in {} ms: KH1 motions {:?}", b.bytes, dir.join("obj").display(), t.elapsed().as_millis(), b.motions);
+                combos::motions_ready();
+            }
+            Ok(None) => {
+                log!("assets: KH1 motions already built ({})", dir.join("obj").join("P_EX100.mset").display());
+                combos::motions_ready();
+            }
             Err(e) => log!("assets: could not build KH1's motions: {e}"),
         }
     } else {
@@ -165,6 +172,9 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
             prty::install(base);
             highjump::install(base);
             airsteer::install(base);
+        }
+        if s.style("combos") == crate::settings::Style::Kh1 {
+            combos::install(base);
         }
     }
     1
