@@ -1,5 +1,6 @@
 //! Windows (64-bit) side: the KH2 check, the log, and the way in (Panacea's `OnInit`).
 
+mod arc;
 mod build;
 mod hook;
 mod sys;
@@ -126,7 +127,9 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         if s.trace {
             trace::enable(base);
         }
-        log!("no hooks in this version: nothing in the game was changed");
+        if s.style("movement") == crate::settings::Style::Kh1 {
+            arc::install(base);
+        }
     }
     1
 }

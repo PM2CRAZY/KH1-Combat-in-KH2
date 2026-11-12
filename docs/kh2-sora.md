@@ -21,7 +21,9 @@ Addresses are Steam KH2 (`docs/sources.md`). Tags: Checked (decomp / exe / trace
 | `+0x134` | turn rate (`prty` word 3) | Checked (decomp) |
 | `+0x13C`, `+0x140` | `prty` words 8 and 10 | Checked (decomp) |
 | `+0x148` / `+0x150` | the `prty` row / the row from `0x1403E95C0` | Checked (decomp) |
-| `+0x70` / `+0x670` | a position (`0x1403B5C50` uses `+0x70` when attached, `+0x6A0`, else `+0x670`) | Assumption: the t3 trace shows which |
+| `+0x670` | world position (y down); `+0x70` while attached to another object (`+0x6A0`): `0x1403B5B40` | Checked (decomp) |
+| `+0xF0` / `+0xF4` / `+0xF8` / `+0xFC` | the arc: air time, time to the apex, start height, apex offset | Checked (decomp): `0x1403CB360`, `0x1403CBC30` |
+| `+0x138` | fall cap per frame (from `sstm`) | Checked (decomp): the arc steps |
 | `+0x180` | the motion playing (the combo picker compares rows with it) | Assumption |
 | `+0xDE0` | a state number (`0x140404A40` tests it against 0xC) | Assumption |
 
@@ -43,6 +45,5 @@ trace's frame count against its clock shows it). The trace runs there with no ho
 
 ## Tick rate
 
-Open. Motion time is in 60ths of a second (Checked (decomp)). Whether Sora's position changes every
-frame or every other frame (the OG rewrite's 30 Hz tick, from the Epic exe) is read off the t3
-trace.
+KH2's frame step `0x140717480` is the 60 Hz frames a game frame takes (`docs/movement.md`),
+Checked (decomp). The t3 trace's clock column shows the frame rate it ran at.
