@@ -43,6 +43,22 @@ Both games' packages are in `Image\dt\`. KH1 Sora's `xa_ex_0010.mset`: 118 motio
 in all; `xa_ex_0010.mdls`: 293 bones. KH2 Sora's `obj/P_EX100.mset`: 839 entries, 2.6 MB;
 `obj/P_EX100.mdlx`: 228 bones. Read in 0.15 s.
 
+## KH1's whole skeleton pass, offline (t11, `kh1_data::rig`)
+
+KH1 Sora is mostly driven by 11 helpers (root, spine, legs and arms: aims and two-bone IK), so
+the sister reader's keyed channels alone don't pose him. `rig::pose` runs KH1's pass as the KH1
+Steam decomp shows it (motion start `0x14038F550`: bind, then the constant channels; helpers;
+the bone pass `0x1403900B0` by joint word; the solver `0x14038FC20`), Checked (decomp) for the
+steps. Left out offline: the ground lift of a foot target and the head's look-at (they need the
+game's world). The multiply order is taken from what the solver needs to mean (Assumption; the
+tests check the IK reaches its target with its lengths kept).
+
+On the owner's files (`kh1-assets pose`, Checked (files)): the idle (motion 0) stands with the
+legs on their foot helpers, about 145 tall; bones keep their lengths to 0.15 except bone 3,
+which KH1 places at helper P6 (the spine's aim), so it stretches by design (up to 21 in 99..101).
+Motions 98..101 travel forward with the travel helper H10 (98: 0 → 90 in 30 frames), the feet
+helpers with them. Not compared with KH1's own pose in game yet.
+
 ## Next: the motion converter
 
 KH1 motion → KH2 motion: KH1's pose each frame (`kh1_data::mset::Motion::apply` on KH1's

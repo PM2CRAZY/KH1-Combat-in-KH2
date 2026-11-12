@@ -56,9 +56,28 @@ pub struct Motion {
     pub fps: f32,
     pub bones: u32,
     pub channels: Vec<Channel>,
-    /// The IK helpers' channel count (`+0x20`) and helper count (`+0x2C`), not evaluated.
+    /// The IK helpers' channel count (`+0x20`) and helper count (`+0x2C`).
     pub helper_channels: u32,
     pub helpers: u32,
+    /// The rest of KH1's skeleton pass (`crate::rig`, KH1-Combat-in-KH2 t11; Checked (decomp):
+    /// KH1 `0x14038F550`, `0x1403900B0`): one joint word a bone (`+0x14`), the helper table
+    /// (`+0x30`, 40 bytes a helper), the helper channels (`+0x24`, same layout as `channels`, the
+    /// bone being the helper), the constant channels (`+0x38`, `+0x34` of them: bone u16, kind u16,
+    /// value f32).
+    pub joint_words: Vec<u32>,
+    pub helper_table: Vec<HelperRest>,
+    pub helper_chans: Vec<Channel>,
+    pub constants: Vec<(u16, u16, f32)>,
+}
+
+/// One IK helper's rest values (40 bytes: scale `+0`, parent `+0xC`, rotation `+0x10`,
+/// translation `+0x1C`).
+#[derive(Clone, Copy, Debug)]
+pub struct HelperRest {
+    pub scale: [f32; 3],
+    pub parent: i32,
+    pub rotation: [f32; 3],
+    pub translation: [f32; 3],
 }
 
 /// The motions of a `.mset`, in table order (`None` where a slot is empty or unreadable).
@@ -96,6 +115,40 @@ fn motion(b: &[u8], at: usize) -> Result<Motion> {
     if n > 4096 || !(1.0..=240.0).contains(&fps) {
         return Err(Error::Format("mset: not a motion".into()));
     }
+    let channels = read_channels(b, chans, n, keys)?;
+    let words_at = at + u32_at(b, at + 0x14)? as usize;
+    let bone_n = bones as usize;
+    let joint_words = (0..bone_n.min(4096)).map(|i| u32_at(b, words_at + i * 4)).collect::<Result<Vec<_>>>()?;
+    let hc_n = u32_at(b, at + 0x20)? as usize;
+    let hc_at = at + u32_at(b, at + 0x24)? as usize;
+    let helper_chans = if hc_n > 0 && hc_n < 4096 { read_channels(b, hc_at, hc_n, keys)? } else { Vec::new() };
+    let h_n = u32_at(b, at + 0x2C)? as usize;
+    let h_at = at + u32_at(b, at + 0x30)? as usize;
+    let f = |o: usize| -> Result<f32> { Ok(f32::from_bits(u32_at(b, o)?)) };
+    let helper_table = (0..h_n.min(256))
+        .map(|i| {
+            let e = h_at + i * 40;
+            Ok(HelperRest {
+                scale: [f(e)?, f(e + 4)?, f(e + 8)?],
+                parent: u32_at(b, e + 0xC)? as i32,
+                rotation: [f(e + 0x10)?, f(e + 0x14)?, f(e + 0x18)?],
+                translation: [f(e + 0x1C)?, f(e + 0x20)?, f(e + 0x24)?],
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let c_n = u32_at(b, at + 0x34)? as usize;
+    let c_at = at + u32_at(b, at + 0x38)? as usize;
+    let constants = (0..c_n.min(8192))
+        .map(|i| {
+            let e = c_at + i * 8;
+            let w = u32_at(b, e)?;
+            Ok(((w & 0xFFFF) as u16, (w >> 16) as u16, f(e + 4)?))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Motion { offset: 0, frames, fps, bones, channels, helper_channels: hc_n as u32, helpers: h_n as u32, joint_words, helper_table, helper_chans, constants })
+}
+
+fn read_channels(b: &[u8], chans: usize, n: usize, keys: usize) -> Result<Vec<Channel>> {
     let mut channels = Vec::with_capacity(n);
     for c in 0..n {
         let e = chans + c * 6;
@@ -118,7 +171,7 @@ fn motion(b: &[u8], at: usize) -> Result<Motion> {
         }
         channels.push(Channel { bone, kind: kind & 0xF, before: (kind >> 4) & 3, after: kind >> 6, keys: ks });
     }
-    Ok(Motion { offset: 0, frames, fps, bones, channels, helper_channels: u32_at(b, at + 0x20)?, helpers: u32_at(b, at + 0x2C)? })
+    Ok(channels)
 }
 
 impl Channel {

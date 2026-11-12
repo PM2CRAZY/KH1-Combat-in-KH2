@@ -16,6 +16,7 @@ pub mod legs;
 pub mod mdls;
 pub mod mset;
 pub mod retarget;
+pub mod rig;
 pub mod secondary;
 pub mod slot;
 pub mod vibe;

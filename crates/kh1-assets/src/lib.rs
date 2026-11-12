@@ -107,3 +107,31 @@ pub fn scan(root: impl AsRef<Path>) -> Result<Report> {
     r.kh2_bones = kh2_formats::anim::parse_skeleton(&mdlx)?.len();
     Ok(r)
 }
+
+/// KH1 Sora's pose for motion `index`, every frame (KH1's whole skeleton pass, `kh1_data::rig`):
+/// a JSON text with the parents, then per frame each bone's model-space position, for checks.
+pub fn kh1_pose_json(root: impl AsRef<Path>, index: usize) -> Result<String> {
+    let kh1 = Kh1Install::locate(root.as_ref())?;
+    let mset = kh1.read(Source::Original, KH1_SORA_MSET)?;
+    let motions = kh1_data::mset::parse(&mset)?;
+    let m = motions.get(index).cloned().flatten().ok_or_else(|| Error::NotFound(format!("KH1 motion {index}")))?;
+    let mdls = kh1.read(Source::Original, KH1_SORA_MDLS)?;
+    let bones = kh1_data::mdls::parse_skeleton(&mdls)?;
+    let mut out = String::new();
+    out.push_str(&format!("{{\"motion\":{index},\"frames\":{},\"fps\":{},\"helpers\":{},\"constants\":{},\"parents\":[", m.frames, m.fps, m.helper_table.len(), m.constants.len()));
+    out.push_str(&bones.iter().map(|b| b.parent.to_string()).collect::<Vec<_>>().join(","));
+    out.push_str("],\"words\":[");
+    out.push_str(&m.joint_words.iter().map(|w| w.to_string()).collect::<Vec<_>>().join(","));
+    out.push_str("],\"poses\":[");
+    let mut first = true;
+    for f in 0..m.frames.max(1) {
+        let p = kh1_data::rig::pose(&m, &bones, f as f32);
+        if !first { out.push(','); }
+        first = false;
+        let pts: Vec<String> = p.bones.iter().map(|b| { let t = b.w_axis; format!("[{:.2},{:.2},{:.2}]", t.x, t.y, t.z) }).collect();
+        let hs: Vec<String> = p.helpers.iter().map(|b| { let t = b.w_axis; format!("[{:.2},{:.2},{:.2}]", t.x, t.y, t.z) }).collect();
+        out.push_str(&format!("{{\"b\":[{}],\"h\":[{}]}}", pts.join(","), hs.join(",")));
+    }
+    out.push_str("]}");
+    Ok(out)
+}
