@@ -1,0 +1,534 @@
+//! Epic Games Store archives: `<name>.hed` (index) + `<name>.pkg` (data).
+//!
+//! Layout and cipher are ported from OpenKH's `OpenKh.Egs` (`Hed.cs`,
+//! `EgsHdAsset.cs`, `EgsEncryption.cs`), Apache-2.0, Copyright OpenKH Team
+//! and Contributors. Changes from the original: rewritten in Rust; the
+//! repeated per-round XOR is folded into one 16-byte mask; the substitution
+//! table is located in the user's executable at runtime instead of being
+//! embedded.
+//!
+//! ## HED
+//! A flat array of 0x20-byte entries:
+//! `md5(file name)[16] | pkg offset i64 | stored length i32 | real length i32`.
+//!
+//! ## PKG entry at `offset`
+//! `header[16]` = `decompressed i32 | remastered count i32 | compressed i32 | date i32`,
+//! then `remastered count` x 0x30-byte HD asset headers, then the original
+//! (PS2-format) file data. `compressed` is -2 for plain data, -1 for
+//! encrypted-only, otherwise the zlib-compressed size. Only the first 0x100
+//! bytes of a stream are encrypted; the 16-byte header doubles as the seed.
+
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+
+use md5::{Digest, Md5};
+use sha2::Sha256;
+
+use crate::reader::Reader;
+use crate::{bad, Error, Result};
+
+/// SHA-256 of the 256-byte substitution table used by the PKG key schedule.
+/// The table itself is not stored in this repository.
+pub const KEY_TABLE_SHA256: &str =
+    "759b2f22f7e0bfd257063a01f3de0c0835905217aa926df6def134a14313672d";
+
+/// AES round constants, as used by the PKG key schedule (a public constant,
+/// not game data).
+const RCON: [u8; 10] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36];
+const PASS_COUNT: usize = 10;
+
+/// The 256-byte substitution table needed to decrypt PKG entries.
+#[derive(Clone)]
+pub struct KeyTable([u8; 256]);
+
+impl std::fmt::Debug for KeyTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("KeyTable(<verified>)")
+    }
+}
+
+fn sha256_hex(b: &[u8]) -> String {
+    Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect()
+}
+
+impl KeyTable {
+    /// Accepts a table only if its hash matches [`KEY_TABLE_SHA256`].
+    pub fn from_bytes(b: &[u8]) -> Result<KeyTable> {
+        if b.len() != 256 || sha256_hex(b) != KEY_TABLE_SHA256 {
+            return bad("key table hash mismatch");
+        }
+        Ok(KeyTable(b.try_into().unwrap()))
+    }
+
+    /// Finds the table inside a game executable (any of the 1.5+2.5 exes
+    /// that read PKG files carry it). The table is a permutation of 0..=255,
+    /// so a sliding window tracks distinct byte values and only hashes
+    /// windows that are full permutations.
+    pub fn from_executable(path: impl AsRef<Path>) -> Result<KeyTable> {
+        let data = std::fs::read(path.as_ref())?;
+        Self::find_in(&data).ok_or_else(|| {
+            Error::Format(format!(
+                "PKG key table not found in {} (unexpected executable version?)",
+                path.as_ref().display()
+            ))
+        })
+    }
+
+    pub fn find_in(data: &[u8]) -> Option<KeyTable> {
+        if data.len() < 256 {
+            return None;
+        }
+        let mut counts = [0u32; 256];
+        let mut distinct = 0usize;
+        for (i, &b) in data.iter().enumerate() {
+            if counts[b as usize] == 0 {
+                distinct += 1;
+            }
+            counts[b as usize] += 1;
+            if i >= 256 {
+                let out = data[i - 256] as usize;
+                counts[out] -= 1;
+                if counts[out] == 0 {
+                    distinct -= 1;
+                }
+            }
+            if i >= 255 && distinct == 256 {
+                let w = &data[i - 255..=i];
+                if let Ok(t) = KeyTable::from_bytes(w) {
+                    return Some(t);
+                }
+            }
+        }
+        None
+    }
+
+    /// Expands a 16-byte seed into the XOR mask applied to each 16-byte
+    /// block. The original applies 11 round keys in sequence; XOR is
+    /// associative, so their XOR is equivalent.
+    fn mask(&self, seed: &[u8; 16]) -> [u8; 16] {
+        let mut k = [0u8; 16 * (PASS_COUNT + 1)];
+        for i in 0..16 {
+            k[i] = if seed[i] == 0 { i as u8 } else { seed[i] };
+        }
+        for i in 0..PASS_COUNT * 4 {
+            let p = 0x0C + i * 4;
+            let mut f = [k[p], k[p + 1], k[p + 2], k[p + 3]];
+            if i % 4 == 0 {
+                // The original indexes a byte array of little-endian u32
+                // round constants, so only the first byte is non-zero.
+                let r = if i % 4 == 0 && (i / 4) < RCON.len() { RCON[i / 4] } else { 0 };
+                f = [self.0[f[1] as usize] ^ r, self.0[f[2] as usize], self.0[f[3] as usize], self.0[f[0] as usize]];
+            }
+            for j in 0..4 {
+                k[0x10 + i * 4 + j] = k[i * 4 + j] ^ f[j];
+            }
+        }
+        let mut m = [0u8; 16];
+        for round in 0..=PASS_COUNT {
+            for j in 0..16 {
+                m[j] ^= k[round * 16 + j];
+            }
+        }
+        m
+    }
+
+    fn decrypt_head(&self, seed: &[u8; 16], data: &mut [u8]) {
+        let m = self.mask(seed);
+        let end = data.len().min(0x100);
+        for (i, b) in data[..end].iter_mut().enumerate() {
+            *b ^= m[i % 16];
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HedEntry {
+    pub md5: [u8; 16],
+    pub offset: u64,
+    pub stored_len: u32,
+    pub real_len: u32,
+}
+
+/// A remastered (HD) asset: its name (e.g. `-3.dds`), its header's `+0x20` (its place in the
+/// stream) and `+0x24` (the offset in the original file of the data it replaces) words, and its
+/// bytes (a DDS image for textures).
+#[derive(Clone, Debug)]
+pub struct HdAsset {
+    pub name: String,
+    pub pkg_offset: u32,
+    pub offset: u32,
+    pub data: Vec<u8>,
+}
+
+/// One `.hed`/`.pkg` pair.
+#[derive(Debug)]
+pub struct Archive {
+    pub hed_path: PathBuf,
+    pub pkg_path: PathBuf,
+    pub entries: Vec<HedEntry>,
+}
+
+pub fn name_hash(name: &str) -> [u8; 16] {
+    Md5::digest(name.as_bytes()).into()
+}
+
+impl Archive {
+    /// Opens `<stem>.hed` and remembers `<stem>.pkg`. Accepts either path.
+    pub fn open(path: impl AsRef<Path>) -> Result<Archive> {
+        let p = path.as_ref();
+        let hed_path = p.with_extension("hed");
+        let pkg_path = p.with_extension("pkg");
+        let hed = std::fs::read(&hed_path)?;
+        if hed.len() % 0x20 != 0 {
+            return bad(format!("{}: size is not a multiple of 0x20", hed_path.display()));
+        }
+        let mut r = Reader::new(&hed);
+        let mut entries = Vec::with_capacity(hed.len() / 0x20);
+        for _ in 0..hed.len() / 0x20 {
+            let md5: [u8; 16] = r.bytes(16)?.try_into().unwrap();
+            let offset = r.i64()?;
+            let stored_len = r.i32()?;
+            let real_len = r.i32()?;
+            if offset < 0 || stored_len < 0 || real_len < 0 {
+                return bad("negative value in hed entry");
+            }
+            entries.push(HedEntry { md5, offset: offset as u64, stored_len: stored_len as u32, real_len: real_len as u32 });
+        }
+        Ok(Archive { hed_path, pkg_path, entries })
+    }
+
+    pub fn find(&self, name: &str) -> Option<&HedEntry> {
+        let h = name_hash(name);
+        self.entries.iter().find(|e| e.md5 == h)
+    }
+
+    /// Reads, decrypts and decompresses the original-format data of `name`.
+    pub fn read(&self, keys: &KeyTable, name: &str) -> Result<Vec<u8>> {
+        let e = *self.find(name).ok_or_else(|| Error::NotFound(name.to_string()))?;
+        let mut f = File::open(&self.pkg_path)?;
+        f.seek(SeekFrom::Start(e.offset))?;
+        let mut seed = [0u8; 16];
+        f.read_exact(&mut seed)?;
+        let mut h = Reader::new(&seed);
+        let decompressed = h.i32()?;
+        let remastered = h.i32()?;
+        let compressed = h.i32()?;
+        if decompressed < 0 || !(0..=0x10000).contains(&remastered) {
+            return bad(format!("{name}: implausible pkg header"));
+        }
+        f.seek(SeekFrom::Current(remastered as i64 * 0x30))?;
+        let len = if compressed >= 0 { compressed } else { decompressed } as usize;
+        if len as u64 > e.stored_len as u64 {
+            return bad(format!("{name}: data length exceeds hed entry"));
+        }
+        let mut data = vec![0u8; len];
+        f.read_exact(&mut data)?;
+        if compressed > -2 {
+            keys.decrypt_head(&seed, &mut data);
+        }
+        if compressed > -1 {
+            if data.len() < 2 {
+                return bad(format!("{name}: compressed data too short"));
+            }
+            let mut out = Vec::with_capacity(decompressed as usize);
+            flate2::read::DeflateDecoder::new(&data[2..]).read_to_end(&mut out)?;
+            if out.len() != decompressed as usize {
+                return bad(format!("{name}: decompressed {} bytes, expected {decompressed}", out.len()));
+            }
+            Ok(out)
+        } else {
+            Ok(data)
+        }
+    }
+}
+
+/// The bytes a stream of `n` takes in the `.pkg`: an encrypted one (`comp > -2`, the 16-byte
+/// cipher's) is padded to 16 there while its header gives the real length (Checked (files), t937:
+/// `zz0field.2dd`'s HD PNGs end 2, 8, 13 and 14 bytes before their 16-aligned sizes, and its `.hed`
+/// entry's stored size is the header plus every stream padded to 16; the second PNG was read 2
+/// bytes early without this). A plain one (-2) is taken as unpadded (Assumption: none seen).
+pub fn pkg_span(n: i64, comp: i32) -> i64 {
+    if comp > -2 {
+        (n + 15) & !15
+    } else {
+        n
+    }
+}
+
+impl Archive {
+    /// Reads one of `name`'s remastered (HD) assets, the first whose name starts with `asset`
+    /// (e.g. `-1c1` for `-1c1.dds`). They follow the original data in header order, each
+    /// encrypted and compressed as the original is (same seed, its own lengths: the header's
+    /// `+0x28` decompressed and `+0x2C` compressed size, -2 plain, -1 encrypted only). Returns
+    /// the asset's full name and data.
+    pub fn read_remastered(&self, keys: &KeyTable, name: &str, asset: &str) -> Result<(String, Vec<u8>)> {
+        let e = *self.find(name).ok_or_else(|| Error::NotFound(name.to_string()))?;
+        let mut f = File::open(&self.pkg_path)?;
+        f.seek(SeekFrom::Start(e.offset))?;
+        let mut seed = [0u8; 16];
+        f.read_exact(&mut seed)?;
+        let mut h = Reader::new(&seed);
+        let decompressed = h.i32()?;
+        let remastered = h.i32()?;
+        let compressed = h.i32()?;
+        if decompressed < 0 || !(0..=0x10000).contains(&remastered) {
+            return bad(format!("{name}: implausible pkg header"));
+        }
+        let mut heads = vec![0u8; remastered as usize * 0x30];
+        f.read_exact(&mut heads)?;
+        // Past the original data to the first asset.
+        let len = pkg_span(if compressed >= 0 { compressed } else { decompressed } as i64, compressed);
+        f.seek(SeekFrom::Current(len))?;
+        for head in heads.chunks_exact(0x30) {
+            let end = head[..0x20].iter().position(|&b| b == 0).unwrap_or(0x20);
+            let asset_name = String::from_utf8_lossy(&head[..end]).into_owned();
+            let mut r = Reader::new(&head[0x28..0x30]);
+            let dec = r.i32()?;
+            let comp = r.i32()?;
+            let n = if comp >= 0 { comp } else { dec };
+            if n < 0 || n as u64 > e.stored_len as u64 {
+                return bad(format!("{name}: asset {asset_name} has an implausible length"));
+            }
+            if !asset_name.starts_with(asset) {
+                f.seek(SeekFrom::Current(pkg_span(n as i64, comp)))?;
+                continue;
+            }
+            let mut data = vec![0u8; n as usize];
+            f.read_exact(&mut data)?;
+            if comp > -2 {
+                keys.decrypt_head(&seed, &mut data);
+            }
+            if comp > -1 {
+                if data.len() < 2 {
+                    return bad(format!("{name}: asset {asset_name} too short"));
+                }
+                let mut out = Vec::with_capacity(dec.max(0) as usize);
+                flate2::read::DeflateDecoder::new(&data[2..]).read_to_end(&mut out)?;
+                return Ok((asset_name, out));
+            }
+            return Ok((asset_name, data));
+        }
+        Err(Error::NotFound(format!("{name}: remastered asset {asset}*")))
+    }
+
+    /// Every remastered (HD) asset of `name`, in header order, with the header's `+0x20` word (the
+    /// asset's own place in the stream: t369's run, each one the last one's offset plus its size)
+    /// and `+0x24` word (the offset in the original file of the data it replaces: KH1's own loader
+    /// keys an HD texture by it; the games look an HD texture up by where its PS2 texture lies).
+    pub fn read_remastered_all(&self, keys: &KeyTable, name: &str) -> Result<Vec<HdAsset>> {
+        let e = *self.find(name).ok_or_else(|| Error::NotFound(name.to_string()))?;
+        let mut f = File::open(&self.pkg_path)?;
+        f.seek(SeekFrom::Start(e.offset))?;
+        let mut seed = [0u8; 16];
+        f.read_exact(&mut seed)?;
+        let mut h = Reader::new(&seed);
+        let decompressed = h.i32()?;
+        let remastered = h.i32()?;
+        let compressed = h.i32()?;
+        if decompressed < 0 || !(0..=0x10000).contains(&remastered) {
+            return bad(format!("{name}: implausible pkg header"));
+        }
+        let mut heads = vec![0u8; remastered as usize * 0x30];
+        f.read_exact(&mut heads)?;
+        let len = pkg_span(if compressed >= 0 { compressed } else { decompressed } as i64, compressed);
+        f.seek(SeekFrom::Current(len))?;
+        let mut out = Vec::new();
+        for head in heads.chunks_exact(0x30) {
+            let end = head[..0x20].iter().position(|&b| b == 0).unwrap_or(0x20);
+            let asset_name = String::from_utf8_lossy(&head[..end]).into_owned();
+            let mut r = Reader::new(&head[0x20..0x30]);
+            let pkg_offset = r.i32()? as u32;
+            let offset = r.i32()? as u32;
+            let dec = r.i32()?;
+            let comp = r.i32()?;
+            let n = if comp >= 0 { comp } else { dec };
+            if n < 0 || n as u64 > e.stored_len as u64 {
+                return bad(format!("{name}: asset {asset_name} has an implausible length"));
+            }
+            let mut data = vec![0u8; n as usize];
+            f.read_exact(&mut data)?;
+            f.seek(SeekFrom::Current(pkg_span(n as i64, comp) - n as i64))?;
+            if comp > -2 {
+                keys.decrypt_head(&seed, &mut data);
+            }
+            if comp > -1 {
+                if data.len() < 2 {
+                    return bad(format!("{name}: asset {asset_name} too short"));
+                }
+                let mut d = Vec::with_capacity(dec.max(0) as usize);
+                flate2::read::DeflateDecoder::new(&data[2..]).read_to_end(&mut d)?;
+                data = d;
+            }
+            out.push(HdAsset { name: asset_name, pkg_offset, offset, data });
+        }
+        Ok(out)
+    }
+}
+
+impl Archive {
+    /// `name`'s bytes as they are stored in the `.pkg` (its header, the HD assets' headers and
+    /// every stream, still encrypted and compressed), for a change check without decoding it
+    /// (the effect package cache, `kh1-hook`'s `dpxcache`).
+    pub fn read_stored(&self, name: &str) -> Result<Vec<u8>> {
+        let e = *self.find(name).ok_or_else(|| Error::NotFound(name.to_string()))?;
+        let mut f = File::open(&self.pkg_path)?;
+        f.seek(SeekFrom::Start(e.offset))?;
+        let mut data = vec![0u8; e.stored_len as usize];
+        f.read_exact(&mut data)?;
+        Ok(data)
+    }
+}
+
+/// A file's size and modification time: a cached read of it is used again only while these hold.
+type Stamp = (u64, Option<std::time::SystemTime>);
+
+fn stamp(p: &Path) -> Option<Stamp> {
+    let m = std::fs::metadata(p).ok()?;
+    Some((m.len(), m.modified().ok()))
+}
+
+/// Read once per path and process: the key table found in an executable and the opened indexes.
+/// Each read of a package file used to read the whole executable again (8.7 MB for KH2's, 7.5 MB
+/// for KH1's) and scan it for the table, and read the package's index again. The lock is held
+/// while one is worked out, so threads asking at once wait for the one read instead of each doing
+/// it. A file whose size or time changed is read again.
+static KEYS: std::sync::Mutex<Vec<(PathBuf, Stamp, KeyTable)>> = std::sync::Mutex::new(Vec::new());
+static INDEXES: std::sync::Mutex<Vec<(PathBuf, Stamp, std::sync::Arc<Archive>)>> = std::sync::Mutex::new(Vec::new());
+
+impl KeyTable {
+    /// [`KeyTable::from_executable`], read once per executable (see `KEYS`).
+    pub fn from_executable_cached(path: impl AsRef<Path>) -> Result<KeyTable> {
+        let path = path.as_ref();
+        let Some(st) = stamp(path) else { return KeyTable::from_executable(path) };
+        let mut g = KEYS.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((_, _, k)) = g.iter().find(|(p, s, _)| p == path && *s == st) {
+            return Ok(k.clone());
+        }
+        let k = KeyTable::from_executable(path)?;
+        g.retain(|(p, _, _)| p != path);
+        g.push((path.to_path_buf(), st, k.clone()));
+        Ok(k)
+    }
+}
+
+impl Archive {
+    /// [`Archive::open`], the index read once per `.hed` (see `KEYS`, `INDEXES`).
+    pub fn open_cached(path: impl AsRef<Path>) -> Result<std::sync::Arc<Archive>> {
+        let hed = path.as_ref().with_extension("hed");
+        let Some(st) = stamp(&hed) else { return Archive::open(&hed).map(std::sync::Arc::new) };
+        let mut g = INDEXES.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((_, _, a)) = g.iter().find(|(p, s, _)| *p == hed && *s == st) {
+            return Ok(a.clone());
+        }
+        let a = std::sync::Arc::new(Archive::open(&hed)?);
+        g.retain(|(p, _, _)| *p != hed);
+        g.push((hed, st, a.clone()));
+        Ok(a)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn index_read_once_until_it_changes() {
+        let dir = std::env::temp_dir().join(format!("egs-cache-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let hed = dir.join("x.hed");
+        std::fs::write(&hed, [0u8; 0x20]).unwrap();
+        let a = super::Archive::open_cached(&hed).unwrap();
+        let b = super::Archive::open_cached(dir.join("x.pkg")).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&a, &b));
+        assert_eq!(a.entries.len(), 1);
+        std::fs::write(&hed, [0u8; 0x40]).unwrap();
+        let c = super::Archive::open_cached(&hed).unwrap();
+        assert_eq!(c.entries.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    use super::*;
+
+    #[test]
+    fn encrypted_streams_are_padded_to_16() {
+        assert_eq!(pkg_span(607902, -1), 607904);
+        assert_eq!(pkg_span(108216, 5000), 108224);
+        assert_eq!(pkg_span(32304, -1), 32304);
+        assert_eq!(pkg_span(17059, -2), 17059);
+    }
+
+    #[test]
+    fn name_hash_is_md5() {
+        // RFC 1321 test vector.
+        assert_eq!(
+            name_hash("abc"),
+            [0x90, 0x01, 0x50, 0x98, 0x3c, 0xd2, 0x4f, 0xb0, 0xd6, 0x96, 0x3f, 0x7d, 0x28, 0xe1, 0x7f, 0x72]
+        );
+    }
+
+    /// Straight transcription of the reference algorithm (11 sequential
+    /// XOR passes per block, 4 bytes at a time) to check the folded mask.
+    fn reference_decrypt(table: &[u8; 256], seed: &[u8; 16], data: &mut [u8]) {
+        let mut sk = [0u8; 40];
+        for (i, r) in RCON.iter().enumerate() {
+            sk[i * 4] = *r;
+        }
+        let mut k = [0u8; 0xB0];
+        for i in 0..16 {
+            k[i] = if seed[i] == 0 { i as u8 } else { seed[i] };
+        }
+        for i in 0..40 {
+            let mut f = [k[0x0C + i * 4], k[0x0D + i * 4], k[0x0E + i * 4], k[0x0F + i * 4]];
+            if i % 4 == 0 {
+                f = [
+                    table[f[1] as usize] ^ sk[i],
+                    table[f[2] as usize] ^ sk[i + 1],
+                    table[f[3] as usize] ^ sk[i + 2],
+                    table[f[0] as usize] ^ sk[i + 3],
+                ];
+            }
+            for j in 0..4 {
+                k[0x10 + i * 4 + j] = k[i * 4 + j] ^ f[j];
+            }
+        }
+        let mut idx = 0;
+        while idx < data.len().min(0x100) {
+            let n = (data.len() - idx).min(16);
+            for pass in (0..=10).rev() {
+                for j in 0..n {
+                    data[idx + j] ^= k[pass * 16 + j];
+                }
+            }
+            idx += 16;
+        }
+    }
+
+    #[test]
+    fn folded_mask_matches_reference() {
+        // Any permutation works for this equivalence check; use a made-up one.
+        let mut t = [0u8; 256];
+        for (i, b) in t.iter_mut().enumerate() {
+            *b = (i as u8).wrapping_mul(167).wrapping_add(13);
+        }
+        let kt = KeyTable(t);
+        for s in 0..4u8 {
+            let seed: [u8; 16] = core::array::from_fn(|i| if i % 3 == 0 { 0 } else { (i as u8).wrapping_mul(31).wrapping_add(s) });
+            let original: Vec<u8> = (0..300u32).map(|x| (x * 7 + s as u32) as u8).collect();
+            let mut a = original.clone();
+            let mut b = original.clone();
+            kt.decrypt_head(&seed, &mut a);
+            reference_decrypt(&t, &seed, &mut b);
+            assert_eq!(a, b);
+            assert_eq!(&a[0x100..], &original[0x100..]);
+        }
+    }
+
+    #[test]
+    fn rejects_wrong_table() {
+        let mut t = [0u8; 256];
+        for (i, b) in t.iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        assert!(KeyTable::from_bytes(&t).is_err());
+        assert!(KeyTable::find_in(&t).is_none());
+    }
+}

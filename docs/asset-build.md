@@ -26,9 +26,27 @@ player's KH1 extraction (`local\re\kh1`, `kh1-extract`). Checked (files).
    `00battle.bin` in the mod folder.
 3. KH1's effects (`.EET`) as KH2 effect programs, and KH1's sounds (`.SES`) as a KH2 sound bank.
 
-## Open choices (asked of the owner)
+## Decided (the owner, 2026-11-12)
 
-- Where the build runs: in the DLL on first launch (no extra program; the first launch takes
-  longer), or a separate builder program the player runs once.
-- Which KH1 to read: the player's KH1 install directly (KH1's own archives), or an extraction they
-  made first.
+- The build runs in the DLL on first launch (answer 1a), reading the KH1 install directly (2a).
+- The sister project's format readers are reused ("feel free to copy the code"): `kh2-formats`,
+  `kh2-anim`, `kh1-data`, copied from `KH2-Combat-in-KH1` testing (t10). Its
+  `bake::continuous_angles_take_the_short_way` test fails there too (its KH2→KH1 bake, unused
+  here): marked ignored, not fixed.
+- The built files go into the OpenKH mod folder (`openkh\mod\kh2\`, which Panacea maps into
+  KH2's packages through `patch-package-map.txt`: Checked (files), the DLL's own line
+  `dll/kh2-kh1.dll $$$$ kh2_first/original/dll/kh2-kh1.dll`).
+
+## The readers on the owner's install (t10, `kh1-assets` tool, Checked (files))
+
+Both games' packages are in `Image\dt\`. KH1 Sora's `xa_ex_0010.mset`: 118 motions, 7,440 frames
+in all; `xa_ex_0010.mdls`: 293 bones. KH2 Sora's `obj/P_EX100.mset`: 839 entries, 2.6 MB;
+`obj/P_EX100.mdlx`: 228 bones. Read in 0.15 s.
+
+## Next: the motion converter
+
+KH1 motion → KH2 motion: KH1's pose each frame (`kh1_data::mset::Motion::apply` on KH1's
+skeleton), retargeted onto KH2 Sora's 228 bones (the sister project's `kh1_data::retarget` joint
+map, run the other way), written as a KH2 motion entry (KH2's ANB) appended to `P_EX100.mset`.
+To read first: how KH2 plays a motion entry (interpolated or raw, `kh2_formats::anim` /
+`motion`) and which form costs KH2 least to play.

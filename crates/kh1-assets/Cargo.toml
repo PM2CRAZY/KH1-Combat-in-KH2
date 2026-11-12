@@ -1,0 +1,11 @@
+[package]
+name = "kh1-assets"
+description = "The build step: KH1's assets for KH2, made once from the player's own KH1 and KH2 files (KH 1.5+2.5 PC). Ships no game data."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+kh2-formats.workspace = true
+kh1-data.workspace = true
