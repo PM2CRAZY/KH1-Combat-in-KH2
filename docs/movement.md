@@ -51,10 +51,13 @@ owner's three KH1 traces, Checked (trace):
 - KH1 (`0x1402AF6A0`): stick held, `v += dir × accel × stick` once a game frame, its length kept
   to the larger of its old length and the run speed; let go, `v ×= drag` (its square root when the
   frame step is below 2). Checked (decomp).
-- KH2 (`0x1403B7AD0`, called with 0.9 / 0.95 by `0x1403CB360`): `v = 0.9 v + 0.1 target` held,
-  `v ×= 0.95` let go, per 30 Hz tick (the OG rewrite's reading). Checked (decomp) for the call's
-  values; the per-tick rule an Assumption until read here.
-- To do once KH1's accel and drag are read: KH1's rule in Sora's air step.
+- KH2 (`0x1403B7AD0 (actor, &out, step, keep, drag)`, Checked (decomp)): stick held (`+0x1C`, its
+  speed, > 0), the air velocity `+0x20` eases toward the stick's direction `+0x10` × its speed by
+  `keep`; let go, × `drag`; `out` = velocity × the frame step. Sora's plain air moves pass 0.9 /
+  0.95 (`0x1403CB360`), once a 30 Hz step (step 2, Checked (trace)).
+- So the drag is the same in both games (0.95 a 2-frame step). t8 (`win/airsteer.rs`) replaces the
+  held branch on base Sora's plain call with KH1's rule, once per 60 Hz frame of the step.
+  Assumption: `+0x10` is a unit direction (the next trace's +0.8 a frame from rest shows it).
 
 ## Ground
 

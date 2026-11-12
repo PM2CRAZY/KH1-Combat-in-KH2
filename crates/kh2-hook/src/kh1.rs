@@ -22,6 +22,21 @@ pub const KH1_AIR_ACCEL: f32 = 0.1;
 /// 0.97468 a frame with the stick let go (√0.95 = 0.97468).
 pub const KH1_AIR_DRAG: f32 = 0.95;
 
+/// KH1's air steering with the stick held, one 60 Hz frame (KH1's air step `0x1402AF6A0`, Checked
+/// (decomp); its numbers Checked (trace)): `v += dir × accel × speed`, then its length kept to the
+/// larger of its old length and the run speed. `v` and `dir` are (x, z).
+pub fn air_steer(v: [f32; 2], dir: [f32; 2], speed: f32, run: f32) -> [f32; 2] {
+    let old = v[0].hypot(v[1]);
+    let n = [v[0] + dir[0] * KH1_AIR_ACCEL * speed, v[1] + dir[1] * KH1_AIR_ACCEL * speed];
+    let len = n[0].hypot(n[1]);
+    let cap = old.max(run);
+    if len > cap && len > 0.0 {
+        [n[0] * cap / len, n[1] * cap / len]
+    } else {
+        n
+    }
+}
+
 /// The time an arc of height `h` takes to its apex (or to fall `h`) with KH1's gravity, as
 /// KH1's takeoff computes it (`T = sqrt(|2h| / g)`).
 pub fn apex_time(h: f32) -> f32 {
@@ -40,5 +55,22 @@ mod tests {
         assert!((apex_time(KH1_JUMP) - 28.0).abs() < 1e-3);
         assert!((apex_time(KH1_HIGH_JUMP) - 34.592).abs() < 1e-3);
         assert!((KH1_AIR_DRAG.sqrt() - 0.97468).abs() < 1e-4);
+    }
+
+    #[test]
+    fn kh1_air_steer_matches_the_trace() {
+        // From rest, stick full forward (speed 8): +0.8 a frame up to 8, then held at 8.
+        let mut v = [0.0, 0.0];
+        let mut seen = vec![];
+        for _ in 0..12 {
+            v = air_steer(v, [0.0, 1.0], 8.0, 8.0);
+            seen.push((v[1] * 1000.0).round() / 1000.0);
+        }
+        assert_eq!(&seen[..3], &[0.8, 1.6, 2.4]);
+        assert_eq!(seen[9], 8.0);
+        assert_eq!(seen[11], 8.0);
+        // Faster than the run (a launch), steering keeps the speed but never adds to it.
+        let w = air_steer([12.0, 0.0], [0.0, 1.0], 8.0, 8.0);
+        assert!((w[0].hypot(w[1]) - 12.0).abs() < 1e-4);
     }
 }

@@ -1,5 +1,6 @@
 //! Windows (64-bit) side: the KH2 check, the log, and the way in (Panacea's `OnInit`).
 
+mod airsteer;
 mod arc;
 mod build;
 mod highjump;
@@ -135,6 +136,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
             arc::install(base);
             prty::install(base);
             highjump::install(base);
+            airsteer::install(base);
         }
     }
     1
