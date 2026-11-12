@@ -1,0 +1,11 @@
+title: KH1 Combat for KH2 (TEST BRANCH)
+originalAuthor: PM (KH1-Combat-in-KH2)
+description: >-
+  Kingdom Hearts 1's combat for Sora in Kingdom Hearts II Final Mix, run by KH2's own engine, with
+  a Config-menu toggle between KH2 and KH1 for every setting. Early testing build: it only loads and
+  writes kh2-kh1.log in the game folder. For the Steam release of KH 1.5+2.5 (Epic later).
+assets:
+- name: dll/kh2-kh1.dll
+  method: copy
+  source:
+  - name: kh2-kh1.dll

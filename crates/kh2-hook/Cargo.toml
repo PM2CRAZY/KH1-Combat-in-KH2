@@ -1,0 +1,11 @@
+[package]
+name = "kh2-hook"
+description = "KH1's combat inside Kingdom Hearts II Final Mix (PC, KH 1.5+2.5, Steam): a 64-bit DLL Panacea loads into KINGDOM HEARTS II FINAL MIX.exe."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "kh2_kh1"
+crate-type = ["cdylib", "rlib"]
