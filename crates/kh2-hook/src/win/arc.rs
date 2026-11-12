@@ -24,7 +24,7 @@ use super::hook;
 use super::log;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use crate::kh1::{apex_time, KH1_FALL_CAP, KH1_GRAVITY};
+use crate::kh1::{apex_time, hop_height, KH1_FALL_CAP, KH1_GRAVITY, KH1_HOP_TIME};
 
 const SORA_NEW: usize = 0x40_5030;
 const LAUNCH_H: usize = 0x3C_BC30;
@@ -54,8 +54,24 @@ unsafe fn f(actor: usize, off: usize) -> *mut f32 {
     (actor + off) as *mut f32
 }
 
+/// KH2's early-release hop height: `0x1403CB680` hands `0x142A243D8` (set at runtime; 5.10 = its
+/// `g/2 · 5²` in the t8 trace) to the arc's start when the jump button is let go early. Checked
+/// (decomp) for the read; Assumption that every hop of Sora's passes this value (the log shows it).
+const HOP: usize = 0x2A2_43D8;
+static SAID_HOP: AtomicBool = AtomicBool::new(false);
+
 /// After a launch: KH2 set the arc fields from its gravity; the time to the apex again with KH1's.
+/// KH2's early-release hop becomes KH1's (5 frames up, 6.06 high).
 unsafe fn relaunch(actor: usize, h: f32) {
+    let hop = *((BASE.load(Ordering::Relaxed) + HOP) as *const f32);
+    if h > 0.0 && hop > 0.0 && (h - hop).abs() < 1e-3 {
+        *f(actor, 0xF4) = KH1_HOP_TIME;
+        *f(actor, 0xFC) = -hop_height();
+        if !SAID_HOP.swap(true, Ordering::Relaxed) {
+            log!("movement kh1: KH2's early-release hop ({hop}) is KH1's ({}, 5 frames)", hop_height());
+        }
+        return;
+    }
     if h < 0.0 {
         *f(actor, 0xF0) = apex_time(h);
     } else {

@@ -37,6 +37,14 @@ pub fn air_steer(v: [f32; 2], dir: [f32; 2], speed: f32, run: f32) -> [f32; 2] {
     }
 }
 
+/// KH1's early-release hop: a launch at speed 5 (`0x1402A7B30` → `0x1402AF8F0 (actor, 5.0)`,
+/// Checked (decomp)): its time to the apex is 5 frames and its height `g/2 · 5²` (6.06). Checked
+/// (trace): the KH1 traces' `T = 5, h = -6.059`.
+pub const KH1_HOP_TIME: f32 = 5.0;
+pub fn hop_height() -> f32 {
+    KH1_GRAVITY * 0.5 * KH1_HOP_TIME * KH1_HOP_TIME
+}
+
 /// The time an arc of height `h` takes to its apex (or to fall `h`) with KH1's gravity, as
 /// KH1's takeoff computes it (`T = sqrt(|2h| / g)`).
 pub fn apex_time(h: f32) -> f32 {
@@ -55,6 +63,7 @@ mod tests {
         assert!((apex_time(KH1_JUMP) - 28.0).abs() < 1e-3);
         assert!((apex_time(KH1_HIGH_JUMP) - 34.592).abs() < 1e-3);
         assert!((KH1_AIR_DRAG.sqrt() - 0.97468).abs() < 1e-4);
+        assert!((hop_height() - 6.059).abs() < 1e-3);
     }
 
     #[test]

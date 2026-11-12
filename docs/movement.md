@@ -81,3 +81,14 @@ KH2 asks the jump height of `0x1403B59B0 (actor, &motion)` and `0x1403B5A40 (act
 `+0x130`, or with a High Jump level that level's `fmab` row's height (`0x1403E92D0`) and motion 201
 (the flip). Checked (decomp). `fmab` is shared with the forms, so it stays: for base Sora any High
 Jump level's height becomes KH1's 290 (t7, `win/highjump.rs`).
+
+## The t8 trace (2026-11-12), Checked (trace)
+
+- Jump 190 (57 frames in the air), High Jump 290 (motion 201, 71 frames), the forms' own (Valor:
+  run 12, jump 235, High Jump 585): t5, t6, t7 as meant.
+- Air steering from a slow start: +1.6 a 2-frame step (0.8 a frame) to 8 (KH1's); Valor eases
+  (KH2's). t8 as meant.
+- Walking off a ledge: from rest, the drop growing 0.969 a 2-frame step (KH1's gravity), the
+  sideways speed 8: already KH1's (KH1 falls from rest, its momentum capped at 8 = the run).
+- Early release: the cut is in KH1's window and the fall after it KH1's, but the hop rose 5.10
+  (KH2's `g/2 · 5²`, from `0x142A243D8`); KH1's rises 6.06 in 5 frames. t9 makes it KH1's.
