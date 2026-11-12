@@ -5,13 +5,18 @@ all on KH2 is vanilla KH2, all on KH1 is 1:1 KH1. Native throughout: KH1's value
 KH2's own tables, states, motion slots, effect programs and sound banks (`kh2-tables.md`).
 
 ## Phase 0: foundation
-1. Loader and log (t1, done).
-2. Byte-checked hooks, the Steam build check, settings with a KH2/KH1 toggle per system (t2).
-3. KH2's tick rate on Steam; Sora's object (position, velocity, state, motion) mapped.
-4. A trace (Sora's state, motion, velocity, hits per frame) to compare against KH1 frame by frame.
-5. The toggles as rows in KH2's own Config menu.
+1. Loader and log (t1, done; Checked (log): Panacea loads it in the Steam build).
+2. Byte-checked hooks, the Steam build check, settings with a KH2/KH1 toggle per system (t2, done;
+   Checked (log)).
+3. Sora's object found (`docs/kh2-sora.md`, Checked (decomp)); KH2's tick rate and the remaining
+   fields read off the trace (t3, waiting on a recording).
+4. The trace (t3, done): F10 records Sora each frame, read only, from Panacea's `OnFrame`.
+5. The toggles as rows in KH2's own Config menu. In research: the in-game menus are KH2's `menu::`
+   code (`Mode`, `Window`, `Widget`); `YS::CONFIG` (`0x14039EE10`) is the developer config, not the
+   player's. Until the rows exist, `kh2-kh1.ini` holds the toggles.
 6. The asset build step: KH1's motions, effects and sounds made once from the player's own files
-   into the mod folder, for KH2 to load as its own.
+   into the mod folder, for KH2 to load as its own. Plan in `docs/asset-build.md`; open choices
+   asked of the owner first.
 
 ## Phase 1: movement
 Run and walk speed, turn rate, jump arc and height (KH1's double-sine rise), High Jump, air control,
