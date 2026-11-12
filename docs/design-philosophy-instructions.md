@@ -69,7 +69,9 @@ HARD RULES (details in docs/engineering-rules.md)
 - The sister repo is read-only; nothing copied from it unless the owner says so.
 
 WORKFLOW
-- No code until the tester writes "go ahead" after the assistant's latest message.
+- The owner works directly in chat (owner, 2026-11-12: "dont worry about the tester request
+  system at all. Listen to me and do what i say"). The owner's chat messages are the requests and
+  the go-ahead; the tester threads are not used unless the owner brings them back.
 - One system per version. Any change under crates/ bumps the version (VERSION in lib.rs plus a
   matching AGENTS.md stage; python3 tools/testers/version.py). The testing letter is t (t1 onward).
 - After a change, state the version name and the 1:1 check made; don't mention compiling.
