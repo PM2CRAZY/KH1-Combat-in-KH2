@@ -11,6 +11,8 @@
 //! This first part (t10) only reads: KH1 Sora's motion set and skeleton, KH2 Sora's motion set and
 //! skeleton, and reports what they hold.
 
+pub mod convert;
+
 use kh1_data::{Kh1Install, Source};
 use kh2_formats::bar::Bar;
 use kh2_formats::egs::{Archive, KeyTable};
@@ -134,4 +136,104 @@ pub fn kh1_pose_json(root: impl AsRef<Path>, index: usize) -> Result<String> {
     }
     out.push_str("]}");
     Ok(out)
+}
+
+/// KH1 Sora's combo motions built into KH2's motion set, and the KH2 motion id each gets.
+/// KH1's ground combo 98..101 (three swings, the finisher: travels 100 / 117 / 135 / 186, Checked
+/// (files)) and air combo 102..104 (the sister project's notes name 98 / 101 / 102 / 104 the
+/// plain swing, finisher, air swing and air finisher, Checked (decomp) there). KH2's
+/// `P_EX100.mset` holds 839 slots (motion × 4 + relative): ours start at motion 210.
+pub const KH1_MOTIONS: [usize; 7] = [98, 99, 100, 101, 102, 103, 104];
+pub const FIRST_KH2_MOTION: usize = 210;
+/// KH2's first ground swing (motion 151, `A300`): the template motion and, until KH1's own windows
+/// are built (Phase 2 step 4), the triggers.
+pub const TEMPLATE_MOTION: usize = 151;
+
+/// The KH2 motion id KH1 motion `kh1` is built as.
+pub fn kh2_motion_of(kh1: usize) -> Option<usize> {
+    KH1_MOTIONS.iter().position(|&m| m == kh1).map(|i| FIRST_KH2_MOTION + i)
+}
+
+/// What a build made.
+#[derive(Debug, Default)]
+pub struct Built {
+    pub motions: Vec<(usize, usize, usize)>,
+    pub bytes: usize,
+}
+
+/// KH2 Sora's motion set with KH1's combo motions added, from the collection at `root`.
+pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
+    let root = root.as_ref();
+    let kh1 = Kh1Install::locate(root)?;
+    let kh2 = Kh2Install::locate(root)?;
+    let mset1 = kh1.read(Source::Original, KH1_SORA_MSET)?;
+    let motions = kh1_data::mset::parse(&mset1)?;
+    let kh1_bones = kh1_data::mdls::parse_skeleton(&kh1.read(Source::Original, KH1_SORA_MDLS)?)?;
+    let kh2_bones = kh2_formats::anim::parse_skeleton(&kh2.read(KH2_SORA_MDLX)?)?;
+    let mset2 = kh2.read(KH2_SORA_MSET)?;
+    let bar = Bar::parse(&mset2)?;
+    let tslot = bar.entries.get(TEMPLATE_MOTION * 4).ok_or_else(|| Error::Format("KH2's template motion is missing".into()))?;
+    let tanb = Bar::parse(tslot.data)?;
+    let tmotion = tanb.entries.iter().find(|e| e.kind == kh2_formats::motion::BAR_TYPE_MOTION).ok_or_else(|| Error::Format("template has no motion".into()))?;
+    let ttrig = tanb.entries.iter().find(|e| e.kind == kh2_formats::motion::BAR_TYPE_MOTION_TRIGGERS).map(|e| e.data.to_vec()).unwrap_or_default();
+    let mut entries: Vec<(u16, i16, [u8; 4], Vec<u8>)> = bar
+        .entries
+        .iter()
+        .map(|e| {
+            let mut n = [0u8; 4];
+            for (i, c) in e.name.bytes().take(4).enumerate() {
+                n[i] = c;
+            }
+            (e.kind, e.duplicate, n, e.data.to_vec())
+        })
+        .collect();
+    let dummy = |entries: &mut Vec<(u16, i16, [u8; 4], Vec<u8>)>| entries.push((17, 0, *b"DUMM", Vec::new()));
+    while entries.len() < FIRST_KH2_MOTION * 4 {
+        dummy(&mut entries);
+    }
+    let mut built = Built::default();
+    for &k in &KH1_MOTIONS {
+        let m = motions.get(k).cloned().flatten().ok_or_else(|| Error::NotFound(format!("KH1 motion {k}")))?;
+        let (poses, travel) = convert::kh2_poses(&m, &kh1_bones, &kh2_bones);
+        let data = convert::write_motion(tmotion.data, &kh2_bones, &poses, &travel)?;
+        let name = *format!("K{k:03}").as_bytes().first_chunk::<4>().unwrap();
+        let anb = convert::write_bar(0, &[(kh2_formats::motion::BAR_TYPE_MOTION, 0, name, data), (kh2_formats::motion::BAR_TYPE_MOTION_TRIGGERS, 0, name, ttrig.clone())]);
+        let id = kh2_motion_of(k).unwrap();
+        built.motions.push((k, id, poses.len()));
+        entries.push((kh2_formats::motion::BAR_TYPE_ANB, 0, name, anb));
+        for _ in 0..3 {
+            dummy(&mut entries);
+        }
+    }
+    let out = convert::write_bar(bar.motionset, &entries);
+    built.bytes = out.len();
+    Ok((out, built))
+}
+
+/// The build's stamp: what it was made from (the mod's version and both games' entries), so a
+/// later launch builds again only when one changed.
+pub fn stamp(root: impl AsRef<Path>, version: &str) -> String {
+    let root = root.as_ref();
+    let k1 = Kh1Install::locate(root).map(|k| format!("{} / {}", k.stamp(Source::Original, KH1_SORA_MSET), k.stamp(Source::Original, KH1_SORA_MDLS))).unwrap_or_default();
+    format!("kh2-kh1 {version}; KH1 {k1}; motions {KH1_MOTIONS:?} from {FIRST_KH2_MOTION}")
+}
+
+/// Builds into `mod_dir` (OpenKH's `mod\kh2`): `obj/P_EX100.mset` and its stamp, unless the stamp
+/// says the files there are already this build's. Returns what was built (`None`: up to date).
+pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str) -> Result<Option<Built>> {
+    let (root, mod_dir) = (root.as_ref(), mod_dir.as_ref());
+    let out = mod_dir.join("obj").join("P_EX100.mset");
+    let stamp_file = mod_dir.join("kh2-kh1-build.txt");
+    let want = stamp(root, version);
+    if out.is_file() && std::fs::read_to_string(&stamp_file).ok().as_deref() == Some(want.as_str()) {
+        return Ok(None);
+    }
+    let (bytes, built) = build_mset(root)?;
+    let io = |e: std::io::Error| Error::Format(e.to_string());
+    std::fs::create_dir_all(out.parent().unwrap()).map_err(io)?;
+    let tmp = out.with_extension("mset.tmp");
+    std::fs::write(&tmp, &bytes).map_err(io)?;
+    std::fs::rename(&tmp, &out).map_err(io)?;
+    std::fs::write(&stamp_file, want).map_err(io)?;
+    Ok(Some(built))
 }

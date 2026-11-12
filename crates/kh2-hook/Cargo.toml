@@ -9,3 +9,6 @@ license = "MIT OR Apache-2.0"
 [lib]
 name = "kh2_kh1"
 crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+kh1-assets.workspace = true

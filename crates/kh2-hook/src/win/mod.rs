@@ -99,6 +99,34 @@ pub unsafe extern "C" fn OnInit(mod_path: *const u16) {
         s = String::from_utf16_lossy(std::slice::from_raw_parts(mod_path, n));
     }
     log!("loaded by Panacea (mod folder {s})");
+    assets(&s);
+}
+
+/// The build step (`kh1_assets`, `docs/asset-build.md`): with `combos = kh1`, KH2 Sora's motion
+/// set with KH1's combo motions, built once into the mod folder (`obj/P_EX100.mset`, which
+/// Panacea serves in place of the game's: Assumption, the owner's OpenKH maps the mod folder's
+/// files into KH2's packages), again only when the mod's version or KH1's files change. With
+/// `combos = kh2`, a file of ours there is removed, so KH2 loads its own.
+fn assets(mod_path: &str) {
+    if unsafe { build::detect(GetModuleHandleA(std::ptr::null()) as usize) } != build::Build::Steam || mod_path.is_empty() {
+        return;
+    }
+    let dir = std::path::PathBuf::from(mod_path);
+    if settings().style("combos") == crate::settings::Style::Kh1 {
+        let t = std::time::Instant::now();
+        match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION) {
+            Ok(Some(b)) => log!("assets: built {} bytes into {} in {} ms: KH1 motions {:?}", b.bytes, dir.join("obj").display(), t.elapsed().as_millis(), b.motions),
+            Ok(None) => log!("assets: KH1 motions already built ({})", dir.join("obj").join("P_EX100.mset").display()),
+            Err(e) => log!("assets: could not build KH1's motions: {e}"),
+        }
+    } else {
+        let stamp = dir.join("kh2-kh1-build.txt");
+        if stamp.is_file() {
+            let _ = std::fs::remove_file(dir.join("obj").join("P_EX100.mset"));
+            let _ = std::fs::remove_file(&stamp);
+            log!("assets: combos = kh2: our built P_EX100.mset removed (KH2 loads its own)");
+        }
+    }
 }
 
 #[no_mangle]

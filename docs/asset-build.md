@@ -59,10 +59,26 @@ which KH1 places at helper P6 (the spine's aim), so it stretches by design (up t
 Motions 98..101 travel forward with the travel helper H10 (98: 0 → 90 in 30 frames), the feet
 helpers with them. Not compared with KH1's own pose in game yet.
 
-## Next: the motion converter
+## The motion converter (t12, `kh1_assets::convert`)
 
-KH1 motion → KH2 motion: KH1's pose each frame (`kh1_data::mset::Motion::apply` on KH1's
-skeleton), retargeted onto KH2 Sora's 228 bones (the sister project's `kh1_data::retarget` joint
-map, run the other way), written as a KH2 motion entry (KH2's ANB) appended to `P_EX100.mset`.
-To read first: how KH2 plays a motion entry (interpolated or raw, `kh2_formats::anim` /
-`motion`) and which form costs KH2 least to play.
+- KH1's pose each frame (`rig`), its travel (helper H10) taken off the body, the body onto KH2
+  Sora's 228 bones (the sister project's `kh1_data::inverse`), each bone's local Euler / offset,
+  written as a KH2 interpolated motion on KH2's A300 (motion 151) as the template: its reserved
+  block, IK helper table (53), joint table (281), bounding box and root block kept; an initial
+  pose of every bone's first-frame values; linear keys where a channel moves (Douglas–Peucker,
+  0.002 rad / 0.05); no constraints or expressions (baked). KH2 keeps a motion's travel in its
+  last IK helper (joint 52; A300's z curve ends at 150, Checked (files)): KH1's travel goes there.
+  Interpolated, not raw: KH2's player motions are all interpolated, and a raw one would be
+  ~0.9 MB a motion (228 matrices a frame).
+- Checked (files), the owner's files (`tests/local_convert.rs`): the written motion read back and
+  played by KH2's evaluator (`kh2_anim::evaluate`) matches the retargeted pose within 0.4 at every
+  joint; the travel matches. Stick figures of the KH2 pose look as KH1's swing (a forward lunge).
+- `build_mset`: KH2 Sora's `P_EX100.mset` with KH1's combo motions 98..104 added as KH2 motions
+  210..216 (slot = motion × 4, the battle slot; the other three empty, as KH2's attacks). Its own
+  839 slots are byte-identical in the rebuilt BAR (Checked (files)). Triggers: A300's for now
+  (KH1's own windows are Phase 2 step 4). 3.4 MB, built in 0.5 s on the owner's PC.
+- The DLL (t12): with `combos = kh1`, `kh1_assets::build_into` from Panacea's `OnInit` writes
+  `mod\kh2\obj\P_EX100.mset` and a stamp (`kh2-kh1-build.txt`: the mod's version and KH1's file
+  entries), again only when the stamp differs; with `combos = kh2` it removes them. Assumptions:
+  Panacea serves a loose file in the mod folder in place of the game's; `OnInit` runs before KH2
+  loads Sora. Nothing plays motions 210..216 yet: Phase 2 step 2 (KH1's rows in `ptya`).

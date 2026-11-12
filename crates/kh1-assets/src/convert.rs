@@ -1,0 +1,341 @@
+//! KH1 motions as KH2 motions (Phase 2 step 1, `docs/combos.md`; KH1-Combat-in-KH2 t12).
+//!
+//! 1. KH1 Sora's pose each frame: KH1's whole skeleton pass (`kh1_data::rig`).
+//! 2. KH1's root travel taken off the body: KH1 keeps it in its last helper (H10) and the body
+//!    rides it; KH2 keeps it in its last IK helper (Sora's joint 52, the curve the motion's root
+//!    block points at: Checked (files), A300's travel curve on helper 52 z ending at 150, the OG
+//!    rewrite's 150). So the body is posed at the travel's start and the travel becomes KH2's.
+//! 3. The pose onto KH2 Sora's skeleton: the sister project's reverse retarget
+//!    (`kh1_data::inverse`), which places KH2's joints at KH2's own bind offsets.
+//! 4. Written as a KH2 interpolated motion on a template motion of KH2's own (its reserved block,
+//!    its IK helper table, joint table, bounding box and root block kept): an initial pose with
+//!    every bone's first-frame values, linear keys where a channel moves (reduced within a small
+//!    tolerance), the travel on helper 52, no constraints or expressions (the pose is baked).
+//!    Layout: `kh2_formats::anim` (OpenKH's docs), Checked (files) against KH2 Sora's motions.
+//!
+//! Units: KH1's motions run at 60 fps; KH2's key times are 60 Hz frames, so a KH1 frame is a key
+//! time (Checked (files): KH1 Sora's motions are 60 fps; KH2's A300 48 key frames at fps 30).
+//! Distances: KH1's values as they are (the 1:1 rule); the travel is KH1's, unscaled.
+
+use glam::{EulerRot, Mat4, Quat, Vec3};
+use kh1_data::inverse::Inverse;
+use kh1_data::mset::Motion;
+use kh1_data::retarget::{Retarget, GRIP_BONE};
+use kh2_formats::anim::Bone;
+use kh2_formats::{Error, Result};
+
+/// KH2 Sora's travel helper: his joint 52 past the 228 bones (Checked (files), A300).
+const TRAVEL_JOINT: i16 = 52;
+const ROT_TOL: f32 = 0.002;
+const POS_TOL: f32 = 0.05;
+const BASE: usize = 0x90;
+
+/// KH2 model-space matrices for every frame of a KH1 motion, and its travel per frame.
+pub fn kh2_poses(motion: &Motion, kh1: &[Bone], kh2: &[Bone]) -> (Vec<Vec<Mat4>>, Vec<Vec3>) {
+    let r = Retarget::new(kh1, kh2);
+    let inv = Inverse::new(kh1, kh2, &r, |i| i < GRIP_BONE && r.follows_one_part(i));
+    let n = motion.frames.max(1) as usize;
+    let mut poses = Vec::with_capacity(n);
+    let mut travel = Vec::with_capacity(n);
+    for f in 0..n {
+        let p = kh1_data::rig::pose(motion, kh1, f as f32);
+        let t = p.helpers.last().map(|m| m.w_axis.truncate()).unwrap_or(Vec3::ZERO);
+        let back = Mat4::from_translation(-t);
+        let body: Vec<Mat4> = p.bones.iter().map(|m| back * *m).collect();
+        poses.push(inv.pose(&body));
+        travel.push(t);
+    }
+    (poses, travel)
+}
+
+/// Euler X→Y→Z (KH2's order, `kh2_anim::euler_quat`) of `q`, the one nearer `prev`.
+fn euler_near(q: Quat, prev: Option<[f32; 3]>) -> [f32; 3] {
+    let (z, y, x) = q.to_euler(EulerRot::ZYX);
+    let a = [x, y, z];
+    let b = [x + std::f32::consts::PI, std::f32::consts::PI - y, z + std::f32::consts::PI];
+    let Some(p) = prev else { return a };
+    let unwrap = |v: [f32; 3]| -> [f32; 3] {
+        let mut o = v;
+        for i in 0..3 {
+            let tau = std::f32::consts::TAU;
+            o[i] = v[i] + ((p[i] - v[i]) / tau).round() * tau;
+        }
+        o
+    };
+    let (ua, ub) = (unwrap(a), unwrap(b));
+    let d = |v: [f32; 3]| (0..3).map(|i| (v[i] - p[i]).abs()).sum::<f32>();
+    if d(ub) < d(ua) { ub } else { ua }
+}
+
+/// Each bone's local values (scale, Euler rotation, translation) every frame.
+fn locals(kh2: &[Bone], poses: &[Vec<Mat4>]) -> Vec<Vec<[f32; 9]>> {
+    let mut out = vec![Vec::with_capacity(poses.len()); kh2.len()];
+    let mut prev: Vec<Option<[f32; 3]>> = vec![None; kh2.len()];
+    for pose in poses {
+        for (b, bone) in kh2.iter().enumerate() {
+            let (_, q, pos) = pose[b].to_scale_rotation_translation();
+            let (lq, lt) = match usize::try_from(bone.parent).ok().filter(|&p| p < b) {
+                Some(p) => {
+                    let (_, pq, _) = pose[p].to_scale_rotation_translation();
+                    (pq.inverse() * q, pose[p].inverse().transform_point3(pos))
+                }
+                None => (q, pos),
+            };
+            let e = euler_near(lq.normalize(), prev[b]);
+            prev[b] = Some(e);
+            out[b].push([bone.scale[0], bone.scale[1], bone.scale[2], e[0], e[1], e[2], lt.x, lt.y, lt.z]);
+        }
+    }
+    out
+}
+
+/// The kept frames of a channel: first, last, and those a line between kept neighbours misses by
+/// more than `tol` (Douglas–Peucker).
+fn reduce(v: &[f32], tol: f32) -> Vec<usize> {
+    fn rec(v: &[f32], a: usize, b: usize, tol: f32, keep: &mut Vec<usize>) {
+        if b <= a + 1 {
+            return;
+        }
+        let (mut worst, mut at) = (0.0f32, a);
+        for i in a + 1..b {
+            let line = v[a] + (v[b] - v[a]) * (i - a) as f32 / (b - a) as f32;
+            let e = (v[i] - line).abs();
+            if e > worst {
+                worst = e;
+                at = i;
+            }
+        }
+        if worst > tol {
+            rec(v, a, at, tol, keep);
+            keep.push(at);
+            rec(v, at, b, tol, keep);
+        }
+    }
+    let mut keep = vec![0];
+    if v.len() > 1 {
+        rec(v, 0, v.len() - 1, tol, &mut keep);
+        keep.push(v.len() - 1);
+    }
+    keep.sort_unstable();
+    keep.dedup();
+    keep
+}
+
+fn i32_at(b: &[u8], at: usize) -> Result<i32> {
+    b.get(at..at + 4).map(|s| i32::from_le_bytes(s.try_into().unwrap())).ok_or_else(|| Error::Format(format!("motion: read past the end at {at:#x}")))
+}
+
+struct Curve {
+    joint: i16,
+    channel: u8,
+    keys: Vec<(usize, f32)>,
+}
+
+/// A KH2 motion (BAR type 9 data) for `poses` / `travel`, on `template` (a KH2 Sora motion).
+pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &[Vec3]) -> Result<Vec<u8>> {
+    let h = BASE + 0x10;
+    if i32_at(template, BASE)? != 0 {
+        return Err(Error::Format("template is not an interpolated motion".into()));
+    }
+    let hdr = |o: usize| i32_at(template, h + o);
+    let bone_count = (hdr(0)? & 0xFFFF) as usize;
+    let total = ((hdr(0)? >> 16) & 0xFFFF) as usize;
+    if bone_count != kh2.len() {
+        return Err(Error::Format(format!("template has {bone_count} bones, the skeleton {}", kh2.len())));
+    }
+    let frames = poses.len();
+    let loc = locals(kh2, poses);
+    let mut initial: Vec<(i16, i16, f32)> = Vec::new();
+    let mut forward: Vec<Curve> = Vec::new();
+    for (b, chans) in loc.iter().enumerate() {
+        for c in 0..9 {
+            let v: Vec<f32> = chans.iter().map(|x| x[c]).collect();
+            initial.push((b as i16, c as i16, v[0]));
+            let tol = if c < 3 { 1e-4 } else if c < 6 { ROT_TOL } else { POS_TOL };
+            if c < 3 || v.iter().all(|x| (x - v[0]).abs() <= tol) {
+                continue;
+            }
+            let keys = reduce(&v, tol).into_iter().map(|i| (i, v[i])).collect();
+            forward.push(Curve { joint: b as i16, channel: c as u8, keys });
+        }
+    }
+    let mut inverse: Vec<Curve> = Vec::new();
+    let mut travel_ids = [-1i32; 3];
+    for (axis, ch) in [(0usize, 6u8), (1, 7), (2, 8)] {
+        let v: Vec<f32> = travel.iter().map(|t| t[axis]).collect();
+        if v.iter().all(|x| x.abs() <= POS_TOL) {
+            continue;
+        }
+        travel_ids[axis] = (forward.len() + inverse.len()) as i32;
+        let keys = reduce(&v, POS_TOL).into_iter().map(|i| (i, v[i])).collect();
+        inverse.push(Curve { joint: TRAVEL_JOINT, channel: ch, keys });
+    }
+
+    // Tables: times (one a frame), values, one zero tangent.
+    let times: Vec<f32> = (0..frames.max(1)).map(|f| f as f32).collect();
+    let mut values: Vec<f32> = Vec::new();
+    let mut keys: Vec<[u8; 8]> = Vec::new();
+    let fcurve_bytes = |list: &[Curve], keys: &mut Vec<[u8; 8]>, values: &mut Vec<f32>| -> Result<Vec<u8>> {
+        let mut out = Vec::new();
+        for c in list {
+            if c.keys.len() > 255 {
+                return Err(Error::Format("a channel has more than 255 keys".into()));
+            }
+            let start = keys.len();
+            for &(t, v) in &c.keys {
+                let vi = values.len();
+                values.push(v);
+                let mut k = [0u8; 8];
+                let tt = ((t as u16) << 2) | 1;
+                k[0..2].copy_from_slice(&tt.to_le_bytes());
+                k[2..4].copy_from_slice(&(vi as i16).to_le_bytes());
+                k[4..6].copy_from_slice(&0i16.to_le_bytes());
+                k[6..8].copy_from_slice(&0i16.to_le_bytes());
+                keys.push(k);
+            }
+            out.extend_from_slice(&c.joint.to_le_bytes());
+            out.push(c.channel & 0xF);
+            out.push(c.keys.len() as u8);
+            out.extend_from_slice(&(start as i16).to_le_bytes());
+        }
+        Ok(out)
+    };
+    let fwd_bytes = fcurve_bytes(&forward, &mut keys, &mut values)?;
+    let inv_bytes = fcurve_bytes(&inverse, &mut keys, &mut values)?;
+    if values.len() > i16::MAX as usize || keys.len() > i16::MAX as usize {
+        return Err(Error::Format(format!("{} values / {} keys: more than KH2's 16-bit indices hold", values.len(), keys.len())));
+    }
+
+    // The template's pieces we keep.
+    let helper_count = total.saturating_sub(bone_count);
+    let ik = BASE + hdr(0x08)? as usize;
+    let ik_bytes = template.get(ik..ik + helper_count * 0x40).ok_or_else(|| Error::Format("template IK helpers".into()))?.to_vec();
+    let jt = BASE + hdr(0x0C)? as usize;
+    let joint_bytes = template.get(jt..jt + total * 4).ok_or_else(|| Error::Format("template joints".into()))?.to_vec();
+    let ext_count = joint_bytes.chunks(4).filter(|j| j[2] & 0x80 != 0).count();
+    let ex = BASE + hdr(0x90)? as usize;
+    let ext_bytes = template.get(ex..ex + ext_count * 2).ok_or_else(|| Error::Format("template external effectors".into()))?.to_vec();
+    let ro = hdr(0x1C)?;
+    if ro <= 0 {
+        return Err(Error::Format("template has no root block".into()));
+    }
+    let ro = BASE + ro as usize;
+    let mut root = template.get(ro..ro + 0x54).ok_or_else(|| Error::Format("template root block".into()))?.to_vec();
+    root[0x20..0x2C].fill(0);
+    for (i, id) in [-1i32, -1, -1, -1, -1, -1, travel_ids[0], travel_ids[1], travel_ids[2]].iter().enumerate() {
+        let id = if *id >= 0 { *id } else { -1 };
+        root[0x30 + i * 4..0x34 + i * 4].copy_from_slice(&id.to_le_bytes());
+    }
+
+    // Lay it out (offsets from BASE), 16-byte aligned blocks.
+    let mut body: Vec<u8> = template[..BASE + 0x10].to_vec();
+    let mut header = template[h..h + 0xA0].to_vec();
+    body.resize(BASE + 0xB0, 0);
+    let place = |bytes: &[u8], body: &mut Vec<u8>| -> i32 {
+        while body.len() % 16 != 0 {
+            body.push(0);
+        }
+        let at = (body.len() - BASE) as i32;
+        body.extend_from_slice(bytes);
+        at
+    };
+    let pose_bytes: Vec<u8> = initial.iter().flat_map(|(j, c, v)| [j.to_le_bytes().to_vec(), c.to_le_bytes().to_vec(), v.to_le_bytes().to_vec()].concat()).collect();
+    let o_pose = place(&pose_bytes, &mut body);
+    let o_fwd = place(&fwd_bytes, &mut body);
+    let o_inv = place(&inv_bytes, &mut body);
+    let o_keys = place(&keys.concat(), &mut body);
+    let o_times = place(&times.iter().flat_map(|t| t.to_le_bytes()).collect::<Vec<_>>(), &mut body);
+    let o_vals = place(&values.iter().flat_map(|t| t.to_le_bytes()).collect::<Vec<_>>(), &mut body);
+    let o_tans = place(&0f32.to_le_bytes(), &mut body);
+    let o_ik = place(&ik_bytes, &mut body);
+    let o_joints = place(&joint_bytes, &mut body);
+    let o_root = place(&root, &mut body);
+    let o_end = place(&[0u8; 16], &mut body);
+    let o_ext = place(&ext_bytes, &mut body);
+    while body.len() % 16 != 0 {
+        body.push(0);
+    }
+    let set = |hd: &mut Vec<u8>, o: usize, v: i32| hd[o..o + 4].copy_from_slice(&v.to_le_bytes());
+    set(&mut header, 0x04, frames as i32);
+    set(&mut header, 0x08, o_ik);
+    set(&mut header, 0x0C, o_joints);
+    set(&mut header, 0x14, o_pose);
+    set(&mut header, 0x18, initial.len() as i32);
+    set(&mut header, 0x1C, o_root);
+    set(&mut header, 0x20, o_fwd);
+    set(&mut header, 0x24, forward.len() as i32);
+    set(&mut header, 0x28, o_inv);
+    set(&mut header, 0x2C, inverse.len() as i32);
+    set(&mut header, 0x30, o_keys);
+    set(&mut header, 0x34, o_times);
+    set(&mut header, 0x38, o_vals);
+    set(&mut header, 0x3C, o_tans);
+    for (o, v) in [(0x40, o_end), (0x44, 0), (0x48, o_end), (0x4C, o_end), (0x50, o_end), (0x54, 0), (0x58, o_end), (0x5C, 0)] {
+        set(&mut header, o, v);
+    }
+    let fps = 30.0f32;
+    let end = (frames.saturating_sub(1)) as f32 / 2.0;
+    header[0x80..0x84].copy_from_slice(&0f32.to_le_bytes());
+    header[0x84..0x88].copy_from_slice(&end.to_le_bytes());
+    header[0x88..0x8C].copy_from_slice(&fps.to_le_bytes());
+    header[0x8C..0x90].copy_from_slice(&end.to_le_bytes());
+    set(&mut header, 0x90, o_ext);
+    body[h..h + 0xA0].copy_from_slice(&header);
+    Ok(body)
+}
+
+/// A BAR file from entries (`kind`, `duplicate`, name, data).
+pub fn write_bar(motionset: i32, entries: &[(u16, i16, [u8; 4], Vec<u8>)]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&0x0152_4142u32.to_le_bytes());
+    out.extend_from_slice(&(entries.len() as i32).to_le_bytes());
+    out.extend_from_slice(&0i32.to_le_bytes());
+    out.extend_from_slice(&motionset.to_le_bytes());
+    let table = out.len();
+    out.resize(table + entries.len() * 16, 0);
+    for (i, (kind, dup, name, data)) in entries.iter().enumerate() {
+        while out.len() % 16 != 0 {
+            out.push(0);
+        }
+        let at = out.len();
+        out.extend_from_slice(data);
+        let e = table + i * 16;
+        out[e..e + 2].copy_from_slice(&kind.to_le_bytes());
+        out[e + 2..e + 4].copy_from_slice(&dup.to_le_bytes());
+        out[e + 4..e + 8].copy_from_slice(name);
+        let (off, size) = if data.is_empty() { (at as i32, 0) } else { (at as i32, data.len() as i32) };
+        out[e + 8..e + 12].copy_from_slice(&off.to_le_bytes());
+        out[e + 12..e + 16].copy_from_slice(&size.to_le_bytes());
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reduce_keeps_corners_and_drops_lines() {
+        let v = [0.0, 1.0, 2.0, 3.0, 2.0, 1.0, 1.0, 1.0];
+        assert_eq!(reduce(&v, 0.01), vec![0, 3, 5, 7]);
+    }
+
+    #[test]
+    fn euler_round_trip() {
+        let q = kh2_anim::euler_quat(Vec3::new(0.3, -1.1, 2.0));
+        let e = euler_near(q, None);
+        let back = kh2_anim::euler_quat(Vec3::from(e));
+        assert!(back.angle_between(q) < 1e-4);
+        let e2 = euler_near(q, Some([0.3 + 6.283185, -1.1, 2.0]));
+        assert!((e2[0] - (0.3 + 6.283185)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn bar_round_trip() {
+        let b = write_bar(0, &[(17, 0, *b"A300", vec![1, 2, 3]), (17, 0, *b"DUMM", vec![])]);
+        let p = kh2_formats::bar::Bar::parse(&b).unwrap();
+        assert_eq!(p.entries.len(), 2);
+        assert_eq!(p.entries[0].data, &[1, 2, 3]);
+        assert!(p.entries[1].data.is_empty());
+    }
+}

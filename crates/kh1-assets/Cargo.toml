@@ -9,3 +9,5 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 kh2-formats.workspace = true
 kh1-data.workspace = true
+kh2-anim.workspace = true
+glam = "0.29"
