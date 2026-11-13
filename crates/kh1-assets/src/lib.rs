@@ -394,6 +394,13 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
     let mset2 = kh2.read(KH2_SORA_MSET)?;
     let spans = swing_triggers::keyblade_spans(&kh2.read(KH2_KEYBLADE_MSET)?)?;
     let mut built = Built::default();
+    // The bones KH2's mesh doesn't hang on that our transfer turns otherwise than KH2's own motions
+    // take KH2's battle idle's turns (`convert::set_canon`), so KH2's blends between its own
+    // motions and ours don't swing what hangs under them.
+    match player_model::canon_for_kh2_model(&kh2.read(KH2_SORA_MDLX)?, &kh1_bones, &kh2_bones, &motions, &mset2) {
+        Some((keep, idle)) => convert::set_canon(&kh2_bones, keep, &idle),
+        None => convert::clear_canon(),
+    }
     let out = convert::map_bar_filled(&mset2, &fills(), |row, kind, data| {
         let Some(k) = kh1_motion_at(row).filter(|_| kind == BAR_TYPE_ANB && !data.is_empty()) else { return Ok(data.to_vec()) };
         let m = motions.get(k).cloned().flatten().ok_or_else(|| Error::NotFound(format!("KH1 motion {k}")))?;
@@ -452,6 +459,8 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
             Ok(out)
         })
     })?;
+    convert::clear_canon();
+    let out = out;
     if built.motions.len() != kh1_slots().len() {
         return Err(Error::Format(format!("KH2's motion set had {} of the {} KH1 slots", built.motions.len(), kh1_slots().len())));
     }
@@ -481,7 +490,18 @@ pub fn build_kh1_model(root: impl AsRef<Path>, kh1_swings: bool) -> Result<(Vec<
     let kh2_bones = kh2_formats::anim::parse_skeleton(&mdlx)?;
     let motions = kh1_data::mset::parse(&kh1.read(Source::Original, KH1_SORA_MSET)?)?;
     let spans = swing_triggers::keyblade_spans(&kh2.read(KH2_KEYBLADE_MSET)?)?;
-    let (mset, swings) = player_model::build_mset(&kh2.read(KH2_SORA_MSET)?, &kh2_bones, &kh1_bones, &motions, kh1_swings, &spans)?;
+    // The bones KH1's mesh doesn't hang on that KH1's rig and the transfer turn differently take
+    // KH1's battle idle's turns in every motion (`convert::set_canon`): KH2's blends between the two
+    // kinds swung everything under them (the owner: "only contorts when transitioning into a KH2
+    // animation").
+    let kh2_mset = kh2.read(KH2_SORA_MSET)?;
+    match player_model::canon_for_kh1_model(&mdls, &kh1_bones, &kh2_bones, &motions, &kh2_mset) {
+        Some((keep, idle)) => convert::set_canon(&kh1_bones, keep, &idle),
+        None => convert::clear_canon(),
+    }
+    let built_mset = player_model::build_mset(&kh2_mset, &kh2_bones, &kh1_bones, &motions, kh1_swings, &spans);
+    convert::clear_canon();
+    let (mset, swings) = built_mset?;
     // KH1's HD textures sit at the PS2 textures' offsets in the .mdls (-<offset>.dds): sorted by
     // offset, they are the textures in order. Missing ones leave KH2's PS2 upscale to the game.
     let mut hd: Vec<_> = kh1.read_remastered_all(Source::Original, KH1_SORA_MDLS).unwrap_or_default().into_iter().filter(|a| a.name.ends_with(".dds") && u32::from_str_radix(a.name.trim_start_matches('-').trim_end_matches(".dds"), 16).is_ok()).collect();

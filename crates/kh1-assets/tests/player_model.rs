@@ -825,3 +825,25 @@ fn jump_headers() {
         }
     }
 }
+
+/// With the hidden bones canonical (as `build_kh1_model` sets them), the set still fits KH2's size.
+#[test]
+fn canon_hidden_bones() {
+    let Some((mdls, mdlx)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let mset2 = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let (keep, reference) = player_model::canon_for_kh1_model(&mdls, &kh1, &kh2, &mset1, &mset2).unwrap();
+    eprintln!("KH1 model: {} hidden bones made one", keep.iter().filter(|k| !**k).count());
+    kh1_assets::select_kh1_slots(true, true, true);
+    kh1_assets::convert::set_canon(&kh1, keep, &reference);
+    let (out, _) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true, &Default::default()).unwrap();
+    kh1_assets::convert::clear_canon();
+    kh1_assets::select_kh1_slots(true, false, false);
+    eprintln!("P_EX100.mset (KH1 model, every KH1 slot): {} bytes (KH2's {})", out.len(), mset2.len());
+    assert!(out.len() <= mset2.len());
+    let (keep2, _) = player_model::canon_for_kh2_model(&mdlx, &kh1, &kh2, &mset1, &mset2).unwrap();
+    eprintln!("KH2 model: {} hidden bones made one", keep2.iter().filter(|k| !**k).count());
+}

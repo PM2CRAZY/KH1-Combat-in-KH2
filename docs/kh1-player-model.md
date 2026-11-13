@@ -212,3 +212,31 @@ stretching.
   nearby numbers.
 - KH2's model on KH1's animations (`kh1_data::inverse`, ours, changed from the sister's at t23)
   goes through the same KH2 blends; the same check applies to its rows.
+
+### t68: one orientation for the hidden bones the two sources turn differently
+
+The owner (2026-11-13): "KH1's sora only contorts when transitioning into a KH2 animation".
+
+- Cause (Checked (files), offline on the owner's files): KH1's rig and our transfer of KH2's
+  motions orient the bones the mesh doesn't hang on (KH1's root 0, spine helper 1, wrist and twist
+  helpers 91 / 92 / 103 / 207, the Keyblade chain 281..283, ...) very differently for the same
+  visible stance: KH1's battle idle against KH2's battle idle moved onto KH1's bones, up to 180°
+  apart against their parents. The mesh doesn't show it, but a blend mixes each bone's local
+  turn, so through every KH1 → KH2 motion change the bones hanging under them swung.
+- Fix (`convert::set_canon` / `keep_alike`, `player_model::canon_for_kh1_model`): every motion we
+  write for KH1's model gives those hidden bones one orientation: the battle idle's turn against
+  their parent. Which bones: the hidden ones (no mesh vertex, not a palm) that the two sources turn
+  more than 30° apart in four shared stances (battle idle, field idle, run, fall; first and middle
+  frames): 37 of KH1's 293. Every bone the mesh hangs on keeps its place and turn exactly, so the
+  drawn mesh in each motion is what it was; only the blends between motions change.
+- Measured (worst joint off the true halfway pose, KH1 → KH2 motion): battle idle → glide 55 → 18,
+  field idle → glide 59 → 17, run → glide 67 → 25, fall → glide 50 → 18, battle idle → run 47 → 21,
+  battle idle → fall 46 → 37. KH2's own motions on KH2's bones: 33–35 for the same kind of change.
+- KH2's model on KH1's animations (`canon_for_kh2_model`): the same rule on KH2's skeleton, the
+  reference KH2's own battle idle, the hidden bones (no vertex in the model's matrix lists,
+  `kh2_formats::mdlx::bones_used`; not the palms 178 / 86) that our transfer and KH2's own motions
+  turn more than 30° apart: 27 of 228. Our KH1 motion → KH2's own: battle idle → glide 45 → 34,
+  run → glide 112 → 66, battle idle → fall 63 → 39, run → run 86 → 38, first swing → idle 72 → 37.
+- Size: P_EX100.mset with every KH1 slot 2,599,536 (KH2's 2,611,760). Assumption still: KH2 blends
+  motions by their local turns (the result is the same whichever way it mixes them: the fix makes
+  the two sides' hidden bones agree).

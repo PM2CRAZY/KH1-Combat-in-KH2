@@ -101,6 +101,36 @@ pub fn parse(mdlx: &[u8]) -> Result<Model> {
     Ok(Model { bones, groups, textures })
 }
 
+/// The bones the first model's mesh hangs on: every bone a VIF packet's matrix list names (each
+/// weight of a vertex comes in through one of these), so a bone not here moves no vertex.
+pub fn bones_used(mdlx: &[u8]) -> Result<Vec<bool>> {
+    let bar = Bar::parse(mdlx)?;
+    let Some(model) = bar.entries.iter().find(|e| e.kind == BAR_TYPE_MODEL) else {
+        return bad("MDLX has no model entry");
+    };
+    let n = parse_skeleton(mdlx)?.len();
+    let d = model.data;
+    let base = RESERVED;
+    let count = Reader::at(d, base + 0x1C).u16()? as usize;
+    let mut used = vec![false; n];
+    for g in 0..count {
+        let mut r = Reader::at(d, base + 0x20 + g * 0x20);
+        let (_, _, _, _) = (r.u32()?, r.u32()?, r.u32()?, r.u32()?);
+        let dma = r.u32()? as usize;
+        let _ = r.u32()?;
+        let tags = (r.u32()? as usize).min(0x10000);
+        for i in 0..tags {
+            let t = DmaTag::read(d, base + dma + i * 16)?;
+            if t.id == 3 && t.vif[0] != 0 {
+                if let Some(u) = used.get_mut(t.addr as usize) {
+                    *u = true;
+                }
+            }
+        }
+    }
+    Ok(used)
+}
+
 /// The triangle groups of one model entry (BAR type 4) whose skeleton has `bone_count` bones.
 pub fn parse_model_groups(d: &[u8], bone_count: usize) -> Result<Vec<Group>> {
     parse_groups(d, bone_count)

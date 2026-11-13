@@ -264,3 +264,77 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
     }
     Ok((out, swings))
 }
+
+/// The stances both sources give, to pick the hidden bones they turn differently: (KH1 motion,
+/// KH2 motion set row) at their first and middle frames: battle idle, field idle, run, fall.
+const CANON_PAIRS: [(usize, usize); 4] = [(1, 0), (0, 2), (7, 8), (10, 18)];
+
+/// How far apart (degrees, against the parent) a hidden bone may be turned by KH1's rig and by
+/// our transfer before it gets the one rule.
+pub const CANON_DEG: f32 = 30.0;
+
+/// KH1's model: which bones keep their turn and the reference pose (KH1's battle idle) for
+/// `convert::set_canon`. Kept: the mesh's bones, the palms (the Keyblade's), and every hidden bone KH1's rig and the transfer (`kh1_data::retarget`) turn alike within
+/// `CANON_DEG` in the `CANON_PAIRS` stances.
+pub fn canon_for_kh1_model(mdls: &[u8], kh1: &[Bone], kh2: &[Bone], kh1_motions: &[Option<kh1_data::mset::Motion>], kh2_mset: &[u8]) -> Option<(Vec<bool>, Vec<glam::Mat4>)> {
+    let mut keep = vec![false; kh1.len()];
+    for m in kh1_data::mdls::parse_mesh(mdls).ok()?.0 {
+        for v in m.vertices {
+            if let Some(k) = keep.get_mut(v.joint as usize) {
+                *k = true;
+            }
+        }
+    }
+    // (The bones KH2's skeleton data and collision list point at, `BONE_MAP`, keep their places
+    // either way; their offsets were KH2's bones' and are no truer on one KH1 orientation than another.)
+    for b in PALMS {
+        if let Some(k) = keep.get_mut(b as usize) {
+            *k = true;
+        }
+    }
+    let r = kh1_data::retarget::Retarget::new(kh1, kh2);
+    let mut pairs: Vec<(Vec<glam::Mat4>, Vec<glam::Mat4>)> = Vec::new();
+    for (k1, row) in CANON_PAIRS {
+        let (Some(m1), Some(m2)) = (kh1_motions.get(k1).and_then(|m| m.as_ref()), crate::convert::row_motion(kh2_mset, row)) else { continue };
+        let Ok((p2, t2)) = crate::convert::kh2_round_trip(&m2, kh2) else { continue };
+        for (f1, f2) in [(0, 0), (m1.frames.max(1) as usize / 2, p2.len() / 2)] {
+            let a = kh1_data::rig::pose(m1, kh1, f1 as f32).bones;
+            let off = glam::Mat4::from_translation(-t2[f2]);
+            let b = r.pose(&p2[f2].iter().map(|m| off * *m).collect::<Vec<_>>());
+            pairs.push((a, b));
+        }
+    }
+    let refs: Vec<(&[glam::Mat4], &[glam::Mat4])> = pairs.iter().map(|(a, b)| (a.as_slice(), b.as_slice())).collect();
+    crate::convert::keep_alike(kh1, &mut keep, &refs, CANON_DEG);
+    let reference = kh1_data::rig::pose(kh1_motions.get(1)?.as_ref()?, kh1, 0.0).bones;
+    Some((keep, reference))
+}
+
+/// KH2's model: the same for our KH1 motions on KH2's skeleton (`convert::kh2_poses`) against KH2's
+/// own: kept the mesh's bones (`kh2_formats::mdlx::bones_used`), the weapon's palms (178 / 86) and
+/// the hidden bones turned alike; the reference KH2's battle idle (row 0).
+pub fn canon_for_kh2_model(mdlx: &[u8], kh1: &[Bone], kh2: &[Bone], kh1_motions: &[Option<kh1_data::mset::Motion>], kh2_mset: &[u8]) -> Option<(Vec<bool>, Vec<glam::Mat4>)> {
+    let mut keep = kh2_formats::mdlx::bones_used(mdlx).ok()?;
+    for b in [178usize, 86] {
+        if let Some(k) = keep.get_mut(b) {
+            *k = true;
+        }
+    }
+    let mut pairs: Vec<(Vec<glam::Mat4>, Vec<glam::Mat4>)> = Vec::new();
+    let mut reference = None;
+    for (k1, row) in CANON_PAIRS {
+        let (Some(m1), Some(m2)) = (kh1_motions.get(k1).and_then(|m| m.as_ref()), crate::convert::row_motion(kh2_mset, row)) else { continue };
+        let Ok((p2, t2)) = crate::convert::kh2_round_trip(&m2, kh2) else { continue };
+        let (p1, t1) = crate::convert::kh2_poses(m1, kh1, kh2);
+        if row == 0 {
+            reference = p2.first().cloned();
+        }
+        for (f1, f2) in [(0, 0), (p1.len() / 2, p2.len() / 2)] {
+            let (o1, o2) = (glam::Mat4::from_translation(-t1[f1]), glam::Mat4::from_translation(-t2[f2]));
+            pairs.push((p2[f2].iter().map(|m| o2 * *m).collect(), p1[f1].iter().map(|m| o1 * *m).collect()));
+        }
+    }
+    let refs: Vec<(&[glam::Mat4], &[glam::Mat4])> = pairs.iter().map(|(a, b)| (a.as_slice(), b.as_slice())).collect();
+    crate::convert::keep_alike(kh2, &mut keep, &refs, CANON_DEG);
+    Some((keep, reference?))
+}

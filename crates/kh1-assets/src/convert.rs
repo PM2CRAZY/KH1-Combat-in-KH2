@@ -369,6 +369,120 @@ fn fit_hermite(v: &[f32], tol: f32) -> Vec<(usize, f32, f32)> {
     keys.into_iter().map(|i| (i, v[i], slope(i))).collect()
 }
 
+/// One orientation for every bone the mesh doesn't hang on, the same in every motion we write
+/// (`set_canon`): such a bone's turn can't be seen, but KH2 blends motions bone by bone in their
+/// local turns, so a hidden bone turned one way in one motion and another way in the next (KH1's
+/// rig and our transfer orient them differently: up to 180° on KH1's root, spine helpers, wrists
+/// and Keyblade chain) made every bone under it swing through the blend. Each kept bone (skinned,
+/// or one KH2 hangs a weapon on) keeps its place and turn exactly, so the mesh is the same.
+struct Canon {
+    keep: Vec<bool>,
+    /// Each bone's turn against its parent in the reference pose.
+    rest: Vec<Quat>,
+}
+
+static CANON: std::sync::RwLock<Option<Canon>> = std::sync::RwLock::new(None);
+
+/// Sets the hidden bones' orientation for the motions written next on `bones` (a skeleton of that
+/// size): `keep` the bones whose turn is kept (the mesh's and the weapon's), `reference` a pose
+/// (model space) whose local turns the others take.
+pub fn set_canon(bones: &[Bone], keep: Vec<bool>, reference: &[Mat4]) {
+    let rest = (0..bones.len())
+        .map(|b| {
+            let (_, r, _) = reference[b].to_scale_rotation_translation();
+            match usize::try_from(bones[b].parent).ok().filter(|&p| p < b) {
+                Some(p) => reference[p].to_scale_rotation_translation().1.inverse() * r,
+                None => r,
+            }
+        })
+        .collect();
+    if let Ok(mut c) = CANON.write() {
+        *c = Some(Canon { keep, rest });
+    }
+}
+
+/// The interpolated motion of row `row` of a motion set, if it has one.
+pub fn row_motion(mset: &[u8], row: usize) -> Option<Vec<u8>> {
+    use kh2_formats::motion::{BAR_TYPE_ANB, BAR_TYPE_MOTION};
+    let mut found = None;
+    map_bar(mset, |r, kind, data| {
+        if r == row && kind == BAR_TYPE_ANB && found.is_none() {
+            map_bar(data, |_, k, m| {
+                if k == BAR_TYPE_MOTION && found.is_none() && matches!(kh2_formats::anim::Interpolated::parse(m), Ok(Some(_))) {
+                    found = Some(m.to_vec());
+                }
+                Ok(m.to_vec())
+            })?;
+        }
+        Ok(data.to_vec())
+    })
+    .ok()?;
+    found
+}
+
+/// Of the hidden bones, keeps (leaves alone) those the two poses `a` and `b` (the same stance from
+/// KH1's rig and from our transfer) turn alike within `deg` against their parents: only the hidden
+/// bones the two sources orient differently need the one rule, and each one more costs keys in the
+/// bones under it.
+pub fn keep_alike(bones: &[Bone], keep: &mut [bool], pairs: &[(&[Mat4], &[Mat4])], deg: f32) -> usize {
+    let local = |w: &[Mat4], i: usize| -> Quat {
+        let r = w[i].to_scale_rotation_translation().1;
+        match usize::try_from(bones[i].parent).ok().filter(|&p| p < i) {
+            Some(p) => w[p].to_scale_rotation_translation().1.inverse() * r,
+            None => r,
+        }
+    };
+    let mut hidden = 0;
+    for i in 0..bones.len().min(keep.len()) {
+        if keep[i] {
+            continue;
+        }
+        let differs = pairs.iter().any(|(a, b)| i < a.len() && i < b.len() && local(a, i).angle_between(local(b, i)).to_degrees() > deg);
+        if differs {
+            hidden += 1;
+        } else {
+            keep[i] = true;
+        }
+    }
+    hidden
+}
+
+pub fn clear_canon() {
+    if let Ok(mut c) = CANON.write() {
+        *c = None;
+    }
+}
+
+/// The bones `CANON` doesn't keep, turned as its reference has them on their (possibly turned)
+/// parents; places unchanged.
+fn canon(bones: &[Bone], poses: &[Vec<Mat4>]) -> Option<Vec<Vec<Mat4>>> {
+    let g = CANON.read().ok()?;
+    let c = g.as_ref()?;
+    if c.keep.len() != bones.len() || poses.first().is_some_and(|p| p.len() != bones.len()) {
+        return None;
+    }
+    Some(
+        poses
+            .iter()
+            .map(|p| {
+                let mut out: Vec<Mat4> = Vec::with_capacity(p.len());
+                for b in 0..bones.len() {
+                    if c.keep[b] {
+                        out.push(p[b]);
+                        continue;
+                    }
+                    let rot = match usize::try_from(bones[b].parent).ok().filter(|&x| x < b) {
+                        Some(par) => out[par].to_scale_rotation_translation().1 * c.rest[b],
+                        None => c.rest[b],
+                    };
+                    out.push(Mat4::from_rotation_translation(rot.normalize(), p[b].w_axis.truncate()));
+                }
+                out
+            })
+            .collect(),
+    )
+}
+
 static OWN_SEED: std::sync::RwLock<Option<Vec<Option<[f32; 3]>>>> = std::sync::RwLock::new(None);
 
 /// The Euler forms every motion for a new skeleton starts from (`write_motion`): the bones' angles
@@ -428,6 +542,8 @@ fn write_motion_ex(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &
     if own && kh2.iter().enumerate().any(|(i, b)| b.parent >= i as i16) {
         return Err(Error::Format("skeleton bones must follow their parents".into()));
     }
+    let canon_poses = canon(kh2, poses);
+    let poses: &[Vec<Mat4>] = canon_poses.as_deref().unwrap_or(poses);
     let frames = poses.len();
     let seed = if own { own_seed(kh2) } else { template_angles(template, kh2) };
     let loc = locals(kh2, poses, &seed);
@@ -903,3 +1019,4 @@ fn map_bar_ex(original: &[u8], fills: &[(usize, usize)], share: bool, mut f: imp
     }
     Ok(out)
 }
+

@@ -1,3 +1,9 @@
+### 2026-11-13: Stage 68 (testing branch: the hidden bones agree across KH1 and KH2 motions)
+- **Hidden bones agree across KH1's and KH2's motions (both models).** The owner (2026-11-13): "KH1's sora only contorts when transitioning into a KH2 animation"; and KH2's model on KH1's animations without the stretching.
+  - Cause (Checked (files), offline): KH1's rig and our transfer turn the bones no vertex hangs on (KH1's root, spine helper, wrist / twist helpers, Keyblade chain) up to 180° apart for the same stance; KH2's blends swung everything under them.
+  - `convert::set_canon` / `keep_alike`, `player_model::canon_for_kh1_model` / `canon_for_kh2_model`, `kh2_formats::mdlx::bones_used`: hidden bones the two sources turn > 30° apart in four shared stances take the battle idle's turn in every motion we write (37 of KH1's 293, 27 of KH2's 228); mesh bones and palms exact.
+  - Measured blends KH1 → KH2 motion, worst joint off the true halfway pose: idle → glide 55 → 18, run → glide 67 → 25; KH2 model run → glide 112 → 66. P_EX100.mset 2,599,536 (KH2's 2,611,760). Not checked in game.
+
 ### 2026-11-13: Stage 67 (testing branch: Phase 4: KH2's MP Haste family as KH1's MP Haste, stacked)
 - **MP Haste, Hastera, Hastega as KH1's MP Haste, stacked.** The owner (answer): "They stack".
   - KH1 `0x1402BF330`: hit units × (1 + 150 % with MP Haste), at least 1, at most 250 %. KH2: the three add 0.25 / 0.5 / 0.75 to status `+0x20C` (`0x140401730`, sstm `+0x120..+0x128`), read as 1 / 2 / 3 steps. Checked (decomp + files).
