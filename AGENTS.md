@@ -1,3 +1,11 @@
+### 2026-11-13: Stage 36 (testing branch: KH1 hit, combo and trail windows)
+Owner: "Finish Phase 2, and add the config menu". Phase 2 step: KH1's swing timing.
+
+- `kh1_data::mset`: a motion's events (`+0x3C`): hit windows, combo window, trail, foot effects, sounds. Checked (files) against the sister project's reading.
+- `kh2_formats::motion::MotionTriggers::write`: byte for byte with KH2's 123 trigger lists (Checked (files)).
+- `kh1_assets::swing_triggers`: in each swing slot the Keyblade's hit window (range 10, ATKP kept) and trail (12) at KH1's frames, Sora's combo window (11) at KH1's (none on the finishers), every other trigger moved with the hit. `W_EX010.mset` is written again with these (16 bytes shorter than KH2's; the build refuses a longer one).
+- Assumption: KH2's range 11 acts as KH1's combo window. Details: docs/combos.md.
+
 ### 2026-11-13: Stage 35 (testing branch: Remove the Keyblade-switch diagnostic)
 Owner: "no crash!" (t34). The diagnostic hook on `0x140407DE0` (t31/t32, `win/itemcheck.rs`) is removed; the crash report (`win/crash.rs`) stays.
 

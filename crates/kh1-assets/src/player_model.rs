@@ -156,7 +156,7 @@ pub fn build(kh1_mdls: &[u8], kh2_mdlx: &[u8]) -> Result<Vec<u8>> {
 /// swing slots (`crate::SWINGS`) KH1's combo motions instead, posed by KH1's own bone pass
 /// (`kh1_data::rig`), as KH1 plays them. Returns the set and the swings written (KH1 motion, KH2
 /// id, frames). With `kh1_swings` false (`combos = kh2`) the swings are KH2's, converted too.
-pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Option<kh1_data::mset::Motion>], kh1_swings: bool) -> Result<(Vec<u8>, Vec<(usize, usize, usize)>)> {
+pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Option<kh1_data::mset::Motion>], kh1_swings: bool, spans: &std::collections::HashMap<usize, (i16, i16)>) -> Result<(Vec<u8>, Vec<(usize, usize, usize)>)> {
     use crate::convert::{kh2_round_trip, map_bar, write_motion};
     use kh2_formats::motion::{BAR_TYPE_ANB, BAR_TYPE_MOTION};
     let mut swings = Vec::new();
@@ -165,7 +165,13 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
             return Ok(data.to_vec());
         }
         let swing = crate::kh1_motion_at(row).filter(|_| kh1_swings);
+        let len = crate::swing_triggers::anb_frames(data);
         map_bar(data, |_, k, m| {
+            if let (Some(s), kh2_formats::motion::BAR_TYPE_MOTION_TRIGGERS) = (swing, k) {
+                if let (Some(motion), false) = (kh1_motions.get(s).and_then(|x| x.as_ref()), m.is_empty()) {
+                    return Ok(crate::swing_triggers::sora(&kh2_formats::motion::MotionTriggers::parse(m)?, spans.get(&(row / 4)).copied(), len, motion).write());
+                }
+            }
             if k != BAR_TYPE_MOTION || !matches!(kh2_formats::anim::Interpolated::parse(m), Ok(Some(_))) {
                 return Ok(m.to_vec());
             }

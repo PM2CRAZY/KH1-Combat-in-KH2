@@ -68,6 +68,38 @@ pub struct Motion {
     pub helper_table: Vec<HelperRest>,
     pub helper_chans: Vec<Channel>,
     pub constants: Vec<(u16, u16, f32)>,
+    /// The motion's events (`+0x3C`), Checked (files) against the sister project's reading
+    /// (`KH2-Combat-in-KH1` `docs/kh1-anim-slots.md` §1.4): 12-byte groups `id u16, kind u16, key
+    /// count u32, keys offset u32` ending at `0xFFFFFFFF`, 16-byte keys `time f32, a u16, b u16,
+    /// c u32, d u32`. Kinds: 1 hit window of attack group `id` (a level: on from a key with
+    /// `a = 1`, off at one with `a = 0`), 5 combo window, 7 weapon trail, 4 foot effect, 6 sound.
+    pub events: Vec<Event>,
+}
+
+/// One event group of a motion.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Event {
+    pub kind: u16,
+    pub id: u16,
+    /// (time in frames, a, b, c, d).
+    pub keys: Vec<(f32, u16, u16, u32, u32)>,
+}
+
+impl Motion {
+    /// The frame ranges a level event (`kind`, `id`) is on: from a key whose `a` is non-zero to
+    /// the next key, or the motion's end.
+    pub fn level_ranges(&self, kind: u16, id: u16) -> Vec<(f32, f32)> {
+        let mut out = Vec::new();
+        for e in self.events.iter().filter(|e| e.kind == kind && e.id == id) {
+            for (i, k) in e.keys.iter().enumerate() {
+                if k.1 != 0 {
+                    let end = e.keys.get(i + 1).map_or(self.frames as f32, |n| n.0);
+                    out.push((k.0, end));
+                }
+            }
+        }
+        out
+    }
 }
 
 /// One IK helper's rest values (40 bytes: scale `+0`, parent `+0xC`, rotation `+0x10`,
@@ -145,7 +177,29 @@ fn motion(b: &[u8], at: usize) -> Result<Motion> {
             Ok(((w & 0xFFFF) as u16, (w >> 16) as u16, f(e + 4)?))
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok(Motion { offset: 0, frames, fps, bones, channels, helper_channels: hc_n as u32, helpers: h_n as u32, joint_words, helper_table, helper_chans, constants })
+    let mut events = Vec::new();
+    let ev = u32_at(b, at + 0x3C)? as usize;
+    if ev != 0 {
+        let mut g = at + ev;
+        while events.len() < 64 {
+            let w = u32_at(b, g)?;
+            if w == 0xFFFF_FFFF {
+                break;
+            }
+            let n = (u32_at(b, g + 4)? as usize).min(256);
+            let k_at = at + u32_at(b, g + 8)? as usize;
+            let keys = (0..n)
+                .map(|i| {
+                    let p = k_at + i * 16;
+                    let w = u32_at(b, p + 4)?;
+                    Ok((f32::from_bits(u32_at(b, p)?), (w & 0xFFFF) as u16, (w >> 16) as u16, u32_at(b, p + 8)?, u32_at(b, p + 12)?))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            events.push(Event { id: (w & 0xFFFF) as u16, kind: (w >> 16) as u16, keys });
+            g += 12;
+        }
+    }
+    Ok(Motion { offset: 0, frames, fps, bones, channels, helper_channels: hc_n as u32, helpers: h_n as u32, joint_words, helper_table, helper_chans, constants, events })
 }
 
 fn read_channels(b: &[u8], chans: usize, n: usize, keys: usize) -> Result<Vec<Channel>> {

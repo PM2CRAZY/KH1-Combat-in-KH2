@@ -143,7 +143,7 @@ fn kh2_motions_on_kh1_skeleton() {
     let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
     let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
     let t = std::time::Instant::now();
-    let (out, n) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true).unwrap();
+    let (out, n) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true, &Default::default()).unwrap();
     eprintln!("swings {n:?}; converted in {:?}, {} -> {} bytes", t.elapsed(), mset2.len(), out.len());
     // Every motion reads back on KH1's skeleton, and plays the pose it was written from.
     let (a, b) = (kh2_formats::bar::Bar::parse(&mset2).unwrap(), kh2_formats::bar::Bar::parse(&out).unwrap());
@@ -193,7 +193,7 @@ fn converted_size_by_channel() {
     let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
     let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
     let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
-    let (out, _) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true).unwrap();
+    let (out, _) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true, &Default::default()).unwrap();
     let bar = kh2_formats::bar::Bar::parse(&out).unwrap();
     let mut keys = [0usize; 9];
     let mut curves = [0usize; 9];
@@ -259,7 +259,7 @@ fn keys_on_unweighted_bones() {
     let mset2 = std::fs::read(dir.join("P_EX100.mset")).unwrap();
     let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
     let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
-    let (out, _) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true).unwrap();
+    let (out, _) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true, &Default::default()).unwrap();
     let bar = kh2_formats::bar::Bar::parse(&out).unwrap();
     let (mut on_used, mut on_unused) = (0, 0);
     let mut seen = std::collections::HashSet::new();
@@ -271,4 +271,72 @@ fn keys_on_unweighted_bones() {
         for c in &i.forward { if used.get(c.joint as usize).copied().unwrap_or(true) { on_used += c.keys.len() } else { on_unused += c.keys.len() } }
     }
     eprintln!("keys on used bones {on_used}, unused {on_unused}");
+}
+
+#[test]
+fn kh1_swing_events() {
+    let Some(_) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    for k in kh1_assets::KH1_MOTIONS {
+        let m = mset1[k].as_ref().unwrap();
+        eprintln!("KH1 {k} ({} frames):", m.frames);
+        for e in &m.events {
+            eprintln!("   kind {} id {}: {:?}", e.kind, e.id, e.keys.iter().map(|k| (k.0, k.1, k.2, k.3, k.4)).collect::<Vec<_>>());
+        }
+    }
+}
+
+#[test]
+fn kh2_swing_atkp() {
+    let Some(_) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let b = kh2_formats::battle::Battle::parse(&std::fs::read(dir.join("00battle.bin")).unwrap()).unwrap();
+    for id in [126u16, 127, 128, 129, 130, 131, 132, 133, 134, 147] {
+        for a in b.atkp.iter().filter(|a| a.id == id) {
+            eprintln!("{a:?}");
+        }
+    }
+}
+
+#[test]
+fn triggers_write_back() {
+    let Some(_) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    for f in ["P_EX100.mset", "W_EX010.mset"] {
+        let Ok(d) = std::fs::read(dir.join(f)) else { continue };
+        let bar = kh2_formats::bar::Bar::parse(&d).unwrap();
+        let (mut n, mut same) = (0, 0);
+        for e in &bar.entries {
+            if e.kind != 17 || e.data.is_empty() { continue; }
+            let anb = kh2_formats::bar::Bar::parse(e.data).unwrap();
+            for t in anb.entries.iter().filter(|x| x.kind == 16 && !x.data.is_empty()) {
+                let p = kh2_formats::motion::MotionTriggers::parse(t.data).unwrap();
+                let w = p.write();
+                assert_eq!(kh2_formats::motion::MotionTriggers::parse(&w).unwrap(), p);
+                n += 1;
+                if w == t.data { same += 1 } else if n - same < 3 { eprintln!("{f} {}: ours {:02x?}\n   kh2 {:02x?}", e.name, &w[..w.len().min(24)], &t.data[..t.data.len().min(24)]); }
+            }
+        }
+        eprintln!("{f}: {n} trigger lists, {same} byte for byte");
+    }
+}
+
+#[test]
+fn kh1_windows_on_kh2_triggers() {
+    let Some(_) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let Ok(w) = std::fs::read(dir.join("W_EX010.mset")) else { return };
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let out = kh1_assets::swing_triggers::build_keyblade(&w, &mset1).unwrap();
+    eprintln!("W_EX010.mset {} -> {} bytes", w.len(), out.len());
+    let spans = kh1_assets::swing_triggers::keyblade_spans(&w).unwrap();
+    let p = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let (pb, bb) = (kh2_formats::bar::Bar::parse(&p).unwrap(), kh2_formats::bar::Bar::parse(&out).unwrap());
+    for (id, k) in kh1_assets::SWINGS {
+        let blade = kh2_formats::motion::Anb::parse(bb.entries[id * 4].data).unwrap().triggers;
+        let a = pb.entries[id * 4].data;
+        let sora = kh1_assets::swing_triggers::sora(&kh2_formats::motion::Anb::parse(a).unwrap().triggers, spans.get(&id).copied(), kh1_assets::swing_triggers::anb_frames(a), mset1[k].as_ref().unwrap());
+        eprintln!("{id} <- KH1 {k}: blade {:?}\n   sora {:?} frames {:?}", blade.ranges.iter().map(|r| (r.start, r.end, r.id)).collect::<Vec<_>>(), sora.ranges.iter().map(|r| (r.start, r.end, r.id)).collect::<Vec<_>>(), sora.frames.iter().map(|f| (f.frame, f.id)).collect::<Vec<_>>());
+    }
 }

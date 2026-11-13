@@ -13,6 +13,7 @@
 
 pub mod convert;
 pub mod player_model;
+pub mod swing_triggers;
 
 use kh1_data::{Kh1Install, Source};
 use kh2_formats::bar::Bar;
@@ -26,6 +27,8 @@ pub const KH1_SORA_MDLS: &str = "xa_ex_0010.mdls";
 /// KH2 Sora: motions and model.
 pub const KH2_SORA_MSET: &str = "obj/P_EX100.mset";
 pub const KH2_SORA_MDLX: &str = "obj/P_EX100.mdlx";
+/// KH2's Keyblade motion set (every Keyblade's; Checked (files): no other `W_EX010_*.mset`).
+pub const KH2_KEYBLADE_MSET: &str = "obj/W_EX010.mset";
 /// The keyblade's motion set: slot for slot beside Sora's (839 entries, the same motion ids;
 /// Checked (files)). KH2 plays the keyblade's motion for Sora's motion id, so every motion we add
 /// to Sora needs one here (without it the keyblade vanished during KH1's swings, and switching
@@ -213,11 +216,16 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
     let kh1_bones = kh1_data::mdls::parse_skeleton(&kh1.read(Source::Original, KH1_SORA_MDLS)?)?;
     let kh2_bones = kh2_formats::anim::parse_skeleton(&kh2.read(KH2_SORA_MDLX)?)?;
     let mset2 = kh2.read(KH2_SORA_MSET)?;
+    let spans = swing_triggers::keyblade_spans(&kh2.read(KH2_KEYBLADE_MSET)?)?;
     let mut built = Built::default();
     let out = convert::map_bar(&mset2, |row, kind, data| {
         let Some(k) = kh1_motion_at(row).filter(|_| kind == BAR_TYPE_ANB && !data.is_empty()) else { return Ok(data.to_vec()) };
         let m = motions.get(k).cloned().flatten().ok_or_else(|| Error::NotFound(format!("KH1 motion {k}")))?;
+        let len = swing_triggers::anb_frames(data);
         convert::map_bar(data, |_, kind, own| {
+            if kind == kh2_formats::motion::BAR_TYPE_MOTION_TRIGGERS && !own.is_empty() {
+                return Ok(swing_triggers::sora(&kh2_formats::motion::MotionTriggers::parse(own)?, spans.get(&(row / 4)).copied(), len, &m).write());
+            }
             if kind != BAR_TYPE_MOTION {
                 return Ok(own.to_vec());
             }
@@ -245,7 +253,7 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
 pub fn stamp(root: impl AsRef<Path>, version: &str, kh1_model: bool, kh1_swings: bool) -> String {
     let root = root.as_ref();
     let k1 = Kh1Install::locate(root).map(|k| format!("{} / {}", k.stamp(Source::Original, KH1_SORA_MSET), k.stamp(Source::Original, KH1_SORA_MDLS))).unwrap_or_default();
-    format!("kh2-kh1 {version}; KH1 {k1}; swings {}; model {}", if kh1_swings { format!("{SWINGS:?}") } else { "kh2".into() }, if kh1_model { "kh1" } else { "kh2" })
+    format!("kh2-kh1 {version}; KH1 {k1}; swings {} (KH1 windows); model {}", if kh1_swings { format!("{SWINGS:?}") } else { "kh2".into() }, if kh1_model { "kh1" } else { "kh2" })
 }
 
 /// KH1 Sora as KH2's player: his model (`obj/P_EX100.mdlx`, `player_model::build`), KH2's whole
@@ -261,7 +269,8 @@ pub fn build_kh1_model(root: impl AsRef<Path>, kh1_swings: bool) -> Result<(Vec<
     let kh1_bones = kh1_data::mdls::parse_skeleton(&mdls)?;
     let kh2_bones = kh2_formats::anim::parse_skeleton(&mdlx)?;
     let motions = kh1_data::mset::parse(&kh1.read(Source::Original, KH1_SORA_MSET)?)?;
-    let (mset, swings) = player_model::build_mset(&kh2.read(KH2_SORA_MSET)?, &kh2_bones, &kh1_bones, &motions, kh1_swings)?;
+    let spans = swing_triggers::keyblade_spans(&kh2.read(KH2_KEYBLADE_MSET)?)?;
+    let (mset, swings) = player_model::build_mset(&kh2.read(KH2_SORA_MSET)?, &kh2_bones, &kh1_bones, &motions, kh1_swings, &spans)?;
     // KH1's HD textures sit at the PS2 textures' offsets in the .mdls (-<offset>.dds): sorted by
     // offset, they are the textures in order. Missing ones leave KH2's PS2 upscale to the game.
     let mut hd: Vec<_> = kh1.read_remastered_all(Source::Original, KH1_SORA_MDLS).unwrap_or_default().into_iter().filter(|a| a.name.ends_with(".dds") && u32::from_str_radix(a.name.trim_start_matches('-').trim_end_matches(".dds"), 16).is_ok()).collect();
@@ -286,13 +295,22 @@ pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &s
     let hd_dir = mod_dir.join("remastered").join("obj").join("P_EX100.mdlx");
     let stamp_file = mod_dir.join("kh2-kh1-build.txt");
     let want = stamp(root, version, kh1_model, kh1_swings);
-    // Builds before t33 put a Keyblade motion set of ours here; KH2's own is used now.
-    let _ = std::fs::remove_file(obj.join("W_EX010.mset"));
-    if out.is_file() && mdlx.is_file() == kh1_model && std::fs::read_to_string(&stamp_file).ok().as_deref() == Some(want.as_str()) {
+    let blade = obj.join("W_EX010.mset");
+    if !kh1_swings {
+        let _ = std::fs::remove_file(&blade);
+    }
+    if out.is_file() && mdlx.is_file() == kh1_model && blade.is_file() == kh1_swings && std::fs::read_to_string(&stamp_file).ok().as_deref() == Some(want.as_str()) {
         return Ok(None);
     }
     let io = |e: std::io::Error| Error::Format(e.to_string());
     let mut files: Vec<(std::path::PathBuf, Vec<u8>)> = Vec::new();
+    if kh1_swings {
+        // The Keyblade's hit windows and trail at KH1's times (`swing_triggers`), same motions.
+        let kh1 = Kh1Install::locate(root)?;
+        let kh2 = Kh2Install::locate(root)?;
+        let motions = kh1_data::mset::parse(&kh1.read(Source::Original, KH1_SORA_MSET)?)?;
+        files.push((blade.clone(), swing_triggers::build_keyblade(&kh2.read(KH2_KEYBLADE_MSET)?, &motions)?));
+    }
     let built = if kh1_model {
         let (model, mset, textures, built) = build_kh1_model(root, kh1_swings)?;
         files.push((out.clone(), mset));

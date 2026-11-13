@@ -84,3 +84,39 @@ Now (`kh1_assets::SWINGS`) the KH1 motions are written into KH2's swing slots th
 Each slot keeps its own motion triggers. `ptya` is KH2's, untouched, and the Keyblade plays its own
 motion of the same id from KH2's own `W_EX010.mset`, which we no longer write (a build removes one
 an older build left). The hook no longer patches anything for combos.
+
+## t36: KH1's hit, combo and trail windows (`kh1_assets::swing_triggers`)
+
+KH1's motion events (`kh1_data::mset::Event`, `+0x3C` of a motion; layout after the sister
+project's `docs/kh1-anim-slots.md` §1.4, Checked (files)) on Sora's swings, 60 Hz frames:
+
+| KH1 | frames | hit window (kind 1) | combo window (kind 5) | trail (kind 7) |
+|---|---|---|---|---|
+| 98 | 48 | 14–24 | 22–40 | 4–24 |
+| 99 | 48 | 18–32 | 26–42 | 12–32 |
+| 100 | 64 | 18–30 | 26–54 | 18–30 |
+| 101 finisher | 80 | 26–38 | none | 8–38 |
+| 102 air | 40 | 6–20 | 18–34 | 2–20 |
+| 103 air | 42 | 10–20 | 18–32 | 4–20 |
+| 104 air finisher | 56 | 12–38 | none | 6–38 |
+
+KH2's motion triggers are in their motion's key time (60 Hz frames: A300's end at 48 is its
+motion's length, Checked (files)). The build writes, for each swing slot:
+- the Keyblade (`W_EX010.mset`, its motions KH2's): its hit window (range 10, the slot's ATKP and
+  collision group kept) and trail (range 12) at KH1's frames; 153's second window (ATKP 147) goes,
+  as KH1's 100 hits once. The file comes out 16 bytes shorter than KH2's (it must never be longer).
+- Sora (`P_EX100.mset`): the combo window (range 11) at KH1's frames, none on the finishers.
+- Every other trigger of the slot (Reaction Command window, turn to the lock-on, sounds and effects,
+  Finishing Plus's window) moved piecewise linearly with the hit (KH2's first hit start onto KH1's,
+  its last hit end onto KH1's, the motion's end onto KH1's).
+Assumption: KH2's range 11 does what KH1's combo window does (a press inside it continues the
+combo, outside starts a new one).
+
+## t37: KH1's swing power on ATKP (`win/atkp.rs`)
+
+The owner: KH2's damage formula with each KH1 swing given the nearest KH2 power, KH1's reactions.
+KH1's plain swings all have power 0 (the same damage every hit); its finishers power 4, ×2.0 on
+KH1's damage curve. So the swing ATKP rows (patched in KH2's loaded table `0x142AE57B0` after the
+table loader `0x1403F4C30`, Checked (decomp)): 126, 127, 128, 131, 132 → 100 (KH2: 100, 65, 65,
+100, 100), 129, 130, 133, 134 → 200 (KH2: 200, 150, 200, 150). Reactions already match (3 / 7);
+KH2's knockback stays (KH1's data has none). KH1's critical (finishers 4 %, +4) is not ported.

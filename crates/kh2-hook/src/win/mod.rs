@@ -1,6 +1,7 @@
 //! Windows (64-bit) side: the KH2 check, the log, and the way in (Panacea's `OnInit`).
 
 mod airsteer;
+mod atkp;
 mod arc;
 mod build;
 mod crash;
@@ -187,6 +188,9 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
             prty::install(base);
             highjump::install(base);
             airsteer::install(base);
+        }
+        if s.style("combos") == crate::settings::Style::Kh1 {
+            atkp::install(base);
         }
     }
     1

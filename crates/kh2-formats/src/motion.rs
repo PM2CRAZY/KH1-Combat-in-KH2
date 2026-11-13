@@ -101,6 +101,32 @@ impl MotionTriggers {
         }
         Ok(MotionTriggers { ranges, frames })
     }
+
+    /// The bytes `parse` reads: the range triggers, then the frame triggers (their offset in the
+    /// header), as KH2 writes them (no padding).
+    pub fn write(&self) -> Vec<u8> {
+        let mut out = vec![self.ranges.len().min(255) as u8, self.frames.len().min(255) as u8, 0, 0];
+        for r in self.ranges.iter().take(255) {
+            out.extend_from_slice(&r.start.to_le_bytes());
+            out.extend_from_slice(&r.end.to_le_bytes());
+            out.push(r.id);
+            out.push(r.params.len() as u8);
+            for p in &r.params {
+                out.extend_from_slice(&p.to_le_bytes());
+            }
+        }
+        let at = out.len() as i16;
+        out[2..4].copy_from_slice(&at.to_le_bytes());
+        for f in self.frames.iter().take(255) {
+            out.extend_from_slice(&f.frame.to_le_bytes());
+            out.push(f.id);
+            out.push(f.params.len() as u8);
+            for p in &f.params {
+                out.extend_from_slice(&p.to_le_bytes());
+            }
+        }
+        out
+    }
 }
 
 /// One animation curve (F-curve) for a single channel.
