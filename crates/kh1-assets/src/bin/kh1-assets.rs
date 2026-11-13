@@ -21,6 +21,11 @@ fn main() {
             println!("{built:?}");
             std::fs::write(&out, b).map_err(|e| kh2_formats::Error::Format(e.to_string()))
         })
+    } else if a.get(1).map(String::as_str) == Some("blade") {
+        // `blade <folder> <out mset>`: KH2's keyblade motion set with entries for our motions.
+        let root = a.get(2).cloned().unwrap_or_default();
+        let out = a.get(3).cloned().unwrap_or_default();
+        kh1_assets::build_keyblade(&root).and_then(|b| std::fs::write(&out, b).map_err(|e| kh2_formats::Error::Format(e.to_string())))
     } else if a.get(1).map(String::as_str) == Some("pose") {
         let root = a.get(2).cloned().unwrap_or_else(|| ".".into());
         let idx = a.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);

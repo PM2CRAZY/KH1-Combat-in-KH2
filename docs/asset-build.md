@@ -122,3 +122,20 @@ helpers with them. Not compared with KH1's own pose in game yet.
   of the lines on each side, so the curve is exactly those lines: KH2's own tangents are value per
   key-time unit (Checked: in A300 the tangent over the slope between neighbours has median 1.0000
   over 716 keys).
+- **t17: the keyblade's motion set.** `obj/W_EX010.mset` (the keyblades' motions) has the same
+  839 slots as Sora's `P_EX100.mset`, the same motion ids (`A300` at slot 604 in both). Checked
+  (files). KH2 plays the keyblade motion for Sora's motion id, so motions 210–216 had none: the
+  keyblade vanished during KH1's swings (owner's videos) and switching keyblades crashed
+  (owner; the link is an Assumption, no dump). The build now also writes `obj/W_EX010.mset`:
+  KH2's file byte for byte plus, at each of our slots, a copy of the keyblade motion of the KH2
+  swing it takes the place of (`REPLACES`). Sora's world outfits (`_NM`, `_TR`, `_WI`, `_XM`)
+  have no motion set of their own and use `P_EX100.mset` (Checked: files); Drive Forms have
+  their own sets and rows.
+- **t17 test build: round trip.** KH1 motion 98's slot (the first ground swing) holds KH2's own
+  A300, evaluated by `kh2-anim` (constraints solved) and written back by the converter. If it
+  looks like KH2's normal first swing in game, the converter writes motions KH2 plays as we
+  expect, and the bad KH1 poses come from the KH1-to-KH2 pose transfer (`kh1_data::inverse`).
+  If it looks wrong too, the converter is at fault.
+- Non-root bones again take the offset the pose gives (t14 forced the bind offset). The two are
+  the same for KH1's swings, but KH2's own motions don't keep the bind offsets, so the round trip
+  needs the pose's.

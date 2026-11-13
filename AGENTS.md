@@ -1,3 +1,11 @@
+### 2026-11-12: Stage 17 (testing branch: keyblade motions for KH1 swings, round-trip test)
+Owner (t16, video): "the swings are still off. Also, the game crashed when switching keyblades".
+
+- The keyblade motion set `obj/W_EX010.mset` mirrors Sora's 839 slots (checked, files) and had nothing at 210–216: the keyblade vanished in KH1 swings, and switching keyblades crashed (link assumed). The build now writes it too, with each new slot a copy of the replaced KH2 swing's keyblade motion. Removed with combos = kh2.
+- Test build: the first ground swing's slot holds KH2's own A300 run through the converter, to tell in game whether the converter or the KH1 pose transfer is at fault.
+- Non-root bones take the pose's offset again (same for KH1 swings; KH2's own motions need it).
+- Checked: files (keyblade set built and checked on the PC: KH2's 839 entries unchanged, A300..A333 copies at 840..867). Not checked: in game.
+
 ### 2026-11-12: Stage 16 (testing branch: KH1 swings: curves KH2 actually plays)
 Owner (t15): "he's stretching the same exact way. also the game crashed". The t14 video shows Sora holding one bent-over pose through every KH1 swing while only his position moves.
 

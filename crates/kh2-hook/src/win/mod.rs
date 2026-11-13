@@ -130,8 +130,9 @@ fn assets(mod_path: &str) {
         let stamp = dir.join("kh2-kh1-build.txt");
         if stamp.is_file() {
             let _ = std::fs::remove_file(dir.join("obj").join("P_EX100.mset"));
+            let _ = std::fs::remove_file(dir.join("obj").join("W_EX010.mset"));
             let _ = std::fs::remove_file(&stamp);
-            log!("assets: combos = kh2: our built P_EX100.mset removed (KH2 loads its own)");
+            log!("assets: combos = kh2: our built P_EX100.mset and W_EX010.mset removed (KH2 loads its own)");
         }
     }
 }

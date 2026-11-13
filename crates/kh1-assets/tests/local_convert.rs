@@ -126,3 +126,84 @@ fn rotations_play_back() {
     }
     eprintln!("worst rotation error {:.3} rad at frame {} bone {}", worst.0, worst.1, worst.2);
 }
+
+#[test]
+fn dump_root_values() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&rd("xa_ex_0010.mdls")).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&rd("P_EX100.mdlx")).unwrap();
+    for b in 0..4 { eprintln!("bind {b}: parent {} rot {:?} t {:?}", kh2[b].parent, kh2[b].rotation, kh2[b].translation); }
+    let mset = rd("P_EX100.mset");
+    let bar = Bar::parse(&mset).unwrap();
+    let a300 = Bar::parse(bar.entries[151 * 4].data).unwrap();
+    let template = a300.entries.iter().find(|e| e.kind == 9).unwrap().data;
+    let motions = kh1_data::mset::parse(&rd("xa_ex_0010.mset")).unwrap();
+    let m = motions[98].clone().unwrap();
+    let (poses, travel) = kh1_assets::convert::kh2_poses(&m, &kh1, &kh2);
+    let data = kh1_assets::convert::write_motion(template, &kh2, &poses, &travel).unwrap();
+    let back = kh2_formats::anim::Interpolated::parse(&data).unwrap().unwrap();
+    for (j, c, v) in back.initial_pose.iter().filter(|x| x.0 < 4) { eprintln!("pose {j} {c} {v:.3}"); }
+    for c in back.forward.iter().filter(|c| c.joint < 4) { eprintln!("curve {} {} first {:.3} last {:.3}", c.joint, c.channel, c.keys[0].value, c.keys.last().unwrap().value); }
+}
+
+#[test]
+fn dump_a300_upright() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&rd("P_EX100.mdlx")).unwrap();
+    let mset = rd("P_EX100.mset");
+    let bar = Bar::parse(&mset).unwrap();
+    for slot in [151usize, 0] {
+        let anb = Bar::parse(bar.entries[slot * 4].data).unwrap();
+        let data = anb.entries.iter().find(|e| e.kind == 9).unwrap().data;
+        let m = kh2_formats::anim::Interpolated::parse(data).unwrap().unwrap();
+        for cons in [false, true] {
+            let p = kh2_anim::evaluate(&kh2, &m, 0.0, kh2_anim::Options { constraints: cons });
+            let ys: Vec<f32> = p.bones.iter().map(|b| b.w_axis.y).collect();
+            let top = ys.iter().cloned().fold(f32::MIN, f32::max);
+            let bot = ys.iter().cloned().fold(f32::MAX, f32::min);
+            eprintln!("motion {slot} cons {cons}: root y {:.1}, highest {top:.1}, lowest {bot:.1}, bone 3 {:?}", ys[0], p.bones[3].w_axis);
+        }
+    }
+    let p = kh2_anim::Pose::bind(&kh2);
+    let ys: Vec<f32> = p.bones.iter().map(|b| b.w_axis.y).collect();
+    eprintln!("bind: highest {:.1} lowest {:.1}", ys.iter().cloned().fold(f32::MIN, f32::max), ys.iter().cloned().fold(f32::MAX, f32::min));
+}
+
+#[test]
+fn dump_a300_round_trip() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&rd("P_EX100.mdlx")).unwrap();
+    let mset = rd("P_EX100.mset");
+    let bar = Bar::parse(&mset).unwrap();
+    let anb = Bar::parse(bar.entries[151 * 4].data).unwrap();
+    let data = anb.entries.iter().find(|e| e.kind == 9).unwrap().data;
+    let m = kh2_formats::anim::Interpolated::parse(data).unwrap().unwrap();
+    let info = kh2_formats::motion::MotionInfo::parse(data).unwrap();
+    let n = m.frame_count as usize;
+    let poses: Vec<Vec<glam::Mat4>> = (0..n).map(|f| kh2_anim::evaluate(&kh2, &m, f as f32, kh2_anim::Options { constraints: true }).bones).collect();
+    let travel: Vec<Vec3> = (0..n).map(|f| Vec3::from(info.root_at(f as f32))).collect();
+    let out = kh1_assets::convert::write_motion(data, &kh2, &poses, &travel).unwrap();
+    let back = kh2_formats::anim::Interpolated::parse(&out).unwrap().unwrap();
+    let val = |mm: &kh2_formats::anim::Interpolated, j: i16, c: u8| -> f32 {
+        mm.forward.iter().find(|x| x.joint == j && x.channel == c).map(|x| x.eval(0.0))
+            .or_else(|| mm.initial_pose.iter().find(|x| x.0 == j && x.1 == c as i16).map(|x| x.2))
+            .unwrap_or(f32::NAN)
+    };
+    let mut diffs = 0;
+    for j in 0..228i16 {
+        for c in 3..9u8 {
+            let (a, b) = (val(&m, j, c), val(&back, j, c));
+            if a.is_finite() && (a - b).abs() > 0.05 {
+                diffs += 1;
+                if diffs < 25 { eprintln!("bone {j} ch {c}: KH2 {a:.3} ours {b:.3}"); }
+            }
+        }
+    }
+    eprintln!("{diffs} channels differ at frame 0; root y in our pose {:.1}", poses[0][0].w_axis.y);
+}

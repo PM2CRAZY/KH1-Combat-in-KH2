@@ -48,6 +48,17 @@ pub fn kh2_poses(motion: &Motion, kh1: &[Bone], kh2: &[Bone]) -> (Vec<Vec<Mat4>>
     (poses, travel)
 }
 
+/// KH2's own motion `data` (a KH2 Sora motion) as model-space poses every frame, as KH2 draws it
+/// (constraints and IK solved), and its travel: the converter's round trip, for testing it.
+pub fn kh2_round_trip(data: &[u8], kh2: &[Bone]) -> Result<(Vec<Vec<Mat4>>, Vec<Vec3>)> {
+    let m = kh2_formats::anim::Interpolated::parse(data)?.ok_or_else(|| Error::Format("not an interpolated motion".into()))?;
+    let info = kh2_formats::motion::MotionInfo::parse(data)?;
+    let n = m.frame_count.max(1) as usize;
+    let poses = (0..n).map(|f| kh2_anim::evaluate(kh2, &m, f as f32, kh2_anim::Options { constraints: true }).bones).collect();
+    let travel = (0..n).map(|f| Vec3::from(info.root_at(f as f32))).collect();
+    Ok((poses, travel))
+}
+
 /// Euler X→Y→Z (KH2's order, `kh2_anim::euler_quat`) of `q`, the one nearer `prev`.
 fn euler_near(q: Quat, prev: Option<[f32; 3]>) -> [f32; 3] {
     let (z, y, x) = q.to_euler(EulerRot::ZYX);
@@ -83,10 +94,9 @@ fn locals(kh2: &[Bone], poses: &[Vec<Mat4>]) -> Vec<Vec<[f32; 9]>> {
             };
             let e = euler_near(lq.normalize(), prev[b]);
             prev[b] = Some(e);
-            // Only the root moves: every other bone keeps KH2's own bind offset from its parent, so
-            // KH2's proportions hold (a KH1 joint position would stretch the mesh).
-            let t = if b == 0 { lt } else { Vec3::from(bone.translation) };
-            out[b].push([bone.scale[0], bone.scale[1], bone.scale[2], e[0], e[1], e[2], t.x, t.y, t.z]);
+            // The offset from the parent as the pose has it (`Inverse` already places every joint at
+            // KH2's own bind distance, so KH2's proportions hold).
+            out[b].push([bone.scale[0], bone.scale[1], bone.scale[2], e[0], e[1], e[2], lt.x, lt.y, lt.z]);
         }
     }
     out

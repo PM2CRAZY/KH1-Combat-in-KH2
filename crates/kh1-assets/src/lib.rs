@@ -25,6 +25,11 @@ pub const KH1_SORA_MDLS: &str = "xa_ex_0010.mdls";
 /// KH2 Sora: motions and model.
 pub const KH2_SORA_MSET: &str = "obj/P_EX100.mset";
 pub const KH2_SORA_MDLX: &str = "obj/P_EX100.mdlx";
+/// The keyblade's motion set: slot for slot beside Sora's (839 entries, the same motion ids;
+/// Checked (files)). KH2 plays the keyblade's motion for Sora's motion id, so every motion we add
+/// to Sora needs one here (without it the keyblade vanished during KH1's swings, and switching
+/// keyblades crashed).
+pub const KH2_KEYBLADE_MSET: &str = "obj/W_EX010.mset";
 
 pub const KH2_ARCHIVES: [&str; 6] = ["kh2_first", "kh2_second", "kh2_third", "kh2_fourth", "kh2_fifth", "kh2_sixth"];
 pub const KH2_EXECUTABLE: &str = "KINGDOM HEARTS II FINAL MIX.exe";
@@ -148,6 +153,12 @@ pub const FIRST_KH2_MOTION: usize = 210;
 /// KH2's first ground swing (motion 151, `A300`): the template motion and, until KH1's own windows
 /// are built (Phase 2 step 4), the triggers.
 pub const TEMPLATE_MOTION: usize = 151;
+/// The KH2 swing each KH1 motion takes the place of (`combos.rs`'s rows): the keyblade plays
+/// that swing's own keyblade motion during the KH1 one.
+pub const REPLACES: [(usize, usize); 7] = [(98, 151), (99, 152), (100, 153), (101, 154), (102, 181), (103, 182), (104, 184)];
+/// Test build (t17): KH1 motion 98's slot holds KH2's own first swing (A300) passed through the
+/// converter, so the owner can see in game whether the converter itself keeps a KH2 swing whole.
+pub const ROUND_TRIP_FIRST_SWING: bool = true;
 
 /// The KH2 motion id KH1 motion `kh1` is built as.
 pub fn kh2_motion_of(kh1: usize) -> Option<usize> {
@@ -184,7 +195,11 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
     let mut built = Built::default();
     for &k in &KH1_MOTIONS {
         let m = motions.get(k).cloned().flatten().ok_or_else(|| Error::NotFound(format!("KH1 motion {k}")))?;
-        let (poses, travel) = convert::kh2_poses(&m, &kh1_bones, &kh2_bones);
+        let (poses, travel) = if ROUND_TRIP_FIRST_SWING && k == KH1_MOTIONS[0] {
+            convert::kh2_round_trip(tmotion.data, &kh2_bones)?
+        } else {
+            convert::kh2_poses(&m, &kh1_bones, &kh2_bones)
+        };
         let data = convert::write_motion(tmotion.data, &kh2_bones, &poses, &travel)?;
         let name = *format!("K{k:03}").as_bytes().first_chunk::<4>().unwrap();
         let anb = convert::write_bar(0, &[(kh2_formats::motion::BAR_TYPE_MOTION, 0, name, data), (kh2_formats::motion::BAR_TYPE_MOTION_TRIGGERS, 0, name, ttrig.clone())]);
@@ -198,6 +213,35 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
     let out = convert::extend_bar(&mset2, &extra)?;
     built.bytes = out.len();
     Ok((out, built))
+}
+
+/// KH2's keyblade motion set with an entry for each motion we add to Sora: a copy of the
+/// keyblade motion of the KH2 swing it takes the place of.
+pub fn build_keyblade(root: impl AsRef<Path>) -> Result<Vec<u8>> {
+    let kh2 = Kh2Install::locate(root.as_ref())?;
+    let orig = kh2.read(KH2_KEYBLADE_MSET)?;
+    let bar = Bar::parse(&orig)?;
+    let mut extra: Vec<(u16, i16, [u8; 4], Option<Vec<u8>>)> = Vec::new();
+    let dumm = (0u16, 1i16, *b"DUMM", None);
+    while bar.entries.len() + extra.len() < FIRST_KH2_MOTION * 4 {
+        extra.push(dumm.clone());
+    }
+    for &k in &KH1_MOTIONS {
+        let kh2_id = REPLACES.iter().find(|r| r.0 == k).map(|r| r.1).ok_or_else(|| Error::NotFound(format!("the KH2 swing KH1 motion {k} replaces")))?;
+        for rel in 0..4 {
+            match bar.entries.get(kh2_id * 4 + rel) {
+                Some(e) if e.name != "DUMM" && !e.data.is_empty() => {
+                    let mut n = [0u8; 4];
+                    for (i, c) in e.name.bytes().take(4).enumerate() {
+                        n[i] = c;
+                    }
+                    extra.push((e.kind, 0, n, Some(e.data.to_vec())));
+                }
+                _ => extra.push(dumm.clone()),
+            }
+        }
+    }
+    convert::extend_bar(&orig, &extra)
 }
 
 /// The build's stamp: what it was made from (the mod's version and both games' entries), so a
@@ -215,15 +259,18 @@ pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &s
     let out = mod_dir.join("obj").join("P_EX100.mset");
     let stamp_file = mod_dir.join("kh2-kh1-build.txt");
     let want = stamp(root, version);
-    if out.is_file() && std::fs::read_to_string(&stamp_file).ok().as_deref() == Some(want.as_str()) {
+    if out.is_file() && mod_dir.join("obj").join("W_EX010.mset").is_file() && std::fs::read_to_string(&stamp_file).ok().as_deref() == Some(want.as_str()) {
         return Ok(None);
     }
     let (bytes, built) = build_mset(root)?;
+    let blade = build_keyblade(root)?;
     let io = |e: std::io::Error| Error::Format(e.to_string());
     std::fs::create_dir_all(out.parent().unwrap()).map_err(io)?;
-    let tmp = out.with_extension("mset.tmp");
-    std::fs::write(&tmp, &bytes).map_err(io)?;
-    std::fs::rename(&tmp, &out).map_err(io)?;
+    for (path, data) in [(out.clone(), &bytes), (mod_dir.join("obj").join("W_EX010.mset"), &blade)] {
+        let tmp = path.with_extension("mset.tmp");
+        std::fs::write(&tmp, data).map_err(io)?;
+        std::fs::rename(&tmp, &path).map_err(io)?;
+    }
     std::fs::write(&stamp_file, want).map_err(io)?;
     Ok(Some(built))
 }
