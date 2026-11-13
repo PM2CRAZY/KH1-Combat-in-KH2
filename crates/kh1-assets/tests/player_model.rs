@@ -214,3 +214,27 @@ fn converted_size_by_channel() {
     v.sort_by_key(|x| std::cmp::Reverse(x.1));
     eprintln!("top bones {:?}", &v[..30]);
 }
+
+#[test]
+fn swing_triggers() {
+    let Some(_) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset2 = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let bar = kh2_formats::bar::Bar::parse(&mset2).unwrap();
+    for id in [151usize, 152, 153, 154, 155, 181, 182, 183, 184] {
+        let e = &bar.entries[id * 4];
+        let anb = kh2_formats::motion::Anb::parse(e.data).unwrap();
+        let fr = anb.pose.as_ref().map(|p| p.frame_count).unwrap_or(0);
+        eprintln!("KH2 {id} {} frames {fr}: ranges {:?} frames {:?}", e.name, anb.triggers.ranges.iter().map(|r| (r.start, r.end, r.id, r.params.clone())).collect::<Vec<_>>(), anb.triggers.frames.iter().map(|f| (f.frame, f.id)).collect::<Vec<_>>());
+    }
+    for k in kh1_assets::KH1_MOTIONS { eprintln!("KH1 {k}: {} frames", mset1[k].as_ref().unwrap().frames); }
+    if let Ok(w) = std::fs::read(dir.join("W_EX010.mset")) {
+        let b = kh2_formats::bar::Bar::parse(&w).unwrap();
+        for id in [151usize, 152, 153, 154, 155, 181, 182, 183, 184] {
+            let Some(e) = b.entries.get(id * 4) else { continue };
+            let Ok(anb) = kh2_formats::motion::Anb::parse(e.data) else { continue };
+            eprintln!("blade {id} {}: ranges {:?}", e.name, anb.triggers.ranges.iter().map(|r| (r.start, r.end, r.id, r.params.clone())).collect::<Vec<_>>());
+        }
+    }
+}

@@ -54,11 +54,13 @@ unsafe fn check(object: usize) {
         let bytes = std::slice::from_raw_parts(e as *const u8, 0x14);
         let base = BASE.load(Ordering::Relaxed);
         log!(
-            "item check: object {object:#x} (Sora? {}) collision {col:#x} entry {k} of {n} {bytes:02x?}: item {id:#x} is not in the item table (+0xCF0 {:#x}, +0x9F0 {via:#x}, object vtable exe+{:#x})",
+            "item check: object {object:#x} (objentry {:#x}, Sora? {}) collision {col:#x} (its own +0xAB0 {:#x}) entry {k} of {n} {bytes:02x?}: item {id:#x} is not in the item table (+0xCF0 {:#x}, +0x9F0 {via:#x}",
+            *((object + 0xC) as *const u32),
             super::sora::is_base_sora(object),
-            *((object + 0xCF0) as *const u32),
-            (*(object as *const usize)).wrapping_sub(base)
+            *((object + 0xAB0) as *const usize),
+            *((object + 0xCF0) as *const u32)
         );
+        let _ = base;
     }
 }
 

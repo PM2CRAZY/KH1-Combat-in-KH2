@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 32 (testing branch: Keyblade-switch crash: name the object)
+Owner: "crashed" (t31), then with `combos = kh2`, `model = kh2`: "no crash". So it comes from the KH1 combo (the KH1 model is not needed: the crash came before it).
+
+t31's log: the walk `0x140407DE0` runs over every object (`0x140407760` loops `0x1403BF4F0`, Checked (decomp)); it crashed on an object that is not Sora, whose collision list (`+0xAB8`) holds no collision data (count over 256, bytes like mesh data): memory reused after the list it pointed at was freed. Assumption: the old Keyblade, still with an attack on.
+
+- `win/itemcheck.rs`: the log line also gives the object's objentry id (`+0xC`) and its own list (`+0xAB0`) next to the one in use.
+
 ### 2026-11-13: Stage 31 (testing branch: Keyblade-switch crash: log the item id)
 Owner: "still crashes, pull the log yourself never ask me again". t30's log: the fault came as a stack overflow inside the crash report, so the id was lost. The collision lists of `P_EX100.mdlx` and nine Keyblade models (`W_EX010`, `_10` … `_60`, `_A0`, `_U0`) have no entries of types 5 or 14, and no motion set entry holds a collision list. Checked (files). So the list `0x140407DE0` walks (object `+0xAB8`) is set at run time.
 
