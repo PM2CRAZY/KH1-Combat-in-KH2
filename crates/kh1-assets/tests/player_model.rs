@@ -142,6 +142,7 @@ fn kh2_motions_on_kh1_skeleton() {
     let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
     let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
     let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
+    kh1_assets::select_kh1_slots(true, false, false);
     let t = std::time::Instant::now();
     let (out, n) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true, &Default::default()).unwrap();
     eprintln!("swings {n:?}; converted in {:?}, {} -> {} bytes", t.elapsed(), mset2.len(), out.len());
@@ -329,15 +330,16 @@ fn kh1_windows_on_kh2_triggers() {
     let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
     let Ok(w) = std::fs::read(dir.join("W_EX010.mset")) else { return };
     let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
-    kh1_assets::select_kh1_slots(true, true);
+    kh1_assets::select_kh1_slots(true, true, true);
     let out = kh1_assets::swing_triggers::build_keyblade(&w, &mset1).unwrap();
     eprintln!("W_EX010.mset {} -> {} bytes", w.len(), out.len());
     let spans = kh1_assets::swing_triggers::keyblade_spans(&w).unwrap();
     let p = std::fs::read(dir.join("P_EX100.mset")).unwrap();
     let (pb, bb) = (kh2_formats::bar::Bar::parse(&p).unwrap(), kh2_formats::bar::Bar::parse(&out).unwrap());
     for (id, k) in kh1_assets::kh1_slots() {
-        let blade = kh2_formats::motion::Anb::parse(bb.entries[id * 4].data).unwrap().triggers;
-        let a = pb.entries[id * 4].data;
+        if bb.entries[id].data.is_empty() || pb.entries[id].data.is_empty() { eprintln!("{id}: no KH2 motion there"); continue; }
+        let blade = kh2_formats::motion::Anb::parse(bb.entries[id].data).unwrap().triggers;
+        let a = pb.entries[id].data;
         let sora = kh1_assets::swing_triggers::sora(&kh2_formats::motion::Anb::parse(a).unwrap().triggers, spans.get(&id).copied(), kh1_assets::swing_triggers::anb_frames(a), mset1[k].as_ref().unwrap());
         eprintln!("{id} <- KH1 {k}: blade {:?}\n   sora {:?} frames {:?}", blade.ranges.iter().map(|r| (r.start, r.end, r.id)).collect::<Vec<_>>(), sora.ranges.iter().map(|r| (r.start, r.end, r.id)).collect::<Vec<_>>(), sora.frames.iter().map(|f| (f.frame, f.id)).collect::<Vec<_>>());
     }
@@ -350,5 +352,43 @@ fn sora_ptya_rows() {
     let b = kh2_formats::battle::Battle::parse(&std::fs::read(dir.join("00battle.bin")).unwrap()).unwrap();
     for e in b.ptya.set(1).unwrap() {
         if e.ability == 0 { eprintln!("id {:2} motion {} jump {} {} {} speed {} {} adj {}", e.id, e.motion, e.jump, e.jump_min, e.jump_max, e.speed_min, e.speed_max, e.distance_adjust); }
+    }
+}
+
+#[test]
+fn kh1_root_vs_travel() {
+    let Some((mdls, _)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let list: Vec<usize> = std::env::var("KH1_MOTION_LIST").ok().map(|s| s.split(',').filter_map(|x| x.parse().ok()).collect()).unwrap_or(vec![98, 99, 100, 101, 110, 0, 5]);
+    for k in list {
+        let Some(m) = mset1.get(k).and_then(|m| m.as_ref()) else { continue };
+        let n = m.frames.max(1) as usize;
+        for f in [0, n / 2, n - 1] {
+            let p = kh1_data::rig::pose(m, &kh1, f as f32);
+            let t = p.helpers.last().map(|x| x.w_axis.truncate()).unwrap_or_default();
+            let (_, r, root) = p.bones[0].to_scale_rotation_translation();
+            let (_, r2, hip) = p.bones[2].to_scale_rotation_translation();
+            let yaw = |q: glam::Quat| { let v = q * glam::Vec3::Z; v.x.atan2(v.z).to_degrees() };
+            eprintln!("KH1 {k} f{f}: travel {:?} bone0 {:?} yaw0 {:.0} bone2 {:?} yaw2 {:.0} helpers {}", t.to_array().map(|x| x.round()), root.to_array().map(|x| x.round()), yaw(r), hip.to_array().map(|x| x.round()), yaw(r2), p.helpers.len());
+        }
+    }
+}
+
+#[test]
+fn kh2_swing_travel() {
+    let Some(_) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let raw = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let bar = kh2_formats::bar::Bar::parse(&raw).unwrap();
+    for id in [0usize, 1, 2, 151, 152, 153, 154, 173, 181] {
+        let e = &bar.entries[id * 4];
+        let x = kh2_formats::bar::Bar::parse(e.data).unwrap();
+        let m = x.entries.iter().find(|e| e.kind == 9).unwrap();
+        let info = kh2_formats::motion::MotionInfo::parse(m.data).unwrap();
+        let im = kh2_formats::anim::Interpolated::parse(m.data).unwrap().unwrap();
+        let n = im.frame_count as f32;
+        eprintln!("KH2 {id} {}: frames {n} travel mid {:?} end {:?}", e.name, info.root_at(n / 2.0), info.root_at(n - 1.0));
     }
 }

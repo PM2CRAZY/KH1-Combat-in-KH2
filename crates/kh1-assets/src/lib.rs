@@ -192,31 +192,46 @@ pub const SWINGS: [(usize, usize); 9] = [(151, 98), (152, 99), (153, 100), (154,
 /// Checked (files)). The Keyblade's guard window moves to KH1's frames like a swing's hit window.
 pub const GUARD: [(usize, usize); 1] = [(173, 110)];
 
+/// KH1's own idle, walk, run, jump, fall and landing in KH2's (`movement = kh1`). Motion set rows
+/// (KH2 id × 4 + variant; variant 0 the field one, 2 the battle one, 3 a third), KH1 motion.
+/// KH2 (the OG rewrite's ids, the rows Checked (files)): 0 idle (rows 0, 2), 1 walk (4, 6, 7),
+/// 2 run (8, 10, 11), 3 jump (14), 4 fall (18), 5 land (22). KH1 (lengths and poses Checked
+/// (files); which is which an Assumption from them and the sister project's request map, KH1
+/// requests 0 / 1 / 2 → slots 0..1 / 2..4 / 5..7, the jump's requests 9..0xC → slots 12, 13, 10,
+/// 11): 0 the field idle (120 frames, standing tall), 1 the battle idle (170, the Keyblade
+/// stance), 2 / 3 / 4 the walks, 5 / 6 / 7 the runs, 12 the jump (34: crouch to stretched), 10
+/// the fall (40, held), 11 the landing (28). KH1's 13 (the top of the jump) has no KH2 row.
+pub const MOVES: [(usize, usize); 11] = [(0, 0), (2, 1), (4, 2), (6, 3), (7, 4), (8, 5), (10, 6), (11, 7), (14, 12), (18, 10), (22, 11)];
+
 static SLOTS: std::sync::RwLock<Option<Vec<(usize, usize)>>> = std::sync::RwLock::new(None);
 
-/// The KH2 slots this build writes KH1 motions into (KH2 id, KH1 motion): the swings with
-/// `combos = kh1`, the guard with `defence = kh1`. Until chosen, the swings.
+/// The motion set rows this build writes KH1 motions into (row = KH2 id × 4 + variant, KH1
+/// motion): the swings with `combos = kh1`, the guard with `defence = kh1`, the moves with
+/// `movement = kh1`. Until chosen, the swings.
 pub fn kh1_slots() -> Vec<(usize, usize)> {
-    SLOTS.read().ok().and_then(|s| s.clone()).unwrap_or_else(|| SWINGS.to_vec())
+    SLOTS.read().ok().and_then(|s| s.clone()).unwrap_or_else(|| SWINGS.iter().map(|&(id, k)| (id * 4, k)).collect())
 }
 
 /// Chooses `kh1_slots` for a build.
-pub fn select_kh1_slots(swings: bool, guard: bool) {
-    let mut v = Vec::new();
+pub fn select_kh1_slots(swings: bool, guard: bool, moves: bool) {
+    let mut v: Vec<(usize, usize)> = Vec::new();
     if swings {
-        v.extend_from_slice(&SWINGS);
+        v.extend(SWINGS.iter().map(|&(id, k)| (id * 4, k)));
     }
     if guard {
-        v.extend_from_slice(&GUARD);
+        v.extend(GUARD.iter().map(|&(id, k)| (id * 4, k)));
+    }
+    if moves {
+        v.extend_from_slice(&MOVES);
     }
     if let Ok(mut s) = SLOTS.write() {
         *s = Some(v);
     }
 }
 
-/// The KH1 motion written into KH2 slot `row` (a motion set row: id × 4), if any.
+/// The KH1 motion written into motion set row `row`, if any.
 pub fn kh1_motion_at(row: usize) -> Option<usize> {
-    (row % 4 == 0).then(|| kh1_slots().iter().find(|s| s.0 * 4 == row).map(|s| s.1)).flatten()
+    kh1_slots().iter().find(|s| s.0 == row).map(|s| s.1)
 }
 
 /// Test build (t17, off from t19): KH1 motion 98's slot holds KH2's own first swing (A300) passed
@@ -253,7 +268,7 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
         let len = swing_triggers::anb_frames(data);
         convert::map_bar(data, |_, kind, own| {
             if kind == kh2_formats::motion::BAR_TYPE_MOTION_TRIGGERS && !own.is_empty() {
-                return Ok(swing_triggers::sora(&kh2_formats::motion::MotionTriggers::parse(own)?, spans.get(&(row / 4)).copied(), len, &m).write());
+                return Ok(swing_triggers::sora(&kh2_formats::motion::MotionTriggers::parse(own)?, spans.get(&row).copied(), len, &m).write());
             }
             if kind != BAR_TYPE_MOTION {
                 return Ok(own.to_vec());
@@ -316,8 +331,8 @@ pub fn build_kh1_model(root: impl AsRef<Path>, kh1_swings: bool) -> Result<(Vec<
 /// stamp, and with `kh1_model` KH1 Sora's `obj/P_EX100.mdlx` and HD textures
 /// (`remastered/obj/P_EX100.mdlx/`), unless the stamp says the files there are already this
 /// build's. Returns what was built (`None`: up to date).
-pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str, kh1_model: bool, kh1_swings: bool, kh1_guard: bool) -> Result<Option<Built>> {
-    select_kh1_slots(kh1_swings, kh1_guard);
+pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str, kh1_model: bool, kh1_swings: bool, kh1_guard: bool, kh1_moves: bool) -> Result<Option<Built>> {
+    select_kh1_slots(kh1_swings, kh1_guard, kh1_moves);
     let kh1_swings = !kh1_slots().is_empty();
     let (root, mod_dir) = (root.as_ref(), mod_dir.as_ref());
     let obj = mod_dir.join("obj");

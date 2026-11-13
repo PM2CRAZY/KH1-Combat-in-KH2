@@ -92,3 +92,23 @@ Jump level's height becomes KH1's 290 (t7, `win/highjump.rs`).
   sideways speed 8: already KH1's (KH1 falls from rest, its momentum capped at 8 = the run).
 - Early release: the cut is in KH1's window and the fall after it KH1's, but the hop rose 5.10
   (KH2's `g/2 · 5²`, from `0x142A243D8`); KH1's rises 6.06 in 5 frames. t9 makes it KH1's.
+
+## t42: KH1's idle, walk, run, jump, fall and landing motions (`kh1_assets::MOVES`)
+
+The owner (t41 video): "Sora still has his KH2 walking, running, idle, keyblade idle, jumping,
+falling etc animation instead of his KH1 animation". With `movement = kh1` the build writes KH1's
+motions into KH2's motion set rows (KH2 id × 4 + variant), as the swings (t33):
+
+| KH2 | rows | KH1 |
+|---|---|---|
+| 0 idle | 0 field, 2 battle | 0 field idle (120 frames), 1 battle idle (170, the Keyblade stance) |
+| 1 walk | 4, 6, 7 | 2, 3, 4 |
+| 2 run | 8, 10, 11 | 5, 6, 7 |
+| 3 jump | 14 | 12 (34: crouch to stretched) |
+| 4 fall | 18 | 10 (40, held) |
+| 5 land | 22 | 11 (28) |
+
+KH2's ids are the OG rewrite's, its rows Checked (files). Which KH1 slot is which is an
+Assumption from their lengths and poses (Checked (files)) and the sister project's request map
+(requests 0 / 1 / 2 → slots 0..1 / 2..4 / 5..7, the jump's requests 9..0xC → slots 12, 13, 10,
+11); KH1's 13 (the top of the jump) has no KH2 row. The Keyblade keeps KH2's motions for these.

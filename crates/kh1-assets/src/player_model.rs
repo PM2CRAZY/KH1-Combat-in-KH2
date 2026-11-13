@@ -169,7 +169,7 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
         map_bar(data, |_, k, m| {
             if let (Some(s), kh2_formats::motion::BAR_TYPE_MOTION_TRIGGERS) = (swing, k) {
                 if let (Some(motion), false) = (kh1_motions.get(s).and_then(|x| x.as_ref()), m.is_empty()) {
-                    return Ok(crate::swing_triggers::sora(&kh2_formats::motion::MotionTriggers::parse(m)?, spans.get(&(row / 4)).copied(), len, motion).write());
+                    return Ok(crate::swing_triggers::sora(&kh2_formats::motion::MotionTriggers::parse(m)?, spans.get(&row).copied(), len, motion).write());
                 }
             }
             if k != BAR_TYPE_MOTION || !matches!(kh2_formats::anim::Interpolated::parse(m), Ok(Some(_))) {

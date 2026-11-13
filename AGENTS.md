@@ -1,3 +1,9 @@
+### 2026-11-13: Stage 42 (testing branch: KH1 idle, walk, run, jump, fall and land motions)
+Owner (t41 video): "Sora still has his KH2 walking, running, idle, keyblade idle, jumping, falling etc animation instead of his KH1 animation".
+
+- `kh1_assets::MOVES` (movement = kh1): KH1 motions 0 / 1 (field / battle idle), 2-4 (walks), 5-7 (runs), 12 (jump), 10 (fall), 11 (land) written into KH2's rows for idle 0/2, walk 4/6/7, run 8/10/11, jump 14, fall 18, land 22. KH2's ids from the OG rewrite (rows Checked (files)); the KH1 mapping is an Assumption from lengths, poses and the sister project's request map (docs/movement.md).
+- The KH1 slots are now motion set rows (id × 4 + variant), so field / battle variants can differ.
+
 ### 2026-11-13: Stage 41 (testing branch: Phase 3: KH1's guard)
 Owner: "Finish phase 3". First system: the guard.
 

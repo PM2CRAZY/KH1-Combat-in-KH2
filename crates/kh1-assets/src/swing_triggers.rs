@@ -98,16 +98,16 @@ pub fn keyblade(kh2: &MotionTriggers, kh2_len: f32, kh1: &Motion) -> MotionTrigg
     out
 }
 
-/// The KH2 Keyblade's hit-window span for each swing slot (`crate::SWINGS`), from KH2's
-/// `W_EX010.mset`.
+/// The KH2 Keyblade's hit-window span for each motion set row we write (`crate::kh1_slots`),
+/// from KH2's `W_EX010.mset`.
 pub fn keyblade_spans(w_ex010: &[u8]) -> kh2_formats::Result<std::collections::HashMap<usize, (i16, i16)>> {
     let bar = kh2_formats::bar::Bar::parse(w_ex010)?;
     let mut out = std::collections::HashMap::new();
-    for (id, _) in crate::kh1_slots() {
-        let Some(e) = bar.entries.get(id * 4).filter(|e| !e.data.is_empty()) else { continue };
+    for (row, _) in crate::kh1_slots() {
+        let Some(e) = bar.entries.get(row).filter(|e| !e.data.is_empty() && e.name != "DUMM") else { continue };
         let anb = kh2_formats::motion::Anb::parse(e.data)?;
         if let Some(s) = hit_span(&anb.triggers) {
-            out.insert(id, s);
+            out.insert(row, s);
         }
     }
     Ok(out)
