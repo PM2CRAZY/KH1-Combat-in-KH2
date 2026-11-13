@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 41 (testing branch: Phase 3: KH1's guard)
+Owner: "Finish phase 3". First system: the guard.
+
+- `kh1_assets::GUARD`: KH1 motion 110 (KH1's guard, attack row 0x3D, guard window 10-36, Checked (files)) written into KH2's guard slot 173 with `defence = kh1`; the Keyblade's guard window (range 10, ATKP 161) at KH1's frames, Sora's triggers moved with it, his combo window from KH1's 22.
+- The build now takes its KH1 slots by setting (`select_kh1_slots`: swings with combos = kh1, the guard with defence = kh1) and runs when any of combos, defence, model is kh1.
+- Not yet: KH1's Square rule (guard on a light tilt too), the guard arc. Plan: docs/defence.md.
+
 ### 2026-11-13: Stage 40 (testing branch: Config menu: L1 / R1 to the mod page)
 Owner: "make the config menu tab between main config and mod config by using r1 and l1".
 

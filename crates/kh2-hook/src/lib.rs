@@ -17,7 +17,7 @@ pub mod settings;
 
 /// The mod's version as the user sees it (the log): the stage of the latest `AGENTS.md` entry,
 /// bumped with every change to the source (a test checks). `t` for the testing branch.
-pub const VERSION: &str = "t40";
+pub const VERSION: &str = "t41";
 
 #[cfg(all(windows, target_arch = "x86_64"))]
 mod win;

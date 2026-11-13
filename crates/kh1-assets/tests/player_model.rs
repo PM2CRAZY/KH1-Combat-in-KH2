@@ -278,8 +278,9 @@ fn kh1_swing_events() {
     let Some(_) = files() else { return };
     let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
     let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
-    for k in kh1_assets::KH1_MOTIONS {
-        let m = mset1[k].as_ref().unwrap();
+    let extra: Vec<usize> = std::env::var("KH1_MOTION_LIST").ok().map(|s| s.split(',').filter_map(|x| x.parse().ok()).collect()).unwrap_or_default();
+    for k in kh1_assets::KH1_MOTIONS.iter().copied().chain(extra) {
+        let Some(m) = mset1.get(k).and_then(|m| m.as_ref()) else { eprintln!("KH1 {k}: none"); continue };
         eprintln!("KH1 {k} ({} frames):", m.frames);
         for e in &m.events {
             eprintln!("   kind {} id {}: {:?}", e.kind, e.id, e.keys.iter().map(|k| (k.0, k.1, k.2, k.3, k.4)).collect::<Vec<_>>());
@@ -328,12 +329,13 @@ fn kh1_windows_on_kh2_triggers() {
     let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
     let Ok(w) = std::fs::read(dir.join("W_EX010.mset")) else { return };
     let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    kh1_assets::select_kh1_slots(true, true);
     let out = kh1_assets::swing_triggers::build_keyblade(&w, &mset1).unwrap();
     eprintln!("W_EX010.mset {} -> {} bytes", w.len(), out.len());
     let spans = kh1_assets::swing_triggers::keyblade_spans(&w).unwrap();
     let p = std::fs::read(dir.join("P_EX100.mset")).unwrap();
     let (pb, bb) = (kh2_formats::bar::Bar::parse(&p).unwrap(), kh2_formats::bar::Bar::parse(&out).unwrap());
-    for (id, k) in kh1_assets::SWINGS {
+    for (id, k) in kh1_assets::kh1_slots() {
         let blade = kh2_formats::motion::Anb::parse(bb.entries[id * 4].data).unwrap().triggers;
         let a = pb.entries[id * 4].data;
         let sora = kh1_assets::swing_triggers::sora(&kh2_formats::motion::Anb::parse(a).unwrap().triggers, spans.get(&id).copied(), kh1_assets::swing_triggers::anb_frames(a), mset1[k].as_ref().unwrap());

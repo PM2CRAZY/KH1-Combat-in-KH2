@@ -128,9 +128,10 @@ fn assets(mod_path: &str) {
     let dir = std::path::PathBuf::from(mod_path);
     let combos = settings().style("combos") == crate::settings::Style::Kh1;
     let model = settings().style("model") == crate::settings::Style::Kh1;
-    if combos || model {
+    let defence = settings().style("defence") == crate::settings::Style::Kh1;
+    if combos || model || defence {
         let t = std::time::Instant::now();
-        match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION, model, combos) {
+        match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION, model, combos, defence) {
             Ok(Some(b)) => {
                 log!("assets: built {} bytes into {} in {} ms: KH1 swings (KH1 motion, KH2 slot, frames) {:?}; model = {}", b.bytes, dir.join("obj").display(), t.elapsed().as_millis(), b.motions, if model { "kh1" } else { "kh2" });
             }
@@ -147,7 +148,7 @@ fn assets(mod_path: &str) {
             let _ = std::fs::remove_file(dir.join("obj").join("P_EX100.mdlx"));
             let _ = std::fs::remove_dir_all(dir.join("remastered").join("obj").join("P_EX100.mdlx"));
             let _ = std::fs::remove_file(&stamp);
-            log!("assets: combos = kh2, model = kh2: our built files removed (KH2 loads its own)");
+            log!("assets: combos, defence and model = kh2: our built files removed (KH2 loads its own)");
         }
     }
 }

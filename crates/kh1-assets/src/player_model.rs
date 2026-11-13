@@ -197,8 +197,8 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
             write_motion(m, kh1, &kh1_poses, &travel)
         })
     })?;
-    if kh1_swings && swings.len() != crate::SWINGS.len() {
-        return Err(Error::Format(format!("KH2's motion set had {} of the {} swing slots", swings.len(), crate::SWINGS.len())));
+    if kh1_swings && swings.len() != crate::kh1_slots().len() {
+        return Err(Error::Format(format!("KH2's motion set had {} of the {} KH1 slots", swings.len(), crate::kh1_slots().len())));
     }
     Ok((out, swings))
 }

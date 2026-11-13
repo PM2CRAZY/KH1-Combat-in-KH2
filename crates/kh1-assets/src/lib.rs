@@ -185,9 +185,38 @@ pub const KH1_MOTIONS: [usize; 7] = [98, 99, 100, 101, 102, 103, 104];
 /// KH1 motions into the swings' own slots leaves the Keyblade's file and the `ptya` table as KH2's.
 pub const SWINGS: [(usize, usize); 9] = [(151, 98), (152, 99), (153, 100), (154, 101), (155, 101), (181, 102), (182, 103), (184, 104), (183, 104)];
 
+/// KH1's guard written into KH2's guard slot (`defence = kh1`, Phase 3): KH2 motion 173 (`A322`,
+/// combo row 11, its Keyblade guard window ATKP 161, Checked (files)) ← KH1 motion 110 (request
+/// `0xD4`, attack row `0x3D`: KH1's guard is an attack object of priority 100 live in the motion's
+/// hit window, frames 10–36; the sister project's `docs/kh1-roll-guard-native.md` §3.3, the events
+/// Checked (files)). The Keyblade's guard window moves to KH1's frames like a swing's hit window.
+pub const GUARD: [(usize, usize); 1] = [(173, 110)];
+
+static SLOTS: std::sync::RwLock<Option<Vec<(usize, usize)>>> = std::sync::RwLock::new(None);
+
+/// The KH2 slots this build writes KH1 motions into (KH2 id, KH1 motion): the swings with
+/// `combos = kh1`, the guard with `defence = kh1`. Until chosen, the swings.
+pub fn kh1_slots() -> Vec<(usize, usize)> {
+    SLOTS.read().ok().and_then(|s| s.clone()).unwrap_or_else(|| SWINGS.to_vec())
+}
+
+/// Chooses `kh1_slots` for a build.
+pub fn select_kh1_slots(swings: bool, guard: bool) {
+    let mut v = Vec::new();
+    if swings {
+        v.extend_from_slice(&SWINGS);
+    }
+    if guard {
+        v.extend_from_slice(&GUARD);
+    }
+    if let Ok(mut s) = SLOTS.write() {
+        *s = Some(v);
+    }
+}
+
 /// The KH1 motion written into KH2 slot `row` (a motion set row: id × 4), if any.
 pub fn kh1_motion_at(row: usize) -> Option<usize> {
-    (row % 4 == 0).then(|| SWINGS.iter().find(|s| s.0 * 4 == row).map(|s| s.1)).flatten()
+    (row % 4 == 0).then(|| kh1_slots().iter().find(|s| s.0 * 4 == row).map(|s| s.1)).flatten()
 }
 
 /// Test build (t17, off from t19): KH1 motion 98's slot holds KH2's own first swing (A300) passed
@@ -241,8 +270,8 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
             convert::write_motion(own, &kh2_bones, &poses, &travel)
         })
     })?;
-    if built.motions.len() != SWINGS.len() {
-        return Err(Error::Format(format!("KH2's motion set had {} of the {} swing slots", built.motions.len(), SWINGS.len())));
+    if built.motions.len() != kh1_slots().len() {
+        return Err(Error::Format(format!("KH2's motion set had {} of the {} KH1 slots", built.motions.len(), kh1_slots().len())));
     }
     built.bytes = out.len();
     Ok((out, built))
@@ -253,7 +282,7 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
 pub fn stamp(root: impl AsRef<Path>, version: &str, kh1_model: bool, kh1_swings: bool) -> String {
     let root = root.as_ref();
     let k1 = Kh1Install::locate(root).map(|k| format!("{} / {}", k.stamp(Source::Original, KH1_SORA_MSET), k.stamp(Source::Original, KH1_SORA_MDLS))).unwrap_or_default();
-    format!("kh2-kh1 {version}; KH1 {k1}; swings {} (KH1 windows); model {}", if kh1_swings { format!("{SWINGS:?}") } else { "kh2".into() }, if kh1_model { "kh1" } else { "kh2" })
+    format!("kh2-kh1 {version}; KH1 {k1}; KH1 slots {:?} (KH1 windows); model {}", { let _ = kh1_swings; kh1_slots() }, if kh1_model { "kh1" } else { "kh2" })
 }
 
 /// KH1 Sora as KH2's player: his model (`obj/P_EX100.mdlx`, `player_model::build`), KH2's whole
@@ -287,7 +316,9 @@ pub fn build_kh1_model(root: impl AsRef<Path>, kh1_swings: bool) -> Result<(Vec<
 /// stamp, and with `kh1_model` KH1 Sora's `obj/P_EX100.mdlx` and HD textures
 /// (`remastered/obj/P_EX100.mdlx/`), unless the stamp says the files there are already this
 /// build's. Returns what was built (`None`: up to date).
-pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str, kh1_model: bool, kh1_swings: bool) -> Result<Option<Built>> {
+pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str, kh1_model: bool, kh1_swings: bool, kh1_guard: bool) -> Result<Option<Built>> {
+    select_kh1_slots(kh1_swings, kh1_guard);
+    let kh1_swings = !kh1_slots().is_empty();
     let (root, mod_dir) = (root.as_ref(), mod_dir.as_ref());
     let obj = mod_dir.join("obj");
     let out = obj.join("P_EX100.mset");
