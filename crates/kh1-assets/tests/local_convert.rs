@@ -347,7 +347,7 @@ fn dump_mesh_poses() {
     let back = kh2_formats::anim::Interpolated::parse(&data).unwrap().unwrap();
     let mut sets: Vec<(String, Vec<glam::Mat4>)> = vec![("bind".into(), kh2_anim::Pose::bind(&kh2).bones)];
     sets.push(("a300_f20".into(), kh2_anim::evaluate(&kh2, &tm, 20.0, kh2_anim::Options { constraints: true }).bones));
-    for f in [0usize, 10, 20, 30, 40] {
+    for f in [0usize, 8, 16, 24, 32, 40] {
         sets.push((format!("ours_f{f}"), kh2_anim::evaluate(&kh2, &back, f as f32, kh2_anim::Options { constraints: false }).bones));
     }
     for (name, bones) in sets {
@@ -428,4 +428,93 @@ fn dump_torso_refs() {
         let (_, qb, _) = bind.to_scale_rotation_translation();
         eprintln!("torso KH1 bone {b} parent {} word {w:#010x} (mode {} lo {} A {}), idle vs bind {:.0} deg", kh1[b].parent, (w >> 21) & 3, w & 3, ((w >> 16 & 0x800) | (w & 0x7FC)) >> 2, q0.angle_between(qb).to_degrees());
     }
+}
+
+#[test]
+fn dump_torso_lengths() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&rd("xa_ex_0010.mdls")).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&rd("P_EX100.mdlx")).unwrap();
+    let motions = kh1_data::mset::parse(&rd("xa_ex_0010.mset")).unwrap();
+    let bind = kh2_anim::Pose::bind(&kh2).bones;
+    let p = |m: &glam::Mat4| m.w_axis.truncate();
+    let pairs = [(0usize, 3usize), (3, 68), (68, 141), (0, 68), (10, 39), (74, 166), (2, 11), (2, 40)];
+    let b: Vec<String> = pairs.iter().map(|&(a, c)| format!("{a}-{c} {:.1}", (p(&bind[a]) - p(&bind[c])).length())).collect();
+    eprintln!("bind: {}", b.join(", "));
+    for idx in [0usize, 98, 99] {
+        let (poses, _) = kh1_assets::convert::kh2_poses(&motions[idx].clone().unwrap(), &kh1, &kh2);
+        for f in (0..poses.len()).step_by(8) {
+            let v: Vec<String> = pairs.iter().map(|&(a, c)| format!("{a}-{c} {:.1}", (p(&poses[f][a]) - p(&poses[f][c])).length())).collect();
+            eprintln!("m{idx} f{f}: {}", v.join(", "));
+        }
+    }
+}
+
+#[test]
+fn dump_torso_pitch() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&rd("xa_ex_0010.mdls")).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&rd("P_EX100.mdlx")).unwrap();
+    let motions = kh1_data::mset::parse(&rd("xa_ex_0010.mset")).unwrap();
+    let p = |m: &glam::Mat4| m.w_axis.truncate();
+    let pitch = |a: glam::Vec3, b: glam::Vec3| { let v = (b - a).normalize(); v.y.clamp(-1.0, 1.0).acos().to_degrees() };
+    for idx in [0usize, 98, 99] {
+        let m = motions[idx].clone().unwrap();
+        let (poses, _) = kh1_assets::convert::kh2_poses(&m, &kh1, &kh2);
+        for f in (0..poses.len()).step_by(8) {
+            let k = kh1_data::rig::pose(&m, &kh1, f as f32).bones;
+            eprintln!("m{idx} f{f}: KH1 hips->neck {:.0} deg from up (0->148), KH2 {:.0} deg (0->141); KH1 hips->chest {:.0} (0->77) KH2 {:.0} (0->68)", pitch(p(&k[0]), p(&k[148])), pitch(p(&poses[f][0]), p(&poses[f][141])), pitch(p(&k[0]), p(&k[77])), pitch(p(&poses[f][0]), p(&poses[f][68])));
+        }
+    }
+}
+
+/// Torso tilt (hips to neck, from up) and thigh lift (hip to knee, from down), in degrees.
+fn tilt_lift(b: &[glam::Mat4]) -> (f32, f32) {
+    let p = |i: usize| b[i].w_axis.truncate();
+    let from = |v: glam::Vec3, axis: glam::Vec3| v.normalize().dot(axis).clamp(-1.0, 1.0).acos().to_degrees();
+    let tilt = from(p(141) - p(0), glam::Vec3::Y);
+    // Hip flexion: the thigh against the trunk's down (neck to hips), so a lean with the thigh
+    // under it counts as bent.
+    let down = (p(0) - p(141)).normalize();
+    let lift = from(p(12) - p(11), down).max(from(p(41) - p(40), down));
+    (tilt, lift)
+}
+
+#[test]
+fn dump_kh2_vs_kh1_extremes() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&rd("xa_ex_0010.mdls")).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&rd("P_EX100.mdlx")).unwrap();
+    let motions = kh1_data::mset::parse(&rd("xa_ex_0010.mset")).unwrap();
+    let mset = rd("P_EX100.mset");
+    let bar = Bar::parse(&mset).unwrap();
+    let pct = |mut v: Vec<f32>, q: f32| { v.sort_by(|a, b| a.total_cmp(b)); v[((v.len() - 1) as f32 * q) as usize] };
+    let (mut t2, mut l2) = (Vec::new(), Vec::new());
+    for id in [151usize, 152, 153, 154, 155, 181, 182, 183, 184, 156, 157, 158, 159, 160] {
+        let Some(e) = bar.entries.get(id * 4) else { continue };
+        let Ok(anb) = Bar::parse(e.data) else { continue };
+        let Some(m) = anb.entries.iter().find(|e| e.kind == 9).and_then(|e| kh2_formats::anim::Interpolated::parse(e.data).ok().flatten()) else { continue };
+        let mut mt = 0.0f32; let mut ml = 0.0f32;
+        for f in 0..m.frame_count.max(1) {
+            let b = kh2_anim::evaluate(&kh2, &m, f as f32, kh2_anim::Options { constraints: true }).bones;
+            let (t, l) = tilt_lift(&b);
+            t2.push(t); l2.push(l); mt = mt.max(t); ml = ml.max(l);
+        }
+        eprintln!("KH2 motion {id}: max tilt {mt:.0}, max thigh lift {ml:.0}");
+    }
+    let (mut t1, mut l1) = (Vec::new(), Vec::new());
+    for idx in [98usize, 99, 100, 101, 102, 103, 104] {
+        let (poses, _) = kh1_assets::convert::kh2_poses(&motions[idx].clone().unwrap(), &kh1, &kh2);
+        let mut mt = 0.0f32; let mut ml = 0.0f32;
+        for b in &poses { let (t, l) = tilt_lift(b); t1.push(t); l1.push(l); mt = mt.max(t); ml = ml.max(l); }
+        eprintln!("KH1 motion {idx} on KH2: max tilt {mt:.0}, max thigh lift {ml:.0}");
+    }
+    eprintln!("KH2 combos: tilt p50 {:.0} p95 {:.0}, lift p50 {:.0} p95 {:.0}", pct(t2.clone(), 0.5), pct(t2, 0.95), pct(l2.clone(), 0.5), pct(l2, 0.95));
+    eprintln!("KH1 combos: tilt p50 {:.0} p95 {:.0}, lift p50 {:.0} p95 {:.0}", pct(t1.clone(), 0.5), pct(t1, 0.95), pct(l1.clone(), 0.5), pct(l1, 0.95));
 }

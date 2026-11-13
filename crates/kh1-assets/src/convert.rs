@@ -30,6 +30,87 @@ const ROT_TOL: f32 = 0.002;
 const POS_TOL: f32 = 0.05;
 const BASE: usize = 0x90;
 
+/// KH1's torso lean (degrees, hips to neck from up) and what it becomes on KH2's body: KH1's
+/// combo leans mapped onto KH2's own (owner's choice (b), t25: KH1's timing, swing path and travel
+/// on KH2's proportions). Quantiles over every frame of the combos, KH1's on KH2's skeleton
+/// against KH2's own attacks (151–155, 181–184): median 46 → 35, 95th percentile 68 → 60, the
+/// largest (KH1 98's 102) → 65. Checked (files: test `dump_kh2_vs_kh1_extremes`).
+const LEAN_MAP: [(f32, f32); 5] = [(0.0, 0.0), (46.0, 35.0), (68.0, 60.0), (102.0, 65.0), (180.0, 90.0)];
+/// KH2's hips-to-neck bones (the root and the neck), its two thighs, and its foot bones (both
+/// sides' ankle, heel and toe). Checked (files: KH2 Sora's skeleton, `retarget::PLUS_X` / `MINUS_X`).
+const KH2_HIPS: usize = 0;
+const KH2_NECK: usize = 141;
+const KH2_THIGHS: [usize; 2] = [11, 40];
+const KH2_FEET: [usize; 6] = [13, 16, 17, 42, 45, 46];
+
+fn lean_target(t: f32) -> f32 {
+    for w in LEAN_MAP.windows(2) {
+        let ((a, fa), (b, fb)) = (w[0], w[1]);
+        if t <= b {
+            return fa + (fb - fa) * (t - a) / (b - a);
+        }
+    }
+    t
+}
+
+/// Tilts the pelvis and everything above it back about the hips so the lean is KH2's
+/// (`LEAN_MAP`); the legs keep their turns and hang from the moved hip joints, then the body is
+/// moved up or down so the lowest foot is where it was (the feet stay on the ground).
+fn soften_lean(kh2: &[Bone], pose: &mut [Mat4]) {
+    let n = pose.len();
+    let at = |m: &Mat4| m.w_axis.truncate();
+    let trunk = at(&pose[KH2_NECK]) - at(&pose[KH2_HIPS]);
+    if trunk.length_squared() < 1e-6 {
+        return;
+    }
+    let tilt = trunk.normalize().dot(Vec3::Y).clamp(-1.0, 1.0).acos().to_degrees();
+    let want = lean_target(tilt);
+    if (tilt - want).abs() < 0.01 {
+        return;
+    }
+    let axis = trunk.cross(Vec3::Y);
+    if axis.length_squared() < 1e-8 {
+        return;
+    }
+    // Turning the trunk about (trunk × up) by a positive angle brings it toward up.
+    let turn = Quat::from_axis_angle(axis.normalize(), (tilt - want).to_radians());
+    let pivot = at(&pose[KH2_HIPS]);
+    let low = |p: &[Mat4]| KH2_FEET.iter().filter(|&&b| b < n).map(|&b| at(&p[b]).y).fold(f32::MAX, f32::min);
+    let before = low(pose);
+    // Which bones are legs (a thigh or below it).
+    let mut leg = vec![false; n];
+    for b in 0..n {
+        let p = usize::try_from(kh2[b].parent).ok().filter(|&p| p < b);
+        leg[b] = KH2_THIGHS.contains(&b) || p.is_some_and(|p| leg[p]);
+    }
+    let old: Vec<Mat4> = pose.to_vec();
+    let rot = Mat4::from_translation(pivot) * Mat4::from_quat(turn) * Mat4::from_translation(-pivot);
+    for b in 0..n {
+        if !leg[b] {
+            pose[b] = rot * old[b];
+        }
+    }
+    // Each leg follows its hip joint (the thigh's parent) without turning.
+    for b in 0..n {
+        if leg[b] {
+            let mut root = b;
+            while !KH2_THIGHS.contains(&root) {
+                root = kh2[root].parent as usize;
+            }
+            let hip = kh2[root].parent as usize;
+            let shift = at(&pose[hip]) - at(&old[hip]);
+            pose[b] = Mat4::from_translation(shift) * old[b];
+        }
+    }
+    let dy = before - low(pose);
+    if dy.is_finite() {
+        let up = Mat4::from_translation(Vec3::new(0.0, dy, 0.0));
+        for m in pose.iter_mut() {
+            *m = up * *m;
+        }
+    }
+}
+
 /// KH2 model-space matrices for every frame of a KH1 motion, and its travel per frame.
 pub fn kh2_poses(motion: &Motion, kh1: &[Bone], kh2: &[Bone]) -> (Vec<Vec<Mat4>>, Vec<Vec3>) {
     let r = Retarget::new(kh1, kh2);
@@ -62,7 +143,9 @@ pub fn kh2_poses(motion: &Motion, kh1: &[Bone], kh2: &[Bone]) -> (Vec<Vec<Mat4>>
         let t = p.helpers.last().map(|m| m.w_axis.truncate()).unwrap_or(Vec3::ZERO);
         let back = Mat4::from_translation(-t);
         let body: Vec<Mat4> = p.bones.iter().map(|m| back * *m).collect();
-        poses.push(inv.pose(&body));
+        let mut kp = inv.pose(&body);
+        soften_lean(kh2, &mut kp);
+        poses.push(kp);
         travel.push(t);
     }
     (poses, travel)

@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 25 (testing branch: KH1 swings: the lean on KH2's proportions)
+Owner: "B" (KH1's timing, swing path, travel and hit frames, with the lean and spread scaled to KH2's proportions; not 1:1).
+
+- Measured over every frame (test `dump_kh2_vs_kh1_extremes`): KH2's own attacks lean the trunk median 35° / 95th percentile 60° (max ~63°); KH1's on KH2 46° / 68° (max 102°, swing 1). Thigh lift was already within KH2's range. Checked: files.
+- `convert::soften_lean` maps the lean (46→35, 68→60, 102→65), tilting pelvis and upper body about the hips. The legs keep their turns and the lowest foot stays put. After: lean 35° / 60°, hip bend 97° / 135° (KH2: 97° / 132°).
+- Not checked in game.
+
 ### 2026-11-13: Stage 24 (testing branch: KH1 reader 1:1 with KH1's own poses)
 Owner (t23, video): "still very funky looking".
 

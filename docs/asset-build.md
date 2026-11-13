@@ -201,3 +201,20 @@ helpers with them. Not compared with KH1's own pose in game yet.
      13.3 under the root, not at helper 3 (28.8). `0x1403900B0`, Checked (decomp, trace).
   3. **A child's offset is scaled by its parent's accumulated scale**, per axis. Bones 36 / 62 sit
      at 0.8 of their bind offset. Checked (trace).
+- **t25: KH1's lean on KH2's proportions (the owner's choice (b), not 1:1).** Owner (t24): "still
+  really bad … his torso really stretches out". With the reader exact, the swings matched KH1
+  frame for frame (side-by-side of KH1's recorded skeleton and KH2's mesh). KH1's ground swings
+  lean the trunk up to 102° (swing 1), and KH2's longer trunk and coat make that read as
+  stretched. The owner chose (b): KH1's timing, swing path, travel and hit frames, with the lean
+  scaled to KH2's proportions.
+  - Measured over every frame of the combos (test `dump_kh2_vs_kh1_extremes`). KH2's own attacks
+    (151–155, 181–184): trunk lean median 35°, 95th percentile 60°, max about 63°; hip bend against
+    the trunk median 97°, 95th percentile 132°. KH1's swings on KH2: lean 46° / 68° / 102°, hip bend
+    104° / 146°. Thigh lift from vertical was already within KH2's range. Checked (files).
+  - `convert::soften_lean` maps the trunk lean (hips, bone 0, to neck, bone 141) by `LEAN_MAP`:
+    0→0, 46→35, 68→60, 102→65, linear between. It tilts the pelvis and everything above it about
+    the hips; the legs keep their turns and hang from the moved hip joints. Then the body moves
+    up or down so the lowest foot is where it was.
+  - After: KH1's swings lean median 35° / 95th percentile 60° (KH2's), hip bend 97° / 135°. Arms,
+    timing, travel and hit frames are unchanged. Edges stretch 16–23 at the deepest frames (KH2's
+    own A300: 13).

@@ -249,3 +249,21 @@ fn kh1_channel_trace() {
     }
     for l in seen.values() { eprintln!("{l}"); }
 }
+
+#[test]
+fn kh1_world_tilt() {
+    let Ok(dump) = std::env::var("KH1_POSEDUMP") else { return };
+    if std::env::var("KH1_TILT").is_err() { return }
+    let (motions, frames) = read_dump(&std::fs::read(dump).unwrap());
+    let _ = motions;
+    let mut last = 0u64;
+    for f in frames.iter().filter(|f| f.tag == 2) {
+        let w = f.world;
+        let (x, y, z) = (w.x_axis.truncate(), w.y_axis.truncate(), w.z_axis.truncate());
+        let tilt = y.normalize().dot(glam::Vec3::Y).abs().acos().to_degrees();
+        if f.motion != last || (f.t as i32) % 8 == 0 {
+            eprintln!("motion {:#x} t {:5.1}: world y-axis {:.0} deg off vertical; scale {:.2} {:.2} {:.2}", f.motion, f.t, tilt, x.length(), y.length(), z.length());
+            last = f.motion;
+        }
+    }
+}
