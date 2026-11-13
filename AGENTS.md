@@ -1,3 +1,9 @@
+### 2026-11-13: Stage 39 (testing branch: Config menu: the KH1 in KH2 row)
+Owner: "add the config menu", then: a 9th row in KH2's Config that opens our page; settings in `kh2-kh1.ini`.
+
+- `win/config_menu.rs`: KH2's Config row table (`0x1405BC340`, 8 rows of 0x14, Checked (exe)) copied with a 9th row of ours; its 15 `lea` references (Checked (exe bytes)) repointed; the list's row count 9 (`0x1403656EF`), so it scrolls; the values array 16 bytes (`0x140365390`); our row's value cleared when the screen opens (hook on `0x140365580`, prologue checked). Our texts through a hook on the text lookup `0x1403AD9A0`.
+- The row opens nothing yet (next version: our page).
+
 ### 2026-11-13: Stage 38 (testing branch: KH1 air swing hop and speed)
 Phase 2 (owner: "Finish Phase 2"). KH1's air swings hop by their row's height (20, finisher 40) under KH1's gravity and move at a constant 4 (finisher 12) toward the aim (KH1 `0x1402A68F0`, `0x1402AF960`, Checked (decomp); heights from `btltbl.bin`, Checked (files)).
 

@@ -2,6 +2,7 @@
 
 mod airsteer;
 mod combo_tables;
+mod config_menu;
 mod arc;
 mod build;
 mod crash;
@@ -183,6 +184,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         if s.trace {
             trace::enable(base);
         }
+        config_menu::install(base);
         if s.style("movement") == crate::settings::Style::Kh1 {
             arc::install(base);
             prty::install(base);

@@ -55,3 +55,16 @@ and its list code draw ours.
 3. Where KH2 keeps the Config values in the save, and whether the save has spare room for ours.
 4. Then, one version each: the button, our lists, live switching (the KH1 hooks always installed,
    each checking its row; today they install only when the ini says `kh1` at start).
+
+## The owner's choice and step 1 (t39)
+
+The owner: a 9th row that opens our page; the settings stay in `kh2-kh1.ini`.
+
+t39 (`win/config_menu.rs`): the row. The 15 `lea`s that reach the row table (`0x140364974` …
+`0x140365C67`, Checked (exe bytes)) point at a 9-row copy (KH2's 8, then ours: one value, label
+"KH1 in KH2", value "Open", a help line); the list's row count (`mov edx, 8` at `0x1403656EF`,
+`0x1402F8F10` sets the list's `+0x16`) is 9, so the list scrolls (the draw `0x140365A20` reads
+the table at scroll + row); the row values array (`0x140365390`, `new(8)`) is 16 bytes, and our
+row's byte is set to 0 when the screen opens (`0x140365580`, hooked). Our texts come from a hook
+on the text lookup `0x1403AD9A0` (ids `0x7F00..`, KH2's text encoding after OpenKH). Nothing
+happens on our row yet.
