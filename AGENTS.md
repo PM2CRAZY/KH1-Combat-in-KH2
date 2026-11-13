@@ -1,3 +1,9 @@
+### 2026-11-13: Stage 18 (testing branch: kh1-posedump: KH1's own poses as ground truth)
+Owner: "Yes i will run it, and please feel free to use any overlapping code from the sister mod if it speeds things up, lets get Phase 2 finished".
+
+- New test tool `crates/kh1-posedump` (not part of the mod; CI builds `tools/kh1-posedump/kh1-posedump.dll`). It hooks KH1's skeleton pass `0x140391C70` (prologue `4C 8B DC 53 56 41 54`) and the ground-IK pass `0x140392560` (`4C 8B DC 55 53 41 54 41 57`). F10 records Sora's world and local bone matrices and his motion's joint words to `kh1-posedump.bin`.
+- Checked: decomp (instance `+0x1B0/+0x1B4/+0x1B8`, handle table `0x142EE3980`), exe bytes. The sister notes' `0x140391E20` / `0x2EE4730` are for another KH1 build (bytes differ). Notes: docs/kh1-posedump.md.
+
 ### 2026-11-12: Stage 17 (testing branch: keyblade motions for KH1 swings, round-trip test)
 Owner (t16, video): "the swings are still off. Also, the game crashed when switching keyblades".
 

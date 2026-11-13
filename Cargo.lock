@@ -114,6 +114,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "kh1-posedump"
+version = "0.1.0"
+
+[[package]]
 name = "kh2-anim"
 version = "0.1.0"
 dependencies = [

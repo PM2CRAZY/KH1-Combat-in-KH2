@@ -207,3 +207,81 @@ fn dump_a300_round_trip() {
     }
     eprintln!("{diffs} channels differ at frame 0; root y in our pose {:.1}", poses[0][0].w_axis.y);
 }
+
+#[test]
+fn dump_kh1_motion_range() {
+    let Some(d) = dir() else { return };
+    let Ok(out) = std::env::var("KH1_RANGE_OUT") else { return };
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&rd("xa_ex_0010.mdls")).unwrap();
+    let motions = kh1_data::mset::parse(&rd("xa_ex_0010.mset")).unwrap();
+    let mut s = String::from("{\"parents\":[");
+    s += &kh1.iter().map(|b| b.parent.to_string()).collect::<Vec<_>>().join(",");
+    s += "],\"motions\":{";
+    let mut first = true;
+    for (i, m) in motions.iter().enumerate() {
+        let Some(m) = m else { continue };
+        if !first { s += ","; }
+        first = false;
+        let n = m.frames.max(1) as usize;
+        let fr: Vec<String> = [0, n / 4, n / 2, 3 * n / 4].iter().map(|&f| {
+            let p = kh1_data::rig::pose(m, &kh1, f as f32);
+            format!("[{}]", p.bones.iter().map(|b| format!("[{:.1},{:.1},{:.1}]", b.w_axis.x, b.w_axis.y, b.w_axis.z)).collect::<Vec<_>>().join(","))
+        }).collect();
+        s += &format!("\"{i}\":{{\"frames\":{n},\"p\":[{}]}}", fr.join(","));
+    }
+    s += "}}";
+    std::fs::write(out, s).unwrap();
+}
+
+#[test]
+fn dump_kh1_root_channels() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let motions = kh1_data::mset::parse(&rd("xa_ex_0010.mset")).unwrap();
+    for idx in [0usize, 98] {
+        let m = motions[idx].clone().unwrap();
+        eprintln!("motion {idx}: frames {} fps {} bones {} helpers {} words {}", m.frames, m.fps, m.bones, m.helpers, m.joint_words.len());
+        for c in m.channels.iter().filter(|c| c.bone < 3) {
+            let v: Vec<String> = [0.0f32, 10.0, 20.0, 30.0].iter().map(|&f| format!("{:.2}", c.sample(f).unwrap_or(f32::NAN))).collect();
+            eprintln!("  bone {} kind {} {:?}", c.bone, c.kind, v);
+        }
+        eprintln!("  words {:?}", &m.joint_words[..m.joint_words.len().min(12)]);
+    }
+}
+
+#[test]
+fn dump_kh1_helpers() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&rd("xa_ex_0010.mdls")).unwrap();
+    let motions = kh1_data::mset::parse(&rd("xa_ex_0010.mset")).unwrap();
+    for idx in [0usize, 98] {
+        let m = motions[idx].clone().unwrap();
+        for (k, h) in m.helper_table.iter().enumerate() { eprintln!("m{idx} helper {k}: parent {} t {:?} r {:?}", h.parent, h.translation, h.rotation); }
+        let mut seen = std::collections::BTreeSet::new();
+        for c in &m.helper_chans { seen.insert((c.bone, c.kind)); }
+        eprintln!("m{idx} helper channels {:?}", seen);
+        for f in [0.0f32, 10.0, 20.0, 30.0, 40.0] {
+            let p = kh1_data::rig::pose(&m, &kh1, f);
+            let hs: Vec<String> = p.helpers.iter().map(|h| format!("{:.0},{:.0},{:.0}", h.w_axis.x, h.w_axis.y, h.w_axis.z)).collect();
+            eprintln!("m{idx} f{f}: root {:.1} | {}", p.bones[0].w_axis.y, hs.join(" | "));
+        }
+    }
+}
+
+#[test]
+fn dump_kh1_key_times() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let motions = kh1_data::mset::parse(&rd("xa_ex_0010.mset")).unwrap();
+    for idx in [0usize, 98, 101] {
+        let m = motions[idx].clone().unwrap();
+        let mx = m.channels.iter().chain(&m.helper_chans).flat_map(|c| c.keys.iter().map(|k| k.time)).fold(0.0f32, f32::max);
+        let h3: Vec<String> = m.helper_chans.iter().filter(|c| c.bone == 3 && c.kind == 8).flat_map(|c| c.keys.iter().map(|k| format!("{:.1}@{:.1}", k.value, k.time))).collect();
+        eprintln!("m{idx}: frames {} fps {} max key time {mx}; helper3 ty keys {:?}", m.frames, m.fps, h3);
+    }
+}

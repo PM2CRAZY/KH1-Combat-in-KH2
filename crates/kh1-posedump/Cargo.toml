@@ -1,0 +1,11 @@
+[package]
+name = "kh1-posedump"
+description = "Test tool, not part of the mod: a 64-bit DLL for KINGDOM HEARTS FINAL MIX.exe (KH1, Steam) that records Sora's bone matrices after KH1's own skeleton pass, as ground truth for the KH1-to-KH2 motion converter."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "kh1_posedump"
+crate-type = ["cdylib", "rlib"]
