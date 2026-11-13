@@ -14,6 +14,10 @@ here where used).
 3. **Spells: all nine.** KH1's Fire, Blizzard, Thunder, Cure, Gravity, Stop and Aero, plus KH2's
    Magnet and Reflect.
 
+4. **Max MP grows (the owner, 2026-11-13): KH1's levels + KH2's story.** KH1's start and KH1's +1
+   bar at its levels; each of KH2's own MP-up rewards (bonus levels) gives +1 bar instead of its
+   KH2 amount.
+
 ## What is known
 
 **KH2** (the sister project's `kh1-kh2-mp.md` §2, Checked (decomp) there, Steam): the player's
@@ -33,6 +37,13 @@ table `0x1403DCA50` (`0x1405C7425` the MP of each prize). The hit record (Phase 
 - A spell's cost is its attack data `+0x30` in hundredths of a bar (`0x14028CE40`); paid by
   `0x1402A5B60` (100 and up: whole bars; under: gauge units).
 - Orbs: small 2 units, large 15 (`0x1402AC080`). MP Rage: damage taken × copies, in units.
+- **KH1's level-ups** (Checked (decomp) `0x1402B51B0` / `0x1402B5660`; Checked (files)): going from
+  level L to L + 1 applies Sora's level table byte `L - 1` (`btltbl.bin` `+0x3AC0`, its offset at
+  KH1 exe `0x140528CC0`, the file loaded at `0x142D22D40`): 1 = +3 max HP, 2 = +1 max MP (bar),
+  3 = +2 AP, 4 = +2 Strength, 5 = +2 Defense, 6 = another. Max MP +1 at levels 12, 24, 36, 48 and
+  60. (`0x140528D10[dream weapon]` points at the three ability tables, `+0x3B28` / `+0x3B90` /
+  `+0x3BF8`.) Not found yet: Sora's starting max MP (the new-game record) and KH1's story MP ups
+  (Assumption: event scripts; not needed for the owner's choice 4).
 
 ## Plan (one system per version)
 
