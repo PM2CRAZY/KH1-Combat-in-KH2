@@ -300,3 +300,34 @@ Read again from the owner's `xm_fire01..03.mag` with KH1-in-ReCom's script disas
   match is still to be found), KH1's hit stop (`sys 186`; KH2's attacks have their own).
 - The spell code is now shared (`kh1_assets::spells`: one cast, one release point, then each spell's
   shots); Blizzard's is written but not built yet (next version).
+
+## t73: KH1's Blizzard inside KH2's own Blizzard (`magic = kh1`, step 5.3)
+
+`magic/BLIZZARD_1..3.mag` are built as Fire's are (t70): KH2's own file, KH2's script for the Drive
+Forms, KH1's Blizzard for base Sora (sub < 10). From the owner's `xm_blizzard01..03.mag`, read with
+KH1-in-ReCom's disassembler, Checked (files):
+
+- **Cast:** KH1's effect 0 on the Keyblade, held while the cast motion plays (t69's KH1 motion and
+  release at 28).
+- **Release** (`0x6DC`): the Keyblade's tip (bone 48 at 1: KH2 anchor `0x4003`), KH1's flash (effect
+  4) there turned by π from Sora's facing; then **seven shards** (`0x4A`): six on a cone, KH1's local
+  (0.383, 0, 0.924) turned 60° about his facing for each, each starting its sideways part × 50 off the
+  axis (19.15); then one straight ahead from the tip. Shards 0 and 3 (level) and the straight one
+  play KH1's effect 1, the four others effect 5. Turned to the world by his yaw with
+  `trap_vector_roty` (`0x14041CFE0` → `0x1403B7680`, a turn about y, Checked (decomp)).
+- **One hit per enemy per cast** (KH1's shared hit bit): one attack (`attack_new`, ATKP 248, KH2's
+  shard row by the sub) copied for each shard with `trap_attack_dup` (table 2 entry 31,
+  `0x1404324D0` → `0x1404372E0`: a new attack with the source's owner and group, Checked (decomp)),
+  so a shard reaching an enemy another shard hit flies on through it.
+- **A shard's frame** (`0x238`), KH1's order: while its effect lives and life (26) remains: x and z
+  by its direction × speed (KH1's vector unnormalised: 0.383² + 0.924² = 1.0005); then a ray
+  straight down by 50 + its own vertical step (`trap_bg_ground_pos(from, out, depth)`, table 1 entry
+  141, `0x14042E8B0` → `0x1403F3DD0`, Checked (decomp)): a floor → 50 above it, none → its own
+  step; place the effect and attack; wait a frame; a hit ends it; life − 1. Speed 20 / 30 / 40 and
+  radius 70 / 90 / 120 by the file's level.
+- **The end:** KH1 `sys1 3` sets the effect's first flag byte (`0x140394DE0`): read as "end the loop"
+  (KH2's `trap_effect_loop_end`), Assumption.
+- **Hit effects:** KH1's body spark (effect 2, set mask `0x81`) and wall spark (3, `0x102`) as group-3
+  elements; `kh2-hook` gives ATKP 248's base rows `effect_on_hit` 3 with Fire's (t70).
+- Sounds: KH2's Blizzard's stand in (120 cast, 121 each shard, 122 hit, 124 / 125 wall / clash).
+- Not yet: KH1's damage (KH2's shard rows' powers), KH1's sounds.

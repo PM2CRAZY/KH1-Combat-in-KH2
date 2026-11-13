@@ -135,10 +135,13 @@ pub fn mag(name: &[u8; 4], pax: &[u8], bdx: &[u8]) -> Vec<u8> {
 /// KH2's `magic/<SPELL>_n.mag` is level n (its MAGC rows; the Drive Forms cast the same files,
 /// the sister's `drive-model.md`); KH1's `xm_<spell>0n.mag` likewise (Checked (files): the scripts
 /// differ only in the level's numbers, Blizzard's shard speed 20 / 30 / 40).
-pub const SPELLS: [(&str, &str, Kind, usize); 3] = [
+pub const SPELLS: [(&str, &str, Kind, usize); 6] = [
     ("xm_fire01.mag", "magic/FIRE_1.mag", Kind::Fire, 0),
     ("xm_fire02.mag", "magic/FIRE_2.mag", Kind::Fire, 1),
     ("xm_fire03.mag", "magic/FIRE_3.mag", Kind::Fire, 2),
+    ("xm_blizzard01.mag", "magic/BLIZZARD_1.mag", Kind::Blizzard, 0),
+    ("xm_blizzard02.mag", "magic/BLIZZARD_2.mag", Kind::Blizzard, 1),
+    ("xm_blizzard03.mag", "magic/BLIZZARD_3.mag", Kind::Blizzard, 2),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

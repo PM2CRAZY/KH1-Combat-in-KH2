@@ -175,10 +175,11 @@ unsafe fn patch_guard_arc() {
 /// own elements for the Drive Forms and add KH1's, whose hit elements are tagged hit-effect group
 /// 3 (`spells::HIT_GROUP`). KH2 finds a hit's effect by its ATKP row's `effect_on_hit`
 /// (`+0x0B`) among the elements' tags (the sister's `kh2-effects.md`, Checked there), so base
-/// Sora's Fire rows take group 3: ATKP 502 (Fire), the rows of subs 0..5 (`+1`: the level and
-/// finisher, sub = level × 2 − 2 (+1); the Drive Forms' are 10 and up, Checked (files):
-/// `00battle.bin`), those with a hit effect (`effect_on_hit` ≠ 0; 0 is a row with none).
-const SPELL_ROWS: [(u16, u8); 1] = [(502, 3)];
+/// Sora's spell rows take group 3: ATKP 502 (Fire) and 248 (Blizzard's shard), the rows of subs
+/// 0..5 (`+1`: the level and finisher, sub = level × 2 − 2 (+1); the Drive Forms' are 10 and up,
+/// Checked (files): `00battle.bin`), those with a hit effect (`effect_on_hit` ≠ 0; 0 is a row with
+/// none).
+const SPELL_ROWS: [(u16, u8); 2] = [(502, 3), (248, 3)];
 
 unsafe fn patch_spells() {
     let t = *((BASE.load(Ordering::Relaxed) + ATKP) as *const usize);

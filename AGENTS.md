@@ -1,3 +1,14 @@
+### 2026-11-13: Stage 73 (testing branch: Phase 4: KH1's Blizzard inside KH2's own Blizzard)
+The owner: "perfect finish phase 4 now".
+
+- magic/BLIZZARD_1..3.mag built like Fire's (t70): KH2's own file and script for the Drive Forms (sub >= 10), KH1's Blizzard for base Sora.
+- From xm_blizzard01..03.mag (KH1-in-ReCom's disassembler, Checked (files)): cast effect 0 on the Keyblade; release at the tip (anchor 0x4003, obj_apply_bone_matrix) with KH1's flash (effect 4) turned by pi; seven shards: six on KH1's cone (0.383, 0, 0.924) turned 60 deg about the facing, starting 19.15 off the axis, then one straight; effects 1 (shards 0, 3, straight) and 5 (the rest); turned by yaw with trap_vector_roty (0x14041CFE0 -> 0x1403B7680, Checked (decomp)).
+- One hit per enemy per cast: one attack (ATKP 248) copied per shard with trap_attack_dup (0x1404324D0 -> 0x1404372E0, same owner and group, Checked (decomp)).
+- Shard frame in KH1's order: x/z by dir x speed (KH1's unnormalised vector), ray down by 50 + dy with trap_bg_ground_pos (0x14042E8B0 -> 0x1403F3DD0, Checked (decomp)): floor -> 50 above, else own step; place; wait; hit ends; life - 1. Speed 20/30/40, radius 70/90/120, life 26.
+- End: KH1 sys1 3 read as loop end (trap_effect_loop_end). Assumption.
+- kh2-hook: ATKP 248 base rows take effect_on_hit 3 with Fire's.
+- Not yet: KH1's damage, KH1's sounds (KH2 Blizzard's stand in).
+
 ### 2026-11-13: Stage 72 (testing branch: Phase 4: KH1's Fire in KH1's order, from the Keyblade's middle)
 The owner: "perfect finish phase 4 now".
 
