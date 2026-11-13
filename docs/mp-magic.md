@@ -110,7 +110,7 @@ field and lock-on camera go in as a KH2 camera mode, from the sister project's `
 
 ## t64: magic rows with no KH2 cost keep it
 
-The t63 log showed the cost patch giving cmd 2 (a magic row, exec 2, arg 2, KH2 cost 0) KH1's
+The t62 log showed the cost patch giving cmd 2 (a magic row, exec 2, arg 2, KH2 cost 0) KH1's
 Thunder cost of 100. A row with no cost in KH2 isn't a paid cast (Assumption: it is a menu or
 script entry, not the spell itself), so it keeps its 0; only rows KH2 charges for get KH1's cost.
 Checked (files: the t62 log's own list of rows).
