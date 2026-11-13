@@ -1,3 +1,8 @@
+### 2026-11-13: Stage 66 (testing branch: Phase 4: KH1's orbs, MP Rage and KH2's MP gains)
+- **KH1's orbs, MP Rage and KH2's gains on KH1's MP.** The owner (2026-11-13): "finish phase 4". Step 3.
+  - `win/mp.rs`: a gain's source picks its meaning: our hit hook KH1's units; KH2's prize pick-up `0x1403DCA50` (hooked; table `0x1405C7420` rows 5 / 6) KH1's orbs 2 / 15 units (KH1 `0x1402AC080`); KH2's damage-taken handlers `0x1403D5600` / `0x1403D5E50` (hooked) hold back KH2's MP Rage and give KH1's (HP lost × copies, KH1 `0x14029BBD0`; copies = status `+0x22C` / the rate per copy `*(0x142AE5760) + 0x150`); other gains (items, scripts) are KH2 MP at 10 a bar (`kh1mp::Mp::add_kh2`, tested). Checked (decomp + exe) for both games' numbers and fields.
+  - Assumptions: KH1's Ether is KH2's 3 bars. Not done: MP Haste (question). Not checked in game.
+
 ### 2026-11-13: Stage 65 (testing branch: the mod's Config switches apply at once)
 - **Config switches apply at once.** The owner (2026-11-13): "you should have the mod config settings change in game the moment you select an option".
   - `settings::kh1` / `set_kh1`: each system's switch now; every system's hooks installed at launch (Steam), each running KH2's own code while its system is kh2.

@@ -32,6 +32,100 @@ const HIT_RECORD: usize = 0x3C_E740;
 const SAVE: usize = 0x9A_BDA0;
 const CMD_TABLE: usize = 0x2A1_61E8;
 const CMD_ROW: usize = 0x30;
+const PRIZE: usize = 0x3D_CA50;
+const RAGE_A: usize = 0x3D_5600;
+const RAGE_B: usize = 0x3D_5E50;
+/// KH2's system numbers (`0x142AE5760`): `+0x150` MP Rage's rate per copy (`0x140401730`, ability
+/// 0x19C). Checked (decomp).
+const SYS: usize = 0x2AE_5760;
+
+/// Where a gain comes from, for the MP change (set around the call by our own hooks).
+const FROM_KH2: u8 = 0;
+const FROM_UNITS: u8 = 1;
+const FROM_RAGE: u8 = 2;
+const FROM_PRIZE: u8 = 3;
+static FROM: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(FROM_KH2);
+static FROM_ARG: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+static O_PRIZE: AtomicUsize = AtomicUsize::new(0);
+static O_RAGE_A: AtomicUsize = AtomicUsize::new(0);
+static O_RAGE_B: AtomicUsize = AtomicUsize::new(0);
+static ORB_LOGGED: AtomicBool = AtomicBool::new(false);
+static RAGE_LOGGED: AtomicBool = AtomicBool::new(false);
+
+/// KH1's gauge units through KH2's MP change.
+unsafe fn add_units(obj: usize, units: i32) {
+    FROM.store(FROM_UNITS, Ordering::Relaxed);
+    let f: unsafe extern "system" fn(usize, i32, u8) -> u64 = std::mem::transmute(BASE.load(Ordering::Relaxed) + MP_CHANGE);
+    f(obj, units, 0);
+    FROM.store(FROM_KH2, Ordering::Relaxed);
+}
+
+/// KH2's prize pick-up `0x1403DCA50 (?, object, prize)`: the prize's kind `+0x14` picks a row of
+/// `0x1405C7420` (8 bytes: `+5` the MP; rows 5 / 6 the small / large MP orb, 1 / 3; Checked (decomp
+/// + exe)), and the MP goes through `0x1403D3CF0`. For base Sora at `mp = kh1`, KH1's orbs: 2 / 15
+/// gauge units.
+unsafe extern "system" fn prize(a: usize, obj: usize, p: usize) {
+    let o: unsafe extern "system" fn(usize, usize, usize) = std::mem::transmute(O_PRIZE.load(Ordering::Acquire));
+    if p == 0 || !crate::settings::kh1(crate::settings::MP) || !is_base_sora(obj) {
+        return o(a, obj, p);
+    }
+    FROM.store(FROM_PRIZE, Ordering::Relaxed);
+    FROM_ARG.store(*((p + 0x14) as *const u8) as i32, Ordering::Relaxed);
+    o(a, obj, p);
+    FROM.store(FROM_KH2, Ordering::Relaxed);
+}
+
+/// MP Rage's copies: the rate KH2 gave his status (`+0x22C`, the ability block at `+0x1D0`, `+0x5C`)
+/// over its rate per copy.
+unsafe fn rage_copies(status: usize) -> i32 {
+    let sys = *((BASE.load(Ordering::Relaxed) + SYS) as *const usize);
+    let per = if sys == 0 { 0.0 } else { *((sys + 0x150) as *const f32) };
+    let rate = *((status + 0x22C) as *const f32);
+    if per <= 0.0 || rate <= 0.0 { 0 } else { (rate / per).round() as i32 }
+}
+
+/// KH2's damage-taken handlers with MP Rage (`0x1403D5600 (?, object, change)`, `0x1403D5E50
+/// (object, change)`: MP += lost / max HP × `+0x22C`, not while an MP Charge runs; Checked
+/// (decomp)). For base Sora at `mp = kh1`, KH2's own gain is held back and KH1's MP Rage given:
+/// the HP lost × the copies, in gauge units.
+unsafe fn rage_after(obj: usize, change: i32) {
+    let status = *((obj + 0x5C0) as *const usize);
+    if status == 0 || change >= 0 || *((status + 0x1C0) as *const f32) > 0.0 {
+        return;
+    }
+    let copies = rage_copies(status);
+    let units = crate::kh1mp::rage_units(-change, copies);
+    if units > 0 {
+        add_units(obj, units);
+        if !RAGE_LOGGED.swap(true, Ordering::Relaxed) {
+            log!("mp kh1: KH1's MP Rage ({} HP lost × {copies} copies = {units} units)", -change);
+        }
+    }
+}
+
+unsafe extern "system" fn rage_a(a: usize, obj: usize, change: i32, d: u32, e: u8) -> u64 {
+    let o: unsafe extern "system" fn(usize, usize, i32, u32, u8) -> u64 = std::mem::transmute(O_RAGE_A.load(Ordering::Acquire));
+    if !crate::settings::kh1(crate::settings::MP) || !is_base_sora(obj) {
+        return o(a, obj, change, d, e);
+    }
+    FROM.store(FROM_RAGE, Ordering::Relaxed);
+    let r = o(a, obj, change, d, e);
+    FROM.store(FROM_KH2, Ordering::Relaxed);
+    rage_after(obj, change);
+    r
+}
+
+unsafe extern "system" fn rage_b(obj: usize, change: i32, c: u32, d: u8) -> u64 {
+    let o: unsafe extern "system" fn(usize, i32, u32, u8) -> u64 = std::mem::transmute(O_RAGE_B.load(Ordering::Acquire));
+    if !crate::settings::kh1(crate::settings::MP) || !is_base_sora(obj) {
+        return o(obj, change, c, d);
+    }
+    FROM.store(FROM_RAGE, Ordering::Relaxed);
+    let r = o(obj, change, c, d);
+    FROM.store(FROM_KH2, Ordering::Relaxed);
+    rage_after(obj, change);
+    r
+}
 
 static BASE: AtomicUsize = AtomicUsize::new(0);
 static O_BUILD: AtomicUsize = AtomicUsize::new(0);
@@ -69,8 +163,7 @@ unsafe extern "system" fn hit_record(attack: usize, atkp: usize, target: usize, 
         kh1mp::KH1_HIT_UNITS
     };
     if units > 0 {
-        let f: unsafe extern "system" fn(usize, i32, u8) -> u64 = std::mem::transmute(base + MP_CHANGE);
-        f(owner, units, 0);
+        add_units(owner, units);
         if !HIT_LOGGED.swap(true, Ordering::Relaxed) {
             log!("mp kh1: KH1's MP from Sora's hits (first: ATKP {id}, {units} units)");
         }
@@ -147,7 +240,23 @@ unsafe extern "system" fn change(obj: usize, delta: i32, flag: u8) -> u64 {
             None => return 0,
         }
     } else {
-        now.add_units(delta, max)
+        // A gain: KH1's units from our own hooks, KH1's orbs, KH2's MP Rage held back (KH1's
+        // follows), anything else (items, scripts) KH2's MP at 10 a bar.
+        match FROM.load(Ordering::Relaxed) {
+            FROM_UNITS => now.add_units(delta, max),
+            FROM_RAGE => return 1,
+            FROM_PRIZE => match FROM_ARG.load(Ordering::Relaxed) {
+                5 | 6 => {
+                    let u = if FROM_ARG.load(Ordering::Relaxed) == 5 { kh1mp::KH1_ORB_SMALL } else { kh1mp::KH1_ORB_LARGE };
+                    if !ORB_LOGGED.swap(true, Ordering::Relaxed) {
+                        log!("mp kh1: KH1's MP orb ({u} units; KH2's {delta} MP)");
+                    }
+                    now.add_units(u, max)
+                }
+                _ => now.add_kh2(delta, max),
+            },
+            _ => now.add_kh2(delta, max),
+        }
     };
     let (a, b) = (*((status + 0x180) as *const i32), next.kh2(max));
     *((status + 0x1BC) as *mut f32) = next.units as f32;
@@ -272,6 +381,9 @@ pub unsafe fn install(base: usize) {
     let c = b && hook::install(base + COMMAND_STATE, &[0x48, 0x89, 0x5C, 0x24, 0x08], command_state as *const () as usize, &O_STATE, "command state 0x1403D88E0").is_some();
     let d = c && hook::install(base + CHARGE_BY, &[0x48, 0x8B, 0x81, 0x48, 0x01, 0x00, 0x00], charge_by as *const () as usize, &O_CHARGE, "MP Charge start 0x1403D4A20").is_some();
     let e = d && hook::install(base + HIT_RECORD, &[0x48, 0x89, 0x5C, 0x24, 0x08], hit_record as *const () as usize, &O_HIT, "hit record 0x1403CE740").is_some();
+    let e = e && hook::install(base + PRIZE, &[0x48, 0x89, 0x5C, 0x24, 0x08], prize as *const () as usize, &O_PRIZE, "prize pick-up 0x1403DCA50").is_some();
+    let e = e && hook::install(base + RAGE_A, &[0x48, 0x89, 0x5C, 0x24, 0x08], rage_a as *const () as usize, &O_RAGE_A, "damage taken 0x1403D5600").is_some();
+    let e = e && hook::install(base + RAGE_B, &[0x48, 0x89, 0x5C, 0x24, 0x08], rage_b as *const () as usize, &O_RAGE_B, "damage taken 0x1403D5E50").is_some();
     if e {
         log!("mp: KH1's MP on base Sora while mp = kh1 ({} MP a bar, no MP Charge)", kh1mp::MP_PER_BAR);
     } else {

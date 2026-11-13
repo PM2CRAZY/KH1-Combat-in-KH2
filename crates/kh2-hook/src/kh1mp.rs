@@ -54,6 +54,19 @@ impl Mp {
         self
     }
 
+    /// A gain KH2 gives in its own MP (items such as Ether, scripts): 10 a bar, so whole bars,
+    /// and the rest as that share of the next bar's gauge.
+    pub fn add_kh2(mut self, mp: i32, max_bars: i32) -> Mp {
+        if mp <= 0 {
+            return self;
+        }
+        self.bars = (self.bars + mp / MP_PER_BAR).min(max_bars);
+        let rest = mp % MP_PER_BAR;
+        let need = (self.bars + 1) * UNITS_PER_STEP;
+        let units = self.units;
+        Mp { bars: self.bars, units: 0 }.add_units(units + rest * need / MP_PER_BAR, max_bars)
+    }
+
     /// KH1's check (`0x1402A4C10`), with KH2's "all" (at least one bar, the owner's Limits rule).
     pub fn can_pay(self, cost: i32) -> bool {
         if cost <= 0 {
@@ -124,6 +137,16 @@ pub const KH1_SPELL_COSTS: [(i16, u8); 4] = [(0, 30), (1, 30), (2, 100), (3, 100
 pub const KH1_HIT_UNITS: i32 = 3;
 pub const KH1_FINISHER_UNITS: i32 = 6;
 
+/// KH1's MP orbs (`0x1402AC080`, prize kinds 5 / 6 → the gauge add `0x1402A4AE0`): small 2 units,
+/// large 15. Checked (decomp).
+pub const KH1_ORB_SMALL: i32 = 2;
+pub const KH1_ORB_LARGE: i32 = 15;
+
+/// KH1's MP Rage (`0x14029BBD0`): the gauge gains the HP lost × the copies equipped. Checked (decomp).
+pub fn rage_units(hp_lost: i32, copies: i32) -> i32 {
+    (hp_lost.max(0) as f32 * copies.max(0) as f32) as i32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,6 +178,17 @@ mod tests {
         assert!(m.can_pay(100) && !Mp { bars: 0, units: 29 }.can_pay(30));
         assert_eq!(m.pay(COST_ALL), Some(Mp { bars: 0, units: 0 }));
         assert_eq!(Mp { bars: 0, units: 20 }.pay(COST_ALL), None);
+    }
+
+    #[test]
+    fn kh2_gains_and_rage() {
+        // Ether's 30 KH2 MP: three bars.
+        assert_eq!(Mp { bars: 1, units: 5 }.add_kh2(30, 9), Mp { bars: 4, units: 5 });
+        assert_eq!(Mp { bars: 8, units: 0 }.add_kh2(30, 9), Mp { bars: 9, units: 0 });
+        // 5 KH2 MP: half of the next bar (bar 3 needs 90 units).
+        assert_eq!(Mp { bars: 2, units: 10 }.add_kh2(5, 9), Mp { bars: 2, units: 55 });
+        assert_eq!(rage_units(12, 2), 24);
+        assert_eq!(rage_units(-3, 2), 0);
     }
 
     #[test]

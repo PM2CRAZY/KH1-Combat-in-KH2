@@ -114,3 +114,27 @@ The t62 log showed the cost patch giving cmd 2 (a magic row, exec 2, arg 2, KH2 
 Thunder cost of 100. A row with no cost in KH2 isn't a paid cast (Assumption: it is a menu or
 script entry, not the spell itself), so it keeps its 0; only rows KH2 charges for get KH1's cost.
 Checked (files: the t62 log's own list of rows).
+
+## t66: KH1's orbs, MP Rage and KH2's MP gains (step 3)
+
+The owner (2026-11-13): "finish phase 4".
+
+Every MP gain reaches KH2's MP change `0x1403D3CF0`; t60 read every gain as KH1 gauge units.
+Now (base Sora, `mp = kh1`) it depends on where the gain comes from:
+- **Hits** (t61's hit record): KH1's units, as before.
+- **MP orbs:** KH2's pick-up `0x1403DCA50 (?, object, prize)` reads the prize's kind (`+0x14`) in
+  the row table `0x1405C7420` (8 bytes a row: `+5` MP; rows 5 / 6 the small / large MP orb, 1 / 3
+  MP; Checked (decomp + exe)). Hooked (prologue 48 89 5C 24 08): rows 5 / 6 give KH1's orbs, 2 / 15
+  gauge units (KH1 `0x1402AC080` kinds 5 / 6 → `0x1402A4AE0`; Checked (decomp)).
+- **MP Rage:** KH2's damage-taken handlers `0x1403D5600` / `0x1403D5E50` (Checked (decomp)) add
+  `lost / max HP × rate` (`+0x22C`; rate per copy `*(0x142AE5760) + 0x150`, ability 0x19C, from
+  `0x140401730`'s ability block at status `+0x1D0`; Checked (decomp)). Hooked (prologues 48 89 5C 24
+  08): KH2's gain held back, KH1's given: HP lost × copies in gauge units (KH1 `0x14029BBD0`,
+  copies from `+0x184` bits 1..3; Checked (decomp)). Copies = rate / rate per copy.
+- **Everything else** (items such as Ether, scripts): KH2's own amount in KH2 MP at 10 a bar
+  (`kh1mp::Mp::add_kh2`, tested): KH2's Ether (30) is 3 bars. Assumption: KH1's Ether is the
+  same 3 (KH1's item values not read yet).
+
+Not done in step 3: KH2's MP Haste / Hastera / Hastega (abilities 0x19D / 0x1A5 / 0x1A6, KH2's
+charge speed `+0x20C`) have nothing to speed up without the MP Charge; KH1's MP Haste is +150 % gauge
+per hit (`0x1402BF330`, `btltbl` `+0x95`). Question to the owner. Not checked in game.
