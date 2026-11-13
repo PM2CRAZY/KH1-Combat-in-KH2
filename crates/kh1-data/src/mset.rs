@@ -165,8 +165,11 @@ fn read_channels(b: &[u8], chans: usize, n: usize, keys: usize) -> Result<Vec<Ch
                 time: (head >> 8) as f32 / 256.0,
                 interpolation: (head & 0xFF) as u8,
                 value: f32::from_bits(u32_at(b, p + 4)?),
-                tangent_out: f32::from_bits(u32_at(b, p + 8)?),
-                tangent_in: f32::from_bits(u32_at(b, p + 12)?),
+                // Tangents are per key-time unit, 1/256 of a frame (as the times: KH1 samples at
+                // `frame × 256`, `0x14038F820`); per frame they are 256 times larger.
+                // Checked (kh1-posedump recording: KH1's curves rise and overshoot by these).
+                tangent_out: f32::from_bits(u32_at(b, p + 8)?) * 256.0,
+                tangent_in: f32::from_bits(u32_at(b, p + 12)?) * 256.0,
             });
         }
         channels.push(Channel { bone, kind: kind & 0xF, before: (kind >> 4) & 3, after: kind >> 6, keys: ks });

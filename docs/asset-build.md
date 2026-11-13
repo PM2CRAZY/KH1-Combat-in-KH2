@@ -187,3 +187,17 @@ helpers with them. Not compared with KH1's own pose in game yet.
 - **Mesh stretch, measured offline** (largest growth of a triangle edge over the rest pose):
   KH2's own A300 13.2. KH1 swing 98 before the fix: torn polygons. After it: 15–22 at the deepest
   lunge frames, around the hips. Still to look at.
+- **t24: the KH1 reader now matches KH1 exactly** (test `kh1_truth`, against the kh1-posedump
+  recording: idle and swings 98, 99, 101, 102, 103, 104 within 0.1–0.2 units on every bone and
+  frame; one frame of 102 has one bone at a stray value in KH1's own data). Checked (trace). Three
+  fixes in `kh1_data`:
+  1. **Key tangents are per 1/256 frame.** KH1 keys hold time in 1/256 frames
+     (`time << 8 | interpolation`) and the tangents in the same unit (`0x14038F820` samples at
+     `frame × 256`). Read as per-frame, they were 256 times too small, so every curve was a flat
+     ease between keys. KH1's curves rise and overshoot by the scaled tangents. Mean local error
+     on plain bones: 1.5–8° before, 0.01° after.
+  2. **A one-bone aim places the next bone.** After the aim (joint-word mode 1), KH1 puts the next
+     bone at its bind offset along the aim, and that bone keeps the place (bit 23). KH1 bone 3 is
+     13.3 under the root, not at helper 3 (28.8). `0x1403900B0`, Checked (decomp, trace).
+  3. **A child's offset is scaled by its parent's accumulated scale**, per axis. Bones 36 / 62 sit
+     at 0.8 of their bind offset. Checked (trace).

@@ -154,9 +154,18 @@ pub fn pose(motion: &Motion, skeleton: &[Bone], frame: f32) -> RigPose {
 
     let mut world = vec![Mat4::IDENTITY; n];
     let mut placed = vec![false; n];
+    // Each bone's accumulated scale (its own times its parent's, per axis; `+0x10` of the
+    // sampled record). KH1 scales a child's offset by its parent's (the parent's world rows carry
+    // it): `0x1403900B0`, Checked (kh1-posedump recording: bones 36 / 62, 0.8 of the offset).
+    let mut acc = vec![Vec3::ONE; n];
     let mut i = 0;
     while i < n {
         let w = word(i);
+        let pacc = match skeleton[i].parent {
+            p if p >= 0 && (p as usize) < i => acc[p as usize],
+            _ => Vec3::ONE,
+        };
+        acc[i] = pacc * Vec3::from(sampled[i].scale);
         let parent = match skeleton[i].parent {
             p if p >= 0 && (p as usize) < i => unscaled(&world[p as usize]),
             _ => helpers[0],
@@ -195,6 +204,11 @@ pub fn pose(motion: &Motion, skeleton: &[Bone], frame: f32) -> RigPose {
                 let (first, _) = solve(Vec3::from(s.translation), t, pole, l1, None, false, s.rotation[0], 0.0);
                 world[i] = parent * first;
                 placed[i] = true;
+                // KH1 then puts the next bone at its bind offset from this one (along the aim), and
+                // that bone keeps the place (joint-word bit 23). `0x1403900B0`, Checked (decomp,
+                // kh1-posedump recording: KH1 bone 3, 13.3 under the root, not at its helper).
+                world[i + 1] = Mat4::from_translation(world[i].transform_point3(Vec3::from(skeleton[i + 1].translation)));
+                placed[i + 1] = true;
                 i += 1;
                 continue;
             }
@@ -207,7 +221,7 @@ pub fn pose(motion: &Motion, skeleton: &[Bone], frame: f32) -> RigPose {
         } else if let Some(h) = hpos(p) {
             h
         } else {
-            parent.transform_point3(Vec3::from(s.translation))
+            parent.transform_point3(pacc * Vec3::from(s.translation))
         };
         let lo = w & 3;
         let rot: Mat4 = if lo == 2 {

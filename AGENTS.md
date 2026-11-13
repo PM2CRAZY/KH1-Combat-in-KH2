@@ -1,3 +1,12 @@
+### 2026-11-13: Stage 24 (testing branch: KH1 reader 1:1 with KH1's own poses)
+Owner (t23, video): "still very funky looking".
+
+Against the kh1-posedump recording (test `kh1_truth`) the KH1 reader now matches KH1 within 0.1–0.2 units on every bone and frame of the idle and swings 98, 99, 101–104 (was 7–55):
+- KH1 key tangents are per 1/256 frame (`0x14038F820`); they were read 256× too small, flattening every curve.
+- A one-bone aim (word mode 1) places the next bone at its bind offset (`0x1403900B0`).
+- A child's offset is scaled by its parent's accumulated scale.
+Checked: trace (the recording), decomp. Not checked in game.
+
 ### 2026-11-13: Stage 23 (testing branch: KH1 swings: the pelvis measured from KH1's own zero)
 Owner (t22): "The T Pose looks normal. the rest of the combo looks how it did before".
 
