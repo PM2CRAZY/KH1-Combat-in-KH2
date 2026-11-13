@@ -1,3 +1,14 @@
+### 2026-11-13: Stage 72 (testing branch: Phase 4: KH1's Fire in KH1's order, from the Keyblade's middle)
+The owner: "perfect finish phase 4 now".
+
+- Re-read from xm_fire01..03.mag with KH1-in-ReCom's KH1 script disassembler (syscall table from the KH1 Steam exe). Checked (files).
+- Ball starts at the Keyblade's middle (KH1: bone 48 at 0.5): KH2 anchor 0x4007 via trap_obj_apply_bone_matrix (table 1 entry 83, 0x14042F6F0 -> 0x1403B50F0 anchor cases). Checked (exe + decomp).
+- KH1's release flash (effect 4, sys 74 at the point, turned to Sora's yaw): new element 104, placed by the script.
+- Ball frame in KH1's order: life check, homing, fade once life < 20, move 40, place, life - 1, wait, hit ends. First frame 40 along; fade on the 12th frame.
+- End: KH1 sys 97 = kill (0x1402BB900 -> 0x1401EC470, Checked (decomp)).
+- Shared spell code (cast, release point, shots); Blizzard written, not built yet.
+- Not yet: KH1's re-pick within 500 (no native KH2 match found yet), KH1 hit stop.
+
 ### 2026-11-13: Stage 71 (testing branch: Phase 4: KH1's Fire attack radius call)
 Follow-up to t70 (the owner: "perfect finish phase 4 now").
 

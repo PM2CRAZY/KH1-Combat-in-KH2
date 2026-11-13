@@ -173,7 +173,7 @@ unsafe fn patch_guard_arc() {
 }
 /// KH1's spells' hit effects (`magic = kh1`). Our spell files (`kh1_assets::spells`) keep KH2's
 /// own elements for the Drive Forms and add KH1's, whose hit elements are tagged hit-effect group
-/// 3 (`spells::fire::HIT_GROUP`). KH2 finds a hit's effect by its ATKP row's `effect_on_hit`
+/// 3 (`spells::HIT_GROUP`). KH2 finds a hit's effect by its ATKP row's `effect_on_hit`
 /// (`+0x0B`) among the elements' tags (the sister's `kh2-effects.md`, Checked there), so base
 /// Sora's Fire rows take group 3: ATKP 502 (Fire), the rows of subs 0..5 (`+1`: the level and
 /// finisher, sub = level × 2 − 2 (+1); the Drive Forms' are 10 and up, Checked (files):

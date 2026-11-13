@@ -275,3 +275,28 @@ table 2 entry 11 (`0x140756B60 + 11 × 16`: `0x1404322F0`, flags 3) and its body
 `0x140437C00`, Checked (exe + decomp); KH2's own Blizzard pushes three. t70's Fire pushed four, so
 the game would have read the radius as the attack. The test machine now fails any script that
 leaves a value on a stack between frames.
+
+## t72: KH1's Fire in KH1's own order, from the Keyblade's middle, with its flash
+
+Read again from the owner's `xm_fire01..03.mag` with KH1-in-ReCom's script disassembler (its
+`tools/kh1-ai-script.py`, the syscall table read from the KH1 Steam exe), Checked (files):
+
+- **Where the ball starts.** KH1 takes a point on the Keyblade's bone (48) at a fraction: Fire 0.5
+  (the middle; `sys 19(owner, bone, scale × 0.5)`), Blizzard 1 (the tip). KH2 gives the same points
+  as weapon anchors `0x4007` (middle) and `0x4003` (tip) to `trap_obj_apply_bone_matrix` (trap table 1
+  entry 83, `0x14042F6F0` → `0x1403B50F0`'s anchor cases), Checked (exe + decomp). t70 started the
+  ball at the cast effect's place (the tip).
+- **The flash.** At the release KH1 plays its effect 4 at that point, turned to Sora's yaw
+  (`sys 74`, `sys 55(…, (0, yaw, 0))`). Now element 104, placed by the script.
+- **The ball's frame, in KH1's order** (`0x7A`): life > 0, else gone; turn toward a live target (≤ 3°);
+  start the 20-frame fade once life < 20; move 40; place the effect and attack; life − 1; wait a frame;
+  a hit ends it. So the first frame shows the ball already 40 along (t70 showed it at the start), the
+  fade starts on the 12th frame, and the ball no longer checks its effect being alive (KH1 doesn't).
+- **The end:** KH1 `sys 97` kills the effect (`0x1402BB900` → `0x1401EC470`, Checked (decomp)): KH2's
+  `trap_effect_kill`, as before.
+- The three levels' scripts are the same (Checked (files): Fire 40 / 3 / 20 / 500 in all three).
+- Still not: KH1's re-pick of a new target within 500 of the ball when the first is gone (KH2's
+  `trap_target_search` searches from the caster by mode, `0x1404303A0` → `0x1403BE2B0`; a native
+  match is still to be found), KH1's hit stop (`sys 186`; KH2's attacks have their own).
+- The spell code is now shared (`kh1_assets::spells`: one cast, one release point, then each spell's
+  shots); Blizzard's is written but not built yet (next version).

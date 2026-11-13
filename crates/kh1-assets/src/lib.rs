@@ -558,20 +558,17 @@ pub fn build_kh1_model(root: impl AsRef<Path>, kh1_swings: bool) -> Result<(Vec<
 /// stamp, and with `kh1_model` KH1 Sora's `obj/P_EX100.mdlx` and HD textures
 /// (`remastered/obj/P_EX100.mdlx/`), unless the stamp says the files there are already this
 /// build's. Returns what was built (`None`: up to date).
-/// KH1's spells as KH2 spell files (`spells`): (KH1's file, KH2's file, BAR name).
-pub const KH1_SPELLS: [(&str, &str, &[u8; 4]); 3] = [("xm_fire01.mag", "magic/FIRE_1.mag", b"fire"), ("xm_fire02.mag", "magic/FIRE_2.mag", b"fire"), ("xm_fire03.mag", "magic/FIRE_3.mag", b"fire")];
-
 /// The spell files and their HD textures (KH1's for the set, by offset in KH1's file, named in
 /// texture order as Panacea serves a mod file's `remastered/<file>/` folder; Checked (OpenKH
 /// Panacea source: `ScanRemasteredFolder` sorts a mod's files and uses them when there are as many as
 /// the file's textures). Without KH1's HD textures for a set, none are written (Panacea then gives
 /// the game's own list: Assumption, not checked).
 fn build_spells(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, files: &mut Vec<(std::path::PathBuf, Vec<u8>)>, notes: &mut Vec<String>) -> Result<()> {
-    for (kh1_name, kh2_name, _) in KH1_SPELLS {
+    for (kh1_name, kh2_name, kind, level) in spells::SPELLS {
         let src = kh1.read(Source::Original, kh1_name)?;
         let set = spells::kh1_effect_set(&src).ok_or_else(|| Error::Format(format!("{kh1_name}: no effect set")))?;
         let own = kh2.read(kh2_name)?;
-        let merged = spells::fire_mag(&own, &src).ok_or_else(|| Error::Format(format!("{kh2_name}: not a spell file we know")))?;
+        let merged = spells::kh1_mag(kind, level, &own, &src).ok_or_else(|| Error::Format(format!("{kh2_name}: not a spell file we know")))?;
         files.push((mod_dir.join(kh2_name), merged));
         let dpd_at = u32::from_le_bytes(set[16..20].try_into().unwrap()) as usize;
         let textures = kh2_formats::dpd::Dpd::parse(&set[dpd_at..]).map(|d| d.textures.len()).unwrap_or(0);
@@ -596,7 +593,7 @@ fn build_spells(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, files: &mut 
 
 /// Our spell files out of the mod folder (KH2 loads its own).
 pub fn remove_spells(mod_dir: &Path) {
-    for (_, kh2_name, _) in KH1_SPELLS {
+    for (_, kh2_name, _, _) in spells::SPELLS {
         let _ = std::fs::remove_file(mod_dir.join(kh2_name));
         let _ = std::fs::remove_dir_all(mod_dir.join("remastered").join(kh2_name));
     }
@@ -620,7 +617,7 @@ pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &s
     if !kh1_casts {
         remove_spells(mod_dir);
     }
-    let spells_built = KH1_SPELLS.iter().all(|s| mod_dir.join(s.1).is_file());
+    let spells_built = spells::SPELLS.iter().all(|s| mod_dir.join(s.1).is_file());
     if out.is_file() && mdlx.is_file() == kh1_model && blade.is_file() == kh1_swings && spells_built == kh1_casts && std::fs::read_to_string(&stamp_file).ok().as_deref() == Some(want.as_str()) {
         return Ok(None);
     }
