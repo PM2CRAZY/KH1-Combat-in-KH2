@@ -158,7 +158,7 @@ pub fn switch(i: usize, on: bool) {
             _ => {}
         }
     }
-    if matches!(i, MOVEMENT | COMBOS | DEFENCE) {
+    if matches!(i, MOVEMENT | COMBOS | DEFENCE | MAGIC) {
         let dir = MOD_PATH.lock().map(|g| g.clone()).unwrap_or_default();
         if !dir.is_empty() {
             std::thread::spawn(move || assets(&dir));
@@ -177,12 +177,12 @@ fn assets(mod_path: &str) {
         return;
     }
     let dir = std::path::PathBuf::from(mod_path);
-    use crate::settings::{kh1, COMBOS, DEFENCE, MOVEMENT};
-    let (combos, defence, movement) = (kh1(COMBOS), kh1(DEFENCE), kh1(MOVEMENT));
+    use crate::settings::{kh1, COMBOS, DEFENCE, MAGIC, MOVEMENT};
+    let (combos, defence, movement, magic) = (kh1(COMBOS), kh1(DEFENCE), kh1(MOVEMENT), kh1(MAGIC));
     let model = BOOT_MODEL.load(Ordering::Relaxed);
-    if combos || model || defence || movement {
+    if combos || model || defence || movement || magic {
         let t = std::time::Instant::now();
-        match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION, model, combos, defence, movement) {
+        match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION, model, combos, defence, movement, magic) {
             Ok(Some(b)) => {
                 log!("assets: built {} bytes into {} in {} ms: KH1 swings (KH1 motion, KH2 slot, frames) {:?}; model = {}", b.bytes, dir.join("obj").display(), t.elapsed().as_millis(), b.motions, if model { "kh1" } else { "kh2" });
             }
@@ -199,7 +199,7 @@ fn assets(mod_path: &str) {
             let _ = std::fs::remove_file(dir.join("obj").join("P_EX100.mdlx"));
             let _ = std::fs::remove_dir_all(dir.join("remastered").join("obj").join("P_EX100.mdlx"));
             let _ = std::fs::remove_file(&stamp);
-            log!("assets: combos, defence, movement and model = kh2: our built files removed (KH2 loads its own)");
+            log!("assets: combos, defence, movement, magic and model = kh2: our built files removed (KH2 loads its own)");
         }
     }
 }

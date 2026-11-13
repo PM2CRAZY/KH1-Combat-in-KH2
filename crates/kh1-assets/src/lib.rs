@@ -251,7 +251,40 @@ pub const LANDING_BATTLE: (usize, usize, usize) = (20, 22, 11);
 /// the top, so: the rises hold their last frame, and the fall row is KH1's top then its fall, the
 /// fall looping on its own. Not 1:1: a fall off a ledge plays the top first too (KH1 starts it at
 /// its fall); the High Jump's own top (slot 13) isn't played (KH2's one fall row).
-pub const PRELUDE: [(usize, usize); 1] = [(18, 9)];
+pub const PRELUDE: [(usize, usize); 3] = [(18, 9), (CASTS[0].0, 54), (CASTS[1].0, 79)];
+
+/// KH1's casts on KH2's cast rows (`magic = kh1`): (row, KH1 motion, the release frame for each of
+/// KH2's cast events by its parameter, KH1's "may be left" frame in the row).
+///
+/// KH2 (Checked (files): `P_EX100.mset`): its cast motions (MAGC, the sister's `magic-model.md`)
+/// Fire 56 / air 58, Blizzard 59 / 61, Thunder 62 / 64, Cure 65 / 67 (Cure's rows are duplicates of
+/// Thunder's: one motion, two cast events, parameters 62 and 65); each row's frame trigger 17 (the
+/// magic cast, `frame_id::MAGIC_CAST`, its parameter the MAGC motion) is where KH2's spell script
+/// gets its release (trigger 21). KH1 (KH1-in-ReCom's `recom-m7-magic.md`, decoded from the owner's
+/// `xm_*.mag` and the KH1 decomp there; motions Checked (files) here): Fire's wind-up 54 (28 frames)
+/// then its release 57 (60, free from 46), the ball leaving as the wind-up ends; air 79 (28) then 82
+/// (52, free from 46); Blizzard 55 (86, free from 68), air 80 (78, free 68), the shards at 28;
+/// Thunder 56 (68, no free key), air 81 (68), the strikes at 30; Cure the same motions, the heal at 36.
+pub const CASTS: [(usize, usize, &[(i16, i16)], i16); 6] = [
+    (56 * 4, 57, &[(56, 28)], 74),
+    (58 * 4, 82, &[(58, 28)], 74),
+    (59 * 4, 55, &[(59, 28)], 68),
+    (61 * 4, 80, &[(61, 28)], 68),
+    (62 * 4, 56, &[(62, 30), (65, 36)], 68),
+    (64 * 4, 81, &[(64, 30), (67, 36)], 68),
+];
+
+/// `row`'s cast (`CASTS`), if it is one.
+pub fn cast_at(row: usize) -> Option<(&'static [(i16, i16)], i16)> {
+    CASTS.iter().find(|c| c.0 == row).map(|c| (c.2, c.3))
+}
+
+static CASTS_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether the next `select_kh1_slots` takes KH1's casts (`magic = kh1`).
+pub fn select_kh1_casts(on: bool) {
+    CASTS_ON.store(on, std::sync::atomic::Ordering::Relaxed);
+}
 
 /// KH1's air knock-back as KH1 plays it: KH1 `0x14029CC40` (Checked (decomp)) plays request `0x50`
 /// (front, `dot(facing, push) < 0`) or `0x51` (slots 69 / 70, 38 frames), queues the fall
@@ -356,6 +389,9 @@ pub fn select_kh1_slots(swings: bool, guard: bool, moves: bool) {
         v.extend_from_slice(&MOVES);
         v.push((LANDING_BATTLE.0, LANDING_BATTLE.2));
     }
+    if CASTS_ON.load(std::sync::atomic::Ordering::Relaxed) {
+        v.extend(CASTS.iter().map(|c| (c.0, c.1)));
+    }
     if let Ok(mut s) = SLOTS.write() {
         *s = Some(v);
     }
@@ -407,7 +443,8 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
         let len = swing_triggers::anb_frames(data);
         convert::map_bar(data, |_, kind, own| {
             if kind == kh2_formats::motion::BAR_TYPE_MOTION_TRIGGERS && !own.is_empty() {
-                return Ok(swing_triggers::sora(&kh2_formats::motion::MotionTriggers::parse(own)?, spans.get(&row).copied(), len, &m).write());
+                let total = prelude_at(row).and_then(|n| motions.get(n).and_then(|x| x.as_ref())).map_or(0, |p| p.frames.max(1) as i16) + m.frames.max(1) as i16;
+                return Ok(swing_triggers::for_row(row, &kh2_formats::motion::MotionTriggers::parse(own)?, spans.get(&row).copied(), len, &m, total).write());
             }
             if kind != BAR_TYPE_MOTION {
                 return Ok(own.to_vec());
@@ -518,7 +555,8 @@ pub fn build_kh1_model(root: impl AsRef<Path>, kh1_swings: bool) -> Result<(Vec<
 /// stamp, and with `kh1_model` KH1 Sora's `obj/P_EX100.mdlx` and HD textures
 /// (`remastered/obj/P_EX100.mdlx/`), unless the stamp says the files there are already this
 /// build's. Returns what was built (`None`: up to date).
-pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str, kh1_model: bool, kh1_swings: bool, kh1_guard: bool, kh1_moves: bool) -> Result<Option<Built>> {
+pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str, kh1_model: bool, kh1_swings: bool, kh1_guard: bool, kh1_moves: bool, kh1_casts: bool) -> Result<Option<Built>> {
+    select_kh1_casts(kh1_casts);
     select_kh1_slots(kh1_swings, kh1_guard, kh1_moves);
     let kh1_swings = !kh1_slots().is_empty();
     let (root, mod_dir) = (root.as_ref(), mod_dir.as_ref());

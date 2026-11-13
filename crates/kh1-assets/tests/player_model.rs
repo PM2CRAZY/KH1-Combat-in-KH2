@@ -837,10 +837,22 @@ fn canon_hidden_bones() {
     let mset2 = std::fs::read(dir.join("P_EX100.mset")).unwrap();
     let (keep, reference) = player_model::canon_for_kh1_model(&mdls, &kh1, &kh2, &mset1, &mset2).unwrap();
     eprintln!("KH1 model: {} hidden bones made one", keep.iter().filter(|k| !**k).count());
+    kh1_assets::select_kh1_casts(true);
     kh1_assets::select_kh1_slots(true, true, true);
     kh1_assets::convert::set_canon(&kh1, keep, &reference);
     let (out, _) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true, &Default::default()).unwrap();
     kh1_assets::convert::clear_canon();
+    // KH1's casts: each magic-cast event at KH1's release.
+    let bar = kh2_formats::bar::Bar::parse(&out).unwrap();
+    for (row, _, rel, _) in kh1_assets::CASTS {
+        let anb = kh2_formats::motion::Anb::parse(bar.entries[row].data).unwrap();
+        let casts: Vec<_> = anb.triggers.frames.iter().filter(|f| f.id == kh2_formats::motion::frame_id::MAGIC_CAST).map(|f| (f.params.first().copied().unwrap_or(-1), f.frame)).collect();
+        eprintln!("cast row {row}: {} frames, cast events {casts:?}", kh1_assets::swing_triggers::anb_frames(bar.entries[row].data));
+        for (p, f) in rel {
+            assert!(casts.contains(&(*p, *f)), "row {row}: {casts:?}");
+        }
+    }
+    kh1_assets::select_kh1_casts(false);
     kh1_assets::select_kh1_slots(true, false, false);
     eprintln!("P_EX100.mset (KH1 model, every KH1 slot): {} bytes (KH2's {})", out.len(), mset2.len());
     assert!(out.len() <= mset2.len());

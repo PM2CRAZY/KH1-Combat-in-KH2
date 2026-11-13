@@ -1,3 +1,8 @@
+### 2026-11-13: Stage 69 (testing branch: Phase 4: KH1's casts on KH2's cast rows)
+- **KH1's cast motions and release frames on KH2's cast rows (magic = kh1).** The owner (2026-11-13): "finish phase 4"; step 5's first part.
+  - `kh1_assets::CASTS`: KH1 54 + 57 / 79 + 82 (Fire), 55 / 80 (Blizzard), 56 / 81 (Thunder and Cure) on KH2's rows 224 / 232 / 236 / 244 / 248 / 256; KH2's magic-cast events (frame trigger 17) at KH1's releases (Fire 28, Blizzard 28, Thunder 30, Cure 36; KH1-in-ReCom's decoding of `xm_*.mag`, Checked (files) there); other triggers moved piecewise (`swing_triggers::cast`). Checked (files) for both games' motions and triggers (test `canon_hidden_bones`).
+  - `build_into` takes the Magic setting; the Config's Magic row rebuilds. KH2's spells themselves still run. Not checked in game.
+
 ### 2026-11-13: Stage 68 (testing branch: the hidden bones agree across KH1 and KH2 motions)
 - **Hidden bones agree across KH1's and KH2's motions (both models).** The owner (2026-11-13): "KH1's sora only contorts when transitioning into a KH2 animation"; and KH2's model on KH1's animations without the stretching.
   - Cause (Checked (files), offline): KH1's rig and our transfer turn the bones no vertex hangs on (KH1's root, spine helper, wrist / twist helpers, Keyblade chain) up to 180° apart for the same stance; KH2's blends swung everything under them.

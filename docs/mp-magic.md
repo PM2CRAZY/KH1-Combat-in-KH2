@@ -200,3 +200,30 @@ effect engine), KH1's behaviour; MP Haste family stacked (t67).
 
 KH1's spell files are in the owner's `local/re/kh1mag/` (`xm_*.mag`, all 19), KH2's in
 `local/re/` (`FIRE_1.mag` … `REFLECT_3.mag`).
+
+## t69: KH1's cast motions and release frames on KH2's cast rows (`magic = kh1`, step 5.1)
+
+The first part of KH1's spells: how Sora casts. `kh1_assets::CASTS` (Checked (files) for both
+games' motions and KH2's triggers; KH1's release frames from KH1-in-ReCom's decoding of the
+owner's `xm_*.mag`, Checked (files) there):
+
+| KH2 row (motion) | KH1 motion | KH2 cast event → KH1's | KH1 free |
+|---|---|---|---|
+| 224 (56, Fire) | 54 (wind-up, 28) then 57 (60): 88 frames | 22 → 28 | 74 |
+| 232 (58, Fire air) | 79 (28) then 82 (52): 80 | 28 → 28 | 74 |
+| 236 (59, Blizzard) | 55 (86) | 16 → 28 | 68 |
+| 244 (61, Blizzard air) | 80 (78) | 36 → 28 | 68 |
+| 248 (62, Thunder; Cure's 65 is its duplicate) | 56 (68) | Thunder 18 → 30, Cure 18 → 36 | none (68) |
+| 256 (64, Thunder air; Cure's 67) | 81 (68) | 30 → 30, Cure → 36 | none (68) |
+
+- KH2's spell script gets its release from the cast event (frame trigger 17, its parameter the
+  MAGC motion; the sister's `magic-model.md`), so KH2's own spells now leave at KH1's frame.
+- Sora's other triggers are moved piecewise (`swing_triggers::cast`): KH2's cast frame onto KH1's
+  release, KH2's free point (its open Reaction Command range) onto KH1's "may be left", the end
+  onto KH1's end.
+- The Keyblade keeps KH2's own motion on these rows (W_EX010's size; Assumption: it rides the
+  palm the same way through a cast).
+- Built on both models; built again when the Config's Magic row is switched (t65's rebuild).
+- Not yet: KH1's air cast hop (30) and air speed × 0.5 (`0x1402A3600`); KH1's Fire fast path
+  (Fire again during the release, or from a swing's combo window); the spells themselves (KH2's
+  Fire / Blizzard / Thunder / Cure scripts and effects still run): the next steps of the plan above.

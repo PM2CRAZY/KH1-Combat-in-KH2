@@ -92,6 +92,59 @@ pub fn sora(kh2: &MotionTriggers, kh2_hit: Option<(i16, i16)>, kh2_len: f32, kh1
     out
 }
 
+/// Sora's triggers for `row` (`kh1` its KH1 motion, `total` the frames written there with any
+/// prelude): a cast's (`crate::CASTS`) or a swing's and the rest (`sora`).
+pub fn for_row(row: usize, kh2: &MotionTriggers, kh2_hit: Option<(i16, i16)>, kh2_len: f32, kh1: &Motion, total: i16) -> MotionTriggers {
+    match crate::cast_at(row) {
+        Some((releases, free)) => cast(kh2, kh2_len, total, releases, free),
+        None => sora(kh2, kh2_hit, kh2_len, kh1),
+    }
+}
+
+/// A KH2 cast motion's triggers on a KH1 cast of `len` frames: each magic-cast event (frame
+/// trigger 17) at KH1's release for its parameter (`releases`); everything else moved piecewise
+/// so KH2's cast frame lands on KH1's (first) release, KH2's free point (the start of its open
+/// Reaction Command range, 14) on KH1's `free`, and its end on KH1's.
+pub fn cast(kh2: &MotionTriggers, kh2_len: f32, len: i16, releases: &[(i16, i16)], free: i16) -> MotionTriggers {
+    use kh2_formats::motion::frame_id;
+    let cast2 = kh2.frames.iter().find(|f| f.id == frame_id::MAGIC_CAST).map_or(0, |f| f.frame);
+    let free2 = kh2.ranges.iter().find(|r| r.id == range_id::ALLOW_RC && r.end < 0).map_or(kh2_len as i16, |r| r.start).max(cast2);
+    let rel = releases.first().map_or(cast2, |r| r.1);
+    let free1 = free.clamp(rel, len);
+    let seg = |f: f32, a0: f32, a1: f32, b0: f32, b1: f32| if a1 > a0 { b0 + (f - a0) * (b1 - b0) / (a1 - a0) } else { b0 };
+    let w = |f: i16| -> i16 {
+        if f < 0 {
+            return f;
+        }
+        let x = f as f32;
+        let y = if f <= cast2 {
+            seg(x, 0.0, cast2 as f32, 0.0, rel as f32)
+        } else if f <= free2 {
+            seg(x, cast2 as f32, free2 as f32, rel as f32, free1 as f32)
+        } else {
+            seg(x, free2 as f32, kh2_len, free1 as f32, len as f32)
+        };
+        (y.round() as i16).clamp(0, len)
+    };
+    let mut out = MotionTriggers::default();
+    for r in &kh2.ranges {
+        out.ranges.push(RangeTrigger { start: w(r.start), end: w(r.end), ..r.clone() });
+    }
+    out.frames = kh2
+        .frames
+        .iter()
+        .map(|f| {
+            let at = if f.id == frame_id::MAGIC_CAST {
+                f.params.first().and_then(|p| releases.iter().find(|r| r.0 == *p)).map_or(w(f.frame), |r| r.1)
+            } else {
+                w(f.frame)
+            };
+            kh2_formats::motion::FrameTrigger { frame: at, ..f.clone() }
+        })
+        .collect();
+    out
+}
+
 /// The Keyblade's triggers for KH1 swing `kh1` in a KH2 slot whose own are `kh2`.
 pub fn keyblade(kh2: &MotionTriggers, kh2_len: f32, kh1: &Motion) -> MotionTriggers {
     let span = hit_span(kh2);
@@ -152,7 +205,8 @@ pub fn build_keyblade(w_ex010: &[u8], kh1_motions: &[Option<Motion>], hold: Opti
     // The knock-down rows (`crate::KNOCKDOWN`) share their template's Keyblade motion (KH1 holds
     // the blade still in the palm in both, t49), so the set doesn't grow.
     let out = crate::convert::map_bar_shared(w_ex010, &crate::fills(), |row, kind, data| {
-        let Some(k) = crate::kh1_motion_at(row).filter(|_| kind == BAR_TYPE_ANB && !data.is_empty()) else { return Ok(data.to_vec()) };
+        // (KH1's casts keep KH2's Keyblade motion: `crate::CASTS`.)
+        let Some(k) = crate::kh1_motion_at(row).filter(|_| kind == BAR_TYPE_ANB && !data.is_empty() && crate::cast_at(row).is_none()) else { return Ok(data.to_vec()) };
         let Some(m) = kh1_motions.get(k).and_then(|m| m.as_ref()) else { return Ok(data.to_vec()) };
         let len = anb_frames(data);
         crate::convert::map_bar(data, |_, kind, t| {
