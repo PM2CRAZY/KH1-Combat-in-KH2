@@ -1,3 +1,8 @@
+### 2026-11-13: Stage 37 (testing branch: KH1 swing power on ATKP)
+Owner's choice (Phase 2 damage): KH2's formula, each KH1 swing the nearest KH2 power, KH1's reactions.
+
+- `win/atkp.rs` (combos = kh1): after KH2's table loader `0x1403F4C30` (prologue `48 89 5C 24 08`), the swing rows in the loaded ATKP table (`0x142AE57B0`, Checked (decomp)): 126, 127, 128, 131, 132 power 100; 129, 130, 133, 134 power 200 (KH1: plain swings power 0, finishers 4, ×2.0 on KH1's curve; Checked (files) `btltbl.bin`). Reactions and knockback stay KH2's (they match KH1's kinds; KH1 has no knockback field).
+
 ### 2026-11-13: Stage 36 (testing branch: KH1 hit, combo and trail windows)
 Owner: "Finish Phase 2, and add the config menu". Phase 2 step: KH1's swing timing.
 
