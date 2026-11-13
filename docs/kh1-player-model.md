@@ -33,3 +33,58 @@ comment, after OpenKH's `OpenKh.Kh1.Mdls`, our own code). On the player's `xa_ex
 Every vertex hangs from one bone (weight 1.0): no multi-weight packets. Drawn offline on KH1's
 own idle and swing 98 (`kh1_data::rig`, which matches the kh1-posedump recording), the mesh is
 whole. Checked (files).
+
+## Steps 2–4: the model, the motions, the Config row (t27)
+
+**The model writer** (`kh2_formats::mdlx_write`). Layout decoded from the player's
+`obj/P_EX100.mdlx` (Checked (files)):
+- Model entry (BAR type 4): 0x90 zero bytes, then (offsets from there) the header `3, 0, 0,
+  shadow (0), bone count u16, texture count u16, bone table, skeleton data, group count`, 0x20
+  bytes a group (`attributes, texture, triangle count, 0, DMA tags, matrix list, tag count, 0`),
+  the skeleton data (0x120: bounding box, IK bias, 56 body-part bone numbers at 0x30, a distance
+  at 0x110), 0x40 bytes a bone, then per group its packets' VIF code, its DMA tags and its matrix
+  list (each packet's bones, packets parted by -1).
+- A packet's VIF code and DMA tags are written exactly as KH2's (header, u/v, masked vertex index
+  and flag bytes, STCOL 1.0 + positions, per-matrix counts; a code reference, a 4-quadword matrix
+  reference per bone, MSCNT), at most 0xE0 quadwords of VU memory. Every triangle is three index
+  entries (flags 0x10, 0x10, 0x20). Checked (files): KH2 Sora's own mesh written back reads to
+  the same 3 groups, every triangle, bone, position and u/v (`sora_model_writes_back`).
+- Textures (BAR type 7, `tim_`): header `0, palette words, image count, texture count, map,
+  uploads, registers, images, palettes`, one 0x90-byte GS upload for all palettes (a 64×32 CT32
+  page at block 0x3A00, 4 blocks a palette) and one per image (8-bit, sent as CT32 at half
+  width, from block 0x3A20 on), 0xA0 bytes of GS registers a texture, `_KN5`. Same addresses and
+  register values as KH2 Sora's. Checked (files) against our reader (`textures_read_back`).
+  Not written: KH2's texture animation footer (TEXA, Sora's blinking eyes and mouth). KH1 Sora
+  has none of KH2's. Assumption: KH2 draws a model without one (many of its models have none).
+
+**KH1 Sora as `P_EX100.mdlx`** (`kh1_assets::player_model::build`): KH1's 293 bones, 9 meshes
+(2,828 triangles; KH1's winding is KH2's: 90 % / 88 % of same-bone triangles face out with the
+same corner order, Checked (files)), 7 textures with KH1's palettes; KH2's collision list and
+skeleton data kept with their bone numbers moved to KH1's bone at the same place
+(`player_model::BONE_MAP`: head 140→149, neck 137→144, chest 67→77, hips 2→2, collarbones
+75/167→195/90, upper arms 78/170→197/92, elbows 79/171→199/94, hands 85/177→202/97, thighs
+11/40→42/16, knees 12/41→44/18, feet 15/44→46/20, toes 18/47→50/24). Each pair is within 12
+units after scaling for height (KH1 Sora 151 tall, KH2 Sora 160), Checked (files). HD textures:
+KH1's own (`-66380.dds` … `-7e380.dds`, one per PS2 texture at its offset) written as
+`remastered/obj/P_EX100.mdlx/-0.dds` … `-6.dds`. Assumption: OpenKH serves a mod's
+`remastered/<file>/` assets in place of the game's.
+
+**The motions** (`player_model::build_mset`): all 79 motions of KH2's `P_EX100.mset` (839 slots,
+the rest share their data) posed by KH2's own evaluator, moved onto KH1's bones by
+`kh1_data::retarget` (a fresh one a motion, so cloth starts from rest), written for the 293-bone
+skeleton. Slots that shared data still share it (`convert::map_bar`). Read back, every joint
+lands within 0.62 units of the pose written (`kh2_motions_on_kh1_skeleton`). KH1's swings
+(98–104, slots 210–216) are posed by `kh1_data::rig`, KH1's own bone pass, with no lean fitting.
+A motion for another skeleton than its template's (`write_motion`): bone count and total from
+the new skeleton, the joint table in bone order, KH2's IK helpers kept (renumbered past the new
+bones, hung from the root: the travel curves write helper 52), Euler forms seeded from KH1's bind.
+
+**The Config row**: `model = kh1 / kh2` in `kh2-kh1.ini` (a new `SYSTEMS` row). With `kh1`,
+launch builds `obj/P_EX100.mdlx`, the converted `obj/P_EX100.mset`, `obj/W_EX010.mset` and the HD
+textures; with `kh2` they are removed. Works with either combo style.
+
+**Not converted yet** (they still carry KH2's 228-bone skeleton and will look wrong on KH1
+Sora): Sora's motions kept outside `P_EX100.mset` — the Reaction Commands' captured motions in
+enemy and object motion sets (nested type 20 slots, tag `0010`), Limits and summons, world
+variants. And cutscenes (step 5). Open: where KH2 attaches the Keyblade (not the objentry
+`WeaponJoint` byte: Sora's is 1, Donald's 2, every Keyblade's 25, so it is an id, not a bone).

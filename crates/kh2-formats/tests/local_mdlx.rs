@@ -55,3 +55,29 @@ fn forms_and_keyblade_parse() {
         assert!(!m.groups[0].translucent() && m.groups[1].translucent());
     }
 }
+
+/// KH2 Sora's own mesh written back by `mdlx_write` reads back to the same triangles.
+#[test]
+fn sora_model_writes_back() {
+    let Some(d) = file("P_EX100.mdlx") else { return };
+    let m = mdlx::parse(&d).unwrap();
+    let bar = kh2_formats::bar::Bar::parse(&d).unwrap();
+    let entry = bar.entries.iter().find(|e| e.kind == 4).unwrap().data;
+    let skel_at = 0x90 + u32::from_le_bytes(entry[0x90 + 0x18..0x90 + 0x1C].try_into().unwrap()) as usize;
+    let skel: [u8; 0x120] = entry[skel_at..skel_at + 0x120].try_into().unwrap();
+    let out = kh2_formats::mdlx_write::write_model(&m.bones, &m.groups, m.textures.len() as u16, &skel);
+    let back = mdlx::parse_model_groups(&out, m.bones.len()).unwrap();
+    assert_eq!(back.len(), m.groups.len());
+    for (a, b) in m.groups.iter().zip(&back) {
+        assert_eq!((a.attributes, a.texture), (b.attributes, b.texture));
+        assert_eq!(a.triangles.len(), b.triangles.len());
+        for (x, y) in a.triangles.iter().zip(&b.triangles) {
+            for (p, q) in x.iter().zip(y) {
+                assert_eq!(p.bone, q.bone);
+                assert_eq!(p.position, q.position);
+                assert!((p.uv[0] - q.uv[0]).abs() < 1e-3 && (p.uv[1] - q.uv[1]).abs() < 1e-3);
+            }
+        }
+    }
+    eprintln!("original model entry {} bytes, written {}", entry.len(), out.len());
+}

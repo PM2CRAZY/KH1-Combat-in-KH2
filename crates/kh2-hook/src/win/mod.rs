@@ -113,26 +113,34 @@ fn assets(mod_path: &str) {
         return;
     }
     let dir = std::path::PathBuf::from(mod_path);
-    if settings().style("combos") == crate::settings::Style::Kh1 {
+    let combos = settings().style("combos") == crate::settings::Style::Kh1;
+    let model = settings().style("model") == crate::settings::Style::Kh1;
+    if combos || model {
         let t = std::time::Instant::now();
-        match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION) {
+        match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION, model) {
             Ok(Some(b)) => {
-                log!("assets: built {} bytes into {} in {} ms: KH1 motions {:?}", b.bytes, dir.join("obj").display(), t.elapsed().as_millis(), b.motions);
-                combos::motions_ready();
+                log!("assets: built {} bytes into {} in {} ms: KH1 motions {:?}; model = {}", b.bytes, dir.join("obj").display(), t.elapsed().as_millis(), b.motions, if model { "kh1" } else { "kh2" });
+                if combos {
+                    combos::motions_ready();
+                }
             }
             Ok(None) => {
-                log!("assets: KH1 motions already built ({})", dir.join("obj").join("P_EX100.mset").display());
-                combos::motions_ready();
+                log!("assets: already built ({}); model = {}", dir.join("obj").join("P_EX100.mset").display(), if model { "kh1" } else { "kh2" });
+                if combos {
+                    combos::motions_ready();
+                }
             }
-            Err(e) => log!("assets: could not build KH1's motions: {e}"),
+            Err(e) => log!("assets: could not build: {e}"),
         }
     } else {
         let stamp = dir.join("kh2-kh1-build.txt");
         if stamp.is_file() {
             let _ = std::fs::remove_file(dir.join("obj").join("P_EX100.mset"));
             let _ = std::fs::remove_file(dir.join("obj").join("W_EX010.mset"));
+            let _ = std::fs::remove_file(dir.join("obj").join("P_EX100.mdlx"));
+            let _ = std::fs::remove_dir_all(dir.join("remastered").join("obj").join("P_EX100.mdlx"));
             let _ = std::fs::remove_file(&stamp);
-            log!("assets: combos = kh2: our built P_EX100.mset and W_EX010.mset removed (KH2 loads its own)");
+            log!("assets: combos = kh2, model = kh2: our built files removed (KH2 loads its own)");
         }
     }
 }

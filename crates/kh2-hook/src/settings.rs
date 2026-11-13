@@ -28,6 +28,7 @@ pub const SYSTEMS: &[(&str, &str)] = &[
     ("magic", "Fire, Blizzard, Thunder, Cure, Gravity, Stop, Aero"),
     ("abilities", "Sonic Blade, Ars Arcanum, Strike Raid, Ragnarok and the rest"),
     ("camera", "Field camera and lock-on"),
+    ("model", "Sora's player model: KH1 Sora's own model, skeleton and textures"),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]

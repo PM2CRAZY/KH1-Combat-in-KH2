@@ -21,6 +21,22 @@ fn main() {
             println!("{built:?}");
             std::fs::write(&out, b).map_err(|e| kh2_formats::Error::Format(e.to_string()))
         })
+    } else if a.get(1).map(String::as_str) == Some("hd") {
+        // `hd <folder> <kh1|kh2> <name> [out dir]`: a file's remastered (HD) assets.
+        let root = a.get(2).cloned().unwrap_or_default();
+        let name = a.get(4).cloned().unwrap_or_default();
+        let out = a.get(5).cloned();
+        let list = if a.get(3).map(String::as_str) == Some("kh1") {
+            kh1_data::Kh1Install::locate(&root).and_then(|k| k.read_remastered_all(kh1_data::Source::Original, &name))
+        } else {
+            kh1_assets::Kh2Install::locate(&root).and_then(|k| k.read_remastered_all(&name))
+        };
+        list.map(|l| {
+            for x in &l {
+                println!("{} {} bytes (offset {:#x}) head {:02x?}", x.name, x.data.len(), x.offset, &x.data[..x.data.len().min(16)]);
+                if let Some(o) = &out { let _ = std::fs::create_dir_all(o); let _ = std::fs::write(format!("{o}/{}", x.name.trim_start_matches('-')), &x.data); }
+            }
+        })
     } else if a.get(1).map(String::as_str) == Some("blade") {
         // `blade <folder> <out mset>`: KH2's keyblade motion set with entries for our motions.
         let root = a.get(2).cloned().unwrap_or_default();

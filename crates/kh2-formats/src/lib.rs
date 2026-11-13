@@ -21,6 +21,7 @@
 
 pub mod anim;
 pub mod mdlx;
+pub mod mdlx_write;
 pub mod bar;
 pub mod dpd;
 pub mod kh1dpx;

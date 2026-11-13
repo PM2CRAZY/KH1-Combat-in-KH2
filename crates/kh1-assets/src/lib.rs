@@ -12,6 +12,7 @@
 //! skeleton, and reports what they hold.
 
 pub mod convert;
+pub mod player_model;
 
 use kh1_data::{Kh1Install, Source};
 use kh2_formats::bar::Bar;
@@ -56,6 +57,26 @@ impl Kh2Install {
 
     pub fn key_table(&self) -> Result<KeyTable> {
         KeyTable::from_executable_cached(self.root.join(KH2_EXECUTABLE))
+    }
+
+    /// A file's remastered (HD) assets (names like `-0.dds`, with their bytes), from the
+    /// unmodded package first.
+    pub fn read_remastered_all(&self, name: &str) -> Result<Vec<kh2_formats::egs::HdAsset>> {
+        let keys = self.key_table()?;
+        for part in KH2_ARCHIVES {
+            let backup = self.root.join("BackupImage").join(format!("{part}.hed"));
+            let live = self.image_dir.join(format!("{part}.hed"));
+            for hed in [backup, live] {
+                if !hed.is_file() {
+                    continue;
+                }
+                let archive = kh2_formats::egs::Archive::open_cached(&hed)?;
+                if archive.find(name).is_some() {
+                    return archive.read_remastered_all(&keys, name);
+                }
+            }
+        }
+        Err(Error::NotFound(name.to_string()))
     }
 
     /// Reads a file by its original name; the unmodded package OpenKH keeps in `BackupImage\`
@@ -251,32 +272,78 @@ pub fn build_keyblade(root: impl AsRef<Path>) -> Result<Vec<u8>> {
     convert::extend_bar(&orig, &extra)
 }
 
-/// The build's stamp: what it was made from (the mod's version and both games' entries), so a
-/// later launch builds again only when one changed.
-pub fn stamp(root: impl AsRef<Path>, version: &str) -> String {
+/// The build's stamp: what it was made from (the mod's version, both games' entries and which
+/// player model), so a later launch builds again only when one changed.
+pub fn stamp(root: impl AsRef<Path>, version: &str, kh1_model: bool) -> String {
     let root = root.as_ref();
     let k1 = Kh1Install::locate(root).map(|k| format!("{} / {}", k.stamp(Source::Original, KH1_SORA_MSET), k.stamp(Source::Original, KH1_SORA_MDLS))).unwrap_or_default();
-    format!("kh2-kh1 {version}; KH1 {k1}; motions {KH1_MOTIONS:?} from {FIRST_KH2_MOTION}")
+    format!("kh2-kh1 {version}; KH1 {k1}; motions {KH1_MOTIONS:?} from {FIRST_KH2_MOTION}; model {}", if kh1_model { "kh1" } else { "kh2" })
 }
 
-/// Builds into `mod_dir` (OpenKH's `mod\kh2`): `obj/P_EX100.mset` and its stamp, unless the stamp
-/// says the files there are already this build's. Returns what was built (`None`: up to date).
-pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str) -> Result<Option<Built>> {
+/// KH1 Sora as KH2's player: his model (`obj/P_EX100.mdlx`, `player_model::build`), KH2's whole
+/// motion set moved onto his skeleton with KH1's combo motions added (`player_model::build_mset`),
+/// and his HD textures, named for the new model (`-0.dds`, ... in texture order).
+pub fn build_kh1_model(root: impl AsRef<Path>) -> Result<(Vec<u8>, Vec<u8>, Vec<(String, Vec<u8>)>, Built)> {
+    let root = root.as_ref();
+    let kh1 = Kh1Install::locate(root)?;
+    let kh2 = Kh2Install::locate(root)?;
+    let mdls = kh1.read(Source::Original, KH1_SORA_MDLS)?;
+    let mdlx = kh2.read(KH2_SORA_MDLX)?;
+    let model = player_model::build(&mdls, &mdlx)?;
+    let kh1_bones = kh1_data::mdls::parse_skeleton(&mdls)?;
+    let kh2_bones = kh2_formats::anim::parse_skeleton(&mdlx)?;
+    let motions = kh1_data::mset::parse(&kh1.read(Source::Original, KH1_SORA_MSET)?)?;
+    let (mset, n) = player_model::build_mset(&kh2.read(KH2_SORA_MSET)?, &kh2_bones, &kh1_bones, &motions)?;
+    // KH1's HD textures sit at the PS2 textures' offsets in the .mdls (-<offset>.dds): sorted by
+    // offset, they are the textures in order. Missing ones leave KH2's PS2 upscale to the game.
+    let mut hd: Vec<_> = kh1.read_remastered_all(Source::Original, KH1_SORA_MDLS).unwrap_or_default().into_iter().filter(|a| a.name.ends_with(".dds") && u32::from_str_radix(a.name.trim_start_matches('-').trim_end_matches(".dds"), 16).is_ok()).collect();
+    hd.sort_by_key(|a| u32::from_str_radix(a.name.trim_start_matches('-').trim_end_matches(".dds"), 16).unwrap_or(0));
+    // (The HD mesh's own textures, -1c*/-2c*, have small names; they are not these.)
+    hd.retain(|a| u32::from_str_radix(a.name.trim_start_matches('-').trim_end_matches(".dds"), 16).unwrap_or(0) >= 0x1000);
+    let count = kh1_data::mdls::parse_mesh(&mdls)?.1.len();
+    let textures = if hd.len() == count { hd.into_iter().enumerate().map(|(i, a)| (format!("-{i}.dds"), a.data)).collect() } else { Vec::new() };
+    let built = Built { motions: KH1_MOTIONS.iter().map(|&k| (k, kh2_motion_of(k).unwrap(), n)).collect(), bytes: mset.len() + model.len() };
+    Ok((model, mset, textures, built))
+}
+
+/// Builds into `mod_dir` (OpenKH's `mod\kh2`): `obj/P_EX100.mset`, `obj/W_EX010.mset` and the
+/// stamp, and with `kh1_model` KH1 Sora's `obj/P_EX100.mdlx` and HD textures
+/// (`remastered/obj/P_EX100.mdlx/`), unless the stamp says the files there are already this
+/// build's. Returns what was built (`None`: up to date).
+pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str, kh1_model: bool) -> Result<Option<Built>> {
     let (root, mod_dir) = (root.as_ref(), mod_dir.as_ref());
-    let out = mod_dir.join("obj").join("P_EX100.mset");
+    let obj = mod_dir.join("obj");
+    let out = obj.join("P_EX100.mset");
+    let mdlx = obj.join("P_EX100.mdlx");
+    let hd_dir = mod_dir.join("remastered").join("obj").join("P_EX100.mdlx");
     let stamp_file = mod_dir.join("kh2-kh1-build.txt");
-    let want = stamp(root, version);
-    if out.is_file() && mod_dir.join("obj").join("W_EX010.mset").is_file() && std::fs::read_to_string(&stamp_file).ok().as_deref() == Some(want.as_str()) {
+    let want = stamp(root, version, kh1_model);
+    if out.is_file() && obj.join("W_EX010.mset").is_file() && mdlx.is_file() == kh1_model && std::fs::read_to_string(&stamp_file).ok().as_deref() == Some(want.as_str()) {
         return Ok(None);
     }
-    let (bytes, built) = build_mset(root)?;
-    let blade = build_keyblade(root)?;
     let io = |e: std::io::Error| Error::Format(e.to_string());
-    std::fs::create_dir_all(out.parent().unwrap()).map_err(io)?;
-    for (path, data) in [(out.clone(), &bytes), (mod_dir.join("obj").join("W_EX010.mset"), &blade)] {
-        let tmp = path.with_extension("mset.tmp");
+    let blade = build_keyblade(root)?;
+    let mut files: Vec<(std::path::PathBuf, Vec<u8>)> = vec![(obj.join("W_EX010.mset"), blade)];
+    let built = if kh1_model {
+        let (model, mset, textures, built) = build_kh1_model(root)?;
+        files.push((out.clone(), mset));
+        files.push((mdlx.clone(), model));
+        for (name, data) in textures {
+            files.push((hd_dir.join(name), data));
+        }
+        built
+    } else {
+        let (bytes, built) = build_mset(root)?;
+        files.push((out.clone(), bytes));
+        let _ = std::fs::remove_file(&mdlx);
+        let _ = std::fs::remove_dir_all(&hd_dir);
+        built
+    };
+    for (path, data) in &files {
+        std::fs::create_dir_all(path.parent().unwrap()).map_err(io)?;
+        let tmp = path.with_extension("tmp");
         std::fs::write(&tmp, data).map_err(io)?;
-        std::fs::rename(&tmp, &path).map_err(io)?;
+        std::fs::rename(&tmp, path).map_err(io)?;
     }
     std::fs::write(&stamp_file, want).map_err(io)?;
     Ok(Some(built))

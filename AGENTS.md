@@ -1,3 +1,12 @@
+### 2026-11-13: Stage 27 (testing branch: KH1 player model: model, motions and the Config row)
+Owner: "Lets see if we can have KH1 sora's player model be placed in KH2", then "B" (KH1's own 293-bone skeleton, every KH2 motion converted onto it, a Config row).
+
+- `kh2_formats::mdlx_write`: KH2 model (BAR 4) and texture (BAR 7) writers in the layout of KH2 Sora's own `obj/P_EX100.mdlx`. Checked (files): Sora's mesh written back reads to the same triangles; textures read back through our reader.
+- `kh1_assets::player_model::build`: KH1 Sora (293 bones, 9 meshes, 7 textures) as `P_EX100.mdlx`; KH2's skeleton data and collision list kept, their bone numbers moved to KH1's bone at the same place (`BONE_MAP`, each within 12 units after height scaling, Checked (files)). KH1's HD textures as `remastered/obj/P_EX100.mdlx/-0..-6.dds` (Assumption: OpenKH serves them).
+- `player_model::build_mset`: all 79 KH2 Sora motions posed by KH2's evaluator, moved onto KH1's bones by `kh1_data::retarget`, written for 293 bones (read back within 0.62 units, Checked (files)); KH1's swings 98-104 at slots 210-216 from `kh1_data::rig` (KH1's own bone pass, matched to KH1 in t24).
+- Config: `model = kh1 / kh2` in kh2-kh1.ini; `kh1` builds the model, the converted motion set, `W_EX010.mset` and the HD textures on launch; `kh2` removes them.
+- Not yet: Sora's motions outside `P_EX100.mset` (Reaction Commands' captures, Limits, world variants), cutscenes, the Keyblade's attach bone (unknown). Details: docs/kh1-player-model.md.
+
 ### 2026-11-13: Stage 26 (testing branch: KH1 player model, step 1: read KH1 Sora's mesh)
 Owner: "Lets see if we can have KH1 sora's player model be placed in KH2", then "B" (KH1's own skeleton; KH2's motions converted onto it).
 

@@ -101,6 +101,11 @@ pub fn parse(mdlx: &[u8]) -> Result<Model> {
     Ok(Model { bones, groups, textures })
 }
 
+/// The triangle groups of one model entry (BAR type 4) whose skeleton has `bone_count` bones.
+pub fn parse_model_groups(d: &[u8], bone_count: usize) -> Result<Vec<Group>> {
+    parse_groups(d, bone_count)
+}
+
 fn parse_groups(d: &[u8], bone_count: usize) -> Result<Vec<Group>> {
     let base = RESERVED;
     let count = Reader::at(d, base + 0x1C).u16()? as usize;
@@ -309,7 +314,7 @@ fn read_packet(vu: &[[u32; 4]], matrices: &[(u32, u32)], bone_count: usize, out:
 
 // ---- textures ----
 
-const GS_BYTES: usize = 4 << 20;
+pub(crate) const GS_BYTES: usize = 4 << 20;
 
 const BLOCK32: [[usize; 8]; 4] =
     [[0, 1, 4, 5, 16, 17, 20, 21], [2, 3, 6, 7, 18, 19, 22, 23], [8, 9, 12, 13, 24, 25, 28, 29], [10, 11, 14, 15, 26, 27, 30, 31]];
@@ -324,18 +329,18 @@ const COLUMN32: [[usize; 8]; 8] = [
     [50, 51, 54, 55, 58, 59, 62, 63],
 ];
 
-struct Gs {
-    mem: Vec<u8>,
+pub(crate) struct Gs {
+    pub(crate) mem: Vec<u8>,
 }
 
 impl Gs {
-    fn addr32(bp: usize, bw: usize, x: usize, y: usize) -> usize {
+    pub(crate) fn addr32(bp: usize, bw: usize, x: usize, y: usize) -> usize {
         let page = (x >> 6) + (y >> 5) * bw;
         let block = (bp + page * 32 + BLOCK32[(y >> 3) & 3][(x >> 3) & 7]) & 0x3fff;
         (block * 64 + COLUMN32[y & 7][x & 7]) * 4
     }
 
-    fn addr8(bp: usize, bw: usize, x: usize, y: usize) -> usize {
+    pub(crate) fn addr8(bp: usize, bw: usize, x: usize, y: usize) -> usize {
         let page = (x >> 7) + (y >> 6) * (bw >> 1).max(1);
         let block = (bp + page * 32 + BLOCK32[(y >> 4) & 3][(x >> 4) & 7]) & 0x3fff;
         block * 256 + COLUMN8[y & 15][x & 15]

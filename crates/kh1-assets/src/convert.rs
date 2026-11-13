@@ -280,11 +280,16 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
     let hdr = |o: usize| i32_at(template, h + o);
     let bone_count = (hdr(0)? & 0xFFFF) as usize;
     let total = ((hdr(0)? >> 16) & 0xFFFF) as usize;
-    if bone_count != kh2.len() {
-        return Err(Error::Format(format!("template has {bone_count} bones, the skeleton {}", kh2.len())));
+    // A template of another skeleton (KH2 Sora's motion for KH1 Sora's bones) gives only the
+    // header's fixed fields and the root block: no IK helpers, every bone in index order, and the
+    // first frame's Euler forms seeded from the skeleton's bind (the same for every motion, so
+    // KH2's blends between them stay short).
+    let own = bone_count != kh2.len();
+    if own && kh2.iter().enumerate().any(|(i, b)| b.parent >= i as i16) {
+        return Err(Error::Format("skeleton bones must follow their parents".into()));
     }
     let frames = poses.len();
-    let seed = template_angles(template, kh2);
+    let seed = if own { kh2.iter().map(|b| Some(b.rotation)).collect() } else { template_angles(template, kh2) };
     let loc = locals(kh2, poses, &seed);
     let mut initial: Vec<(i16, i16, f32)> = Vec::new();
     let mut forward: Vec<Curve> = Vec::new();
@@ -366,9 +371,24 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
     // The template's pieces we keep.
     let helper_count = total.saturating_sub(bone_count);
     let ik = BASE + hdr(0x08)? as usize;
-    let ik_bytes = template.get(ik..ik + helper_count * 0x40).ok_or_else(|| Error::Format("template IK helpers".into()))?.to_vec();
+    let mut ik_bytes = template.get(ik..ik + helper_count * 0x40).ok_or_else(|| Error::Format("template IK helpers".into()))?.to_vec();
+    if own {
+        // The template's helpers kept (the travel curves set helper TRAVEL_JOINT, which KH2
+        // reads past the bones), renumbered past the new skeleton's bones; a helper hung from a
+        // template bone hangs from the root (nothing reads their places: no IK, no constraints).
+        for (i, h) in ik_bytes.chunks_mut(0x40).enumerate() {
+            let parent = i32::from_le_bytes(h[4..8].try_into().unwrap());
+            let p = if parent >= bone_count as i32 { parent - bone_count as i32 + kh2.len() as i32 } else if parent < 0 { parent } else { 0 };
+            h[0..4].copy_from_slice(&((kh2.len() + i) as i32).to_le_bytes());
+            h[4..8].copy_from_slice(&p.to_le_bytes());
+        }
+    }
     let jt = BASE + hdr(0x0C)? as usize;
-    let mut joint_bytes = template.get(jt..jt + total * 4).ok_or_else(|| Error::Format("template joints".into()))?.to_vec();
+    let mut joint_bytes = if own {
+        (0..(kh2.len() + helper_count) as i16).flat_map(|i| [i.to_le_bytes(), [0, 0]].concat()).collect()
+    } else {
+        template.get(jt..jt + total * 4).ok_or_else(|| Error::Format("template joints".into()))?.to_vec()
+    };
     // No IK chains, constraint flags or external effectors: our motion has no constraints or IK
     // targets, so every joint is placed by its own curves (KH2 would otherwise pull the limbs to
     // the template's IK helpers at rest, and read constraints we don't have).
@@ -417,6 +437,9 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
         body.push(0);
     }
     let set = |hd: &mut Vec<u8>, o: usize, v: i32| hd[o..o + 4].copy_from_slice(&v.to_le_bytes());
+    if own {
+        set(&mut header, 0x00, (kh2.len() as i32) | (((kh2.len() + helper_count) as i32) << 16));
+    }
     set(&mut header, 0x04, frames as i32);
     set(&mut header, 0x08, o_ik);
     set(&mut header, 0x0C, o_joints);
@@ -554,4 +577,45 @@ mod tests {
         assert_eq!(p.entries[0].data, &[1, 2, 3]);
         assert!(p.entries[1].data.is_empty());
     }
+}
+
+/// `original` (a BAR file) with each entry's data passed through `f`, entries that shared data
+/// (the same offset: KH2's `duplicate` slots and `DUMM`s) still sharing the converted data.
+pub fn map_bar(original: &[u8], mut f: impl FnMut(usize, u16, &[u8]) -> Result<Vec<u8>>) -> Result<Vec<u8>> {
+    let n = i32_at(original, 4)?.max(0) as usize;
+    let table_end = 16 + n * 16;
+    if original.get(0..4) != Some(&b"BAR\x01"[..]) || original.len() < table_end {
+        return Err(Error::Format("not a BAR file".into()));
+    }
+    let rows: Vec<&[u8]> = (0..n).map(|i| &original[16 + i * 16..32 + i * 16]).collect();
+    let mut out = original[..table_end].to_vec();
+    let mut placed: std::collections::HashMap<usize, (usize, usize)> = std::collections::HashMap::new();
+    for (i, r) in rows.iter().enumerate() {
+        let (off, size) = (i32_at(r, 8)? as usize, i32_at(r, 12)?.max(0) as usize);
+        if size == 0 || placed.contains_key(&off) {
+            continue;
+        }
+        let data = original.get(off..off + size).ok_or_else(|| Error::Format(format!("BAR entry {i} out of bounds")))?;
+        let new = f(i, u16::from_le_bytes([r[0], r[1]]), data)?;
+        while out.len() % 16 != 0 {
+            out.push(0);
+        }
+        placed.insert(off, (out.len(), new.len()));
+        out.extend_from_slice(&new);
+    }
+    let first = placed.values().map(|p| p.0).min().unwrap_or(table_end);
+    for (i, r) in rows.iter().enumerate() {
+        let (off, size) = (i32_at(r, 8)? as usize, i32_at(r, 12)?.max(0) as usize);
+        let (at, len) = match placed.get(&off) {
+            Some(&(at, len)) => (at, if size == 0 { 0 } else { len }),
+            None => (first, 0),
+        };
+        let e = 16 + i * 16;
+        out[e + 8..e + 12].copy_from_slice(&(at as i32).to_le_bytes());
+        out[e + 12..e + 16].copy_from_slice(&(len as i32).to_le_bytes());
+    }
+    while out.len() % 16 != 0 {
+        out.push(0);
+    }
+    Ok(out)
 }
