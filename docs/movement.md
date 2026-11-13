@@ -112,3 +112,13 @@ KH2's ids are the OG rewrite's, its rows Checked (files). Which KH1 slot is whic
 Assumption from their lengths and poses (Checked (files)) and the sister project's request map
 (requests 0 / 1 / 2 → slots 0..1 / 2..4 / 5..7, the jump's requests 9..0xC → slots 12, 13, 10,
 11); KH1's 13 (the top of the jump) has no KH2 row. The Keyblade keeps KH2's motions for these.
+
+## t47: looping motions loop; KH2's motions read from their start
+
+KH2's motion header (`+0x80`: start, end, fps, return, in 30 Hz frames; Checked (files)): a
+looping motion's return is before its end (idle 0 of 0..150, walk 20 of 20..56, fall 6 of 0..16),
+a one-shot's is its end. Ours had return = end everywhere, so a long idle, walk or run froze on its
+last frame (the owner, t44 video). Now a motion loops where its template does, from the same
+share of the way through. And a KH2 motion's keys run from its start (the walk from 40 to 112 in
+60 Hz key time, the landing from 84, Checked (files)): `convert::kh2_round_trip` reads it from
+there (it read from 0 and held the first key for those).

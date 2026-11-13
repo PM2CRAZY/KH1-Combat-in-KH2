@@ -185,8 +185,11 @@ pub fn kh2_round_trip(data: &[u8], kh2: &[Bone]) -> Result<(Vec<Vec<Mat4>>, Vec<
     let m = kh2_formats::anim::Interpolated::parse(data)?.ok_or_else(|| Error::Format("not an interpolated motion".into()))?;
     let info = kh2_formats::motion::MotionInfo::parse(data)?;
     let n = m.frame_count.max(1) as usize;
-    let poses = (0..n).map(|f| kh2_anim::evaluate(kh2, &m, f as f32, kh2_anim::Options { constraints: true }).bones).collect();
-    let travel = (0..n).map(|f| Vec3::from(info.root_at(f as f32))).collect();
+    // A motion's keys run from its start (header `+0x80`, 30 Hz) on: KH2's walk from 40 to 112
+    // in 60 Hz key time, its landing from 84 (Checked (files)). The frame count is its length.
+    let t0 = 2.0 * info.frame_start.max(0.0);
+    let poses = (0..n).map(|f| kh2_anim::evaluate(kh2, &m, t0 + f as f32, kh2_anim::Options { constraints: true }).bones).collect();
+    let travel = (0..n).map(|f| Vec3::from(info.root_at(t0 + f as f32))).collect();
     Ok((poses, travel))
 }
 
@@ -423,7 +426,8 @@ fn write_motion_ex(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &
             for k in 0..3 {
                 let id = i32_at(template, BASE + ro + 0x30 + (3 + k) * 4)?;
                 let Some(c) = usize::try_from(id).ok().and_then(|i| all.get(i)) else { continue };
-                let v: Vec<f32> = (0..frames).map(|f| c.eval(f as f32)).collect();
+                let t0 = 2.0 * f32::from_le_bytes(template[h + 0x80..h + 0x84].try_into().unwrap()).max(0.0);
+                let v: Vec<f32> = (0..frames).map(|f| c.eval(t0 + f as f32)).collect();
                 turn_ids[k] = (forward.len() + inverse.len()) as i32;
                 let keys = fit_hermite(&v, ROT_TOL);
                 inverse.push(Curve { joint: if own { OWN_TRAVEL_JOINT } else { TRAVEL_JOINT }, channel: (3 + k) as u8, keys });
@@ -582,10 +586,18 @@ fn write_motion_ex(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &
     }
     let fps = 30.0f32;
     let end = (frames.saturating_sub(1)) as f32 / 2.0;
+    // The play range (OpenKH: start, end, fps, return, in 30 Hz frames). KH2 jumps back to
+    // `return` at the end: a looping motion's is before its end (idle 0 of 150, walk 20 of
+    // 20..56, fall 6 of 16; Checked (files)), a one-shot's is its end. Ours loops where the
+    // template does, from the same share of the way through; with the return at the end a long
+    // idle, walk or run froze on its last frame (the owner, t44).
+    let tf = |o: usize| f32::from_le_bytes(template[h + o..h + o + 4].try_into().unwrap());
+    let (t_start, t_end, t_ret) = (tf(0x80), tf(0x84), tf(0x8C));
+    let ret = if t_ret < t_end - 1e-3 && t_end > t_start { ((t_ret - t_start).max(0.0) / (t_end - t_start) * end).clamp(0.0, end) } else { end };
     header[0x80..0x84].copy_from_slice(&0f32.to_le_bytes());
     header[0x84..0x88].copy_from_slice(&end.to_le_bytes());
     header[0x88..0x8C].copy_from_slice(&fps.to_le_bytes());
-    header[0x8C..0x90].copy_from_slice(&end.to_le_bytes());
+    header[0x8C..0x90].copy_from_slice(&ret.to_le_bytes());
     set(&mut header, 0x90, o_ext);
     body[h..h + 0xA0].copy_from_slice(&header);
     Ok(body)

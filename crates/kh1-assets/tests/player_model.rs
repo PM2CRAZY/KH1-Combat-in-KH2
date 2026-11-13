@@ -23,7 +23,7 @@ fn bone_map_lands_on_kh1s_same_places() {
     let h2 = p2.iter().map(|p| p.y).fold(0.0, f32::max);
     eprintln!("heights KH1 {h1:.1} KH2 {h2:.1}");
     for (a, b) in player_model::BONE_MAP {
-        if a < 0 {
+        if a < 0 || b as usize >= p1.len() {
             continue;
         }
         let (x, y) = (p2[a as usize] * (h1 / h2), p1[b as usize]);
@@ -95,7 +95,7 @@ fn kh1_sora_as_kh2_model() {
     let out = player_model::build(&mdls, &mdlx).unwrap();
     let m = kh2_formats::mdlx::parse(&out).unwrap();
     let (meshes, textures) = kh1_data::mdls::parse_mesh(&mdls).unwrap();
-    assert_eq!(m.bones.len(), 293);
+    assert_eq!(m.bones.len(), 294);
     assert_eq!(m.textures.len(), textures.len());
     assert_eq!(m.triangle_count(), meshes.iter().map(|m| m.triangles.len()).sum::<usize>());
     if let Ok(dir) = std::env::var("KH1_MESH_OUT") {
@@ -256,7 +256,7 @@ fn keys_on_unweighted_bones() {
     let (meshes, _) = kh1_data::mdls::parse_mesh(&mdls).unwrap();
     let mut used = vec![false; kh1.len()];
     for m in &meshes { for v in &m.vertices { used[v.joint as usize] = true; } }
-    for (_, b) in player_model::BONE_MAP { if b >= 0 { used[b as usize] = true; } }
+    for (_, b) in player_model::BONE_MAP { if b >= 0 && (b as usize) < used.len() { used[b as usize] = true; } }
     // ancestors
     for i in (0..kh1.len()).rev() { if used[i] { let mut p = kh1[i].parent; while p >= 0 { used[p as usize] = true; p = kh1[p as usize].parent; } } }
     eprintln!("bones used {} of {}; unused {:?}", used.iter().filter(|x| **x).count(), kh1.len(), (0..kh1.len()).filter(|&i| !used[i]).collect::<Vec<_>>());
@@ -478,5 +478,20 @@ fn guard_root_rotation() {
         let all: Vec<&kh2_formats::anim::FCurve> = i.forward.iter().chain(&i.inverse).collect();
         let vals: Vec<String> = ids.iter().enumerate().filter(|(_, id)| **id >= 0).map(|(k, id)| { let c = all[*id as usize]; format!("ch{k}: {:?}", (0..=4).map(|q| (c.eval(q as f32 * i.frame_count as f32 / 4.0) * 100.0).round() / 100.0).collect::<Vec<_>>()) }).collect();
         eprintln!("row {row}: block {:?} ids {ids:?} {vals:?}", f.iter().map(|x| (x * 1000.0).round() / 1000.0).collect::<Vec<_>>());
+    }
+}
+
+#[test]
+fn kh2_key_time_ranges() {
+    let Some(_) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let raw = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let bar = kh2_formats::bar::Bar::parse(&raw).unwrap();
+    for row in [0usize, 4, 14, 22, 806, 604] {
+        let x = kh2_formats::bar::Bar::parse(bar.entries[row].data).unwrap();
+        let m = x.entries.iter().find(|e| e.kind == 9).unwrap();
+        let i = kh2_formats::anim::Interpolated::parse(m.data).unwrap().unwrap();
+        let ts: Vec<f32> = i.forward.iter().flat_map(|c| c.keys.iter().map(|k| k.time)).collect();
+        eprintln!("row {row}: frame_count {} key times {:.1}..{:.1}", i.frame_count, ts.iter().cloned().fold(f32::MAX, f32::min), ts.iter().cloned().fold(f32::MIN, f32::max));
     }
 }

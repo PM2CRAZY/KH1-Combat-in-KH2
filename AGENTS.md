@@ -1,3 +1,9 @@
+### 2026-11-13: Stage 47 (testing branch: Looping motions loop)
+Owner: "Sora's animations freeze if they play too long. Walking and Running both freeze and so does his idle."
+
+- `convert::write_motion`: the header's return point (`+0x8C`) follows the template's: before the end for a looping motion (idle, walk, run, fall: Checked (files)), the end for a one-shot. It was always the end, so loops froze on their last frame.
+- `kh2_round_trip`: reads a KH2 motion from its start (`+0x80` × 2 in key time: KH2's walk keys run 40..112, Checked (files)), not from 0, so KH2 motions moved onto KH1's skeleton keep their whole range.
+
 ### 2026-11-13: Stage 46 (testing branch: KH1 High Jump on KH2's High Jump)
 Owner: "high jump isnt KH1". The trace (t44) shows KH2 playing motion 201 for the High Jump; its motion is the battle row 806 (201 × 4 + 2; Checked (files): the other rows are DUMMs).
 
