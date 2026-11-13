@@ -68,3 +68,20 @@ the table at scroll + row); the row values array (`0x140365390`, `new(8)`) is 16
 row's byte is set to 0 when the screen opens (`0x140365580`, hooked). Our texts come from a hook
 on the text lookup `0x1403AD9A0` (ids `0x7F00..`, KH2's text encoding after OpenKH). Nothing
 happens on our row yet.
+
+## t40: L1 / R1 flip the page (the owner's change)
+
+The owner: "make the config menu tab between main config and mod config by using r1 and l1". The
+9th row (t39) is gone; `win/config_menu.rs` now:
+- keeps KH2's table references on a copy of ours (the 15 `lea`s), holding KH2's 8 rows or our
+  page's 9: Movement, Combos, Defence, MP, Magic, Abilities, Camera on rows 0..6, a help line on
+  row 7 (KH2 draws row 7 as one value), Player Model on row 8 (the list scrolls);
+- the step `0x140364D70` (hooked) flips the page on an L1 / R1 press (the pad record's raw word,
+  `*(*(0x140BF31A0 + 0x48))`, PS2 bits L1 0x400 / R1 0x800: the sister project's
+  `docs/kh2-pad.md`, Assumption here) and redraws with KH2's own draw `0x140365A20` and help
+  `0x1403659E0`; the list's row count (`+0x16`), cursor and scroll are set for the page;
+- the values array (16 bytes, `0x140365390`) holds the page's values: KH2's kept aside while ours
+  are up; a change on our row 5 gives the vibration back its KH2 value;
+- the apply `0x140365460` (hooked): if our page is up, our values go into `kh2-kh1.ini` (read at
+  the next launch) and KH2's values and rows come back before KH2's apply saves them;
+- the open `0x140365580` (hooked) starts on KH2's page with our values read from the ini.

@@ -1,3 +1,9 @@
+### 2026-11-13: Stage 40 (testing branch: Config menu: L1 / R1 to the mod page)
+Owner: "make the config menu tab between main config and mod config by using r1 and l1".
+
+- `win/config_menu.rs`: the 9th row (t39) replaced by a page of ours in KH2's own Config screen. L1 / R1 (raw pad word L1 0x400 / R1 0x800, Assumption from the sister project's notes) flips KH2's 8 rows and ours (Movement, Combos, Defence, MP, Magic, Abilities, Camera, a help row, Player Model), each KH2 / KH1, drawn and changed by KH2's own code (`0x140365A20`, `0x140364D70`).
+- Leaving the screen on our page writes `kh2-kh1.ini` (applies at the next launch) and gives KH2's values and rows back before KH2's apply `0x140365460` saves them. Hooks: open `0x140365580`, step `0x140364D70`, apply `0x140365460`, text lookup `0x1403AD9A0` (prologues checked).
+
 ### 2026-11-13: Stage 39 (testing branch: Config menu: the KH1 in KH2 row)
 Owner: "add the config menu", then: a 9th row in KH2's Config that opens our page; settings in `kh2-kh1.ini`.
 
