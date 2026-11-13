@@ -77,12 +77,64 @@ camera.rs` `pub mod kh1`, `crates/kh1-core/src/math.rs`). They are copied here a
 `win/camera.rs` (`camera = kh1`): KH2's follow `0x140165110` (prologue checked), on Sora, runs
 KH1's follow (`kh1cam::kh1::Follow::step` / `view`) and writes its eye and look as KH2's goals
 (`+0x64` / `+0x84`) and drawn view (`+0x18` / `+0x08`), with the spring's velocities (`+0x74` /
-`+0x94`) zeroed, so KH2's lag `0x140165700` leaves them where KH1 put them; KH2's yaw `+0x5C` /
+`+0x94`) zeroed (t63: these are the previous goals, not velocities; see below), so KH2's lag `0x140165700` leaves them where KH1 put them; KH2's yaw `+0x5C` /
 `+0x60` follow. Entry: KH2's cut flag `+0x41` (a new room, an event's end) re-places it behind Sora
 (KH1's way); coming back after other modes (more than 0.1 s without a follow step), KH1's entry at
 the drawn view's yaw. Walls: KH2's segment test `0x140171210`, the eye backed off by the sweep's
 radius (Assumption: a ray stands for KH1's 40-unit sphere). Inputs: see the file's notes.
 
-Not yet: KH1's lock camera (KH2's mode 2 stays KH2's); KH1's FOV (53°; KH2's kept); first person.
+Not yet at t62 (done at t63, below): KH1's lock camera; KH1's FOV. First person stays KH2's.
 Assumptions: KH2's right stick's y sign and its Normal as KH1's; KH2's world and KH1's share units
 and axes (both y down, yaw `atan2(x, z)`). Not checked in game.
+
+## t63: KH1's lock camera on KH2's mode 2, KH1's FOV, the camera in the trace
+
+The owner (2026-11-13): "trace done. finish the camera."
+
+KH2 (Checked (decomp), Steam):
+- The update `0x140166100` first copies each goal to its "previous goal": look `+0x84` → `+0x94`,
+  eye `+0x64` → `+0x74`, FOV `+0xA4` → `+0xB4`; then runs the mode; then `+0xA4` = the FOV goal
+  `+0x38` (`+0xA8` the roll); then the lag `0x140165700`. The lag's spring `0x140165BD0 (out, drawn,
+  goal, previous goal, k, 2.5, 0.5, 1)` leaves the drawn value alone when it equals the goal. KH2's
+  snap `0x140164D70` sets previous goal = goal = drawn. t62 zeroed `+0x74` / `+0x94` (harmless
+  for the spring, since drawn = goal, but mode 0's wall pull reads `+0x74`); t63 writes them as
+  KH2's snap does.
+- FOV: `+0x28` is the drawn FOV in radians, given to `0x14019DDE0 (projection, fov, 0)`: focal
+  `256 / tan(fov / 2)` across KH2's 512-wide view; the projection `0x14019CAD0` / `0x14019C820`
+  divides it into a half-height of 208 and a half-width of 256 plus the wide-screen extra
+  (`0x140142EC0`). The base FOV `+0xE0` comes from the table `0x140718C00` (rows of 6 floats;
+  row 0: 1.5 rad, then 420 / 380 / 250 / 500, 0.008; Checked (exe)). KH2's follow `0x140165110` and
+  first person (mode 1 in `0x140166100`) set `+0x38` from `+0xE0` each frame.
+- The camera object is `0x140718C60` (`0x140164F00` runs its update and copies its eye `+0x18` and
+  look `+0x08` out).
+- Lock-on: `0x140176910 (target)` (KH2's lock-on start) sets `+0x43` = 1 and mode 2, and keeps the
+  target record at `0x140ABE540` (enemy handle, target part, special target handle);
+  `0x140176A00` (unlock) clears `+0x43` and leaves mode 2. Mode 2 `0x140176C70` reads the target
+  point through `0x1403BDBE0`; `0x1403BE000 (record, out)` fills the whole target block: the part's
+  radius at `out + 4` (the part's `+0x10`, `0x1403C9C00`) and the point at `out + 0x18`. Mode 2's
+  lag step adds the eye pull `0x140176E40`.
+
+KH1 (Checked (decomp), Steam): `0x14028CAF0 (53)` keeps the FOV and the focal `256 / tan(26.5°)`
+= 513.46; the projection `0x14018D410` divides it into a half-height of 229 and a half-width of
+407.11 (16:9). So KH1's view is 2 atan(229 / 513.46) = 48.1° high.
+
+`win/camera.rs` (t63):
+- KH2's mode 2 `0x140176C70` (prologue 48 89 5C 24 08, checked) on Sora runs KH1's lock camera
+  (`Follow::lock_step`, `0x1401E2650`) with KH2's target point and the part's radius as KH1's lock
+  radius (Assumption: the part's radius stands for KH1's per-enemy lock radius). The first frame in
+  mode 2 is KH1's lock-on start (`0x1401E41A0`, a 60-frame blend); a new target record while locked
+  is KH1's re-lock (60 frames); the first frame back in mode 0 is KH1's unlock (`0x1401E4110`,
+  45 frames). Without a target point, KH2's own mode 2 runs that frame.
+- KH1's FOV: KH2's `tan(fov / 2) = (229 / 208) × tan(26.5°)`, 1.00403 rad (`kh1cam::kh2_fov`,
+  tested), on `+0x38`, `+0xA4`, `+0xB4` and `+0x28`. KH1's vertical view and, both being 16:9,
+  its horizontal one. Assumption: the projection's scales `+0x4C` / `+0x50` are 1 in the field.
+- The walls' flat probe (`near_wall`, KH1's `0x140196300`): eight flat rays (Assumption, as in
+  KH1-in-ReCom).
+- KH2's own eye pull after the mode (mode 0's `0x140164940` with KH2's camera collision
+  `0x140167A50`, mode 2's `0x140176E40`) still runs: the maps' own camera walls. Where it moves the
+  eye, the view is not KH1's frame for frame (Assumption: rare; the trace shows it).
+- Which lock-ons use the lock camera is still KH2's (its own lock-on start sets mode 2).
+
+Trace: new columns `cam_mode, eye_x/y/z, look_x/y/z, fov` from `0x140718C60`.
+
+Not checked in game. First person (mode 1) stays KH2's.

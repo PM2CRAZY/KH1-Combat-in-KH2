@@ -12,6 +12,10 @@
 //!   run, jump height, turn rate), Checked (decomp) for the layout;
 //! - `+0x180`: the motion playing (the combo picker `0x140402C50` compares rows with it);
 //! - `+0xDE0`: a state number (the update `0x140404A40` tests it against 0xC).
+//!
+//! The field camera `0x140718C60` (Checked (decomp): `0x140164F00` runs its update and copies its
+//! eye `+0x18` and look `+0x08` out): its mode `+0x48`, drawn eye, drawn look and FOV `+0x28`
+//! (radians across KH2's 512-wide view).
 
 use super::sys::*;
 use super::{exe_dir, log};
@@ -20,6 +24,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 
 const SORA_PTR: usize = 0x2AE_9A28; // RVA of 0x142AE9A28
+const CAMERA: usize = 0x71_8C60; // RVA of 0x140718C60
 const VK_F10: i32 = 0x79;
 
 static ON: AtomicBool = AtomicBool::new(false);
@@ -59,7 +64,7 @@ fn now_us() -> f64 {
     if f == 0 { 0.0 } else { c as f64 * 1e6 / f as f64 }
 }
 
-const HEADER: &str = "frame,time_us,sora,x70,y70,z70,x670,y670,z670,walk,run,jump,turn,motion180,state_de0";
+const HEADER: &str = "frame,time_us,sora,x70,y70,z70,x670,y670,z670,walk,run,jump,turn,motion180,state_de0,cam_mode,eye_x,eye_y,eye_z,look_x,look_y,look_z,fov";
 
 /// Once a game frame (Panacea's `OnFrame`).
 pub fn frame() {
@@ -86,11 +91,15 @@ pub fn frame() {
     let sora = read::<8>(base + SORA_PTR).map(u64::from_le_bytes).unwrap_or(0) as usize;
     let f = |o: usize| if sora == 0 { String::new() } else { f32_at(sora + o).map_or(String::new(), |v| format!("{v:.3}")) };
     let u = |o: usize| if sora == 0 { String::new() } else { u32_at(sora + o).map_or(String::new(), |v| format!("{v:#x}")) };
+    let cam = base + CAMERA;
+    let c = |o: usize| f32_at(cam + o).map_or(String::new(), |v| format!("{v:.3}"));
+    let mode = u32_at(cam + 0x48).map_or(String::new(), |v| v.to_string());
     let row = format!(
-        "{n},{:.0},{sora:#x},{},{},{},{},{},{},{},{},{},{},{},{}",
+        "{n},{:.0},{sora:#x},{},{},{},{},{},{},{},{},{},{},{},{},{mode},{},{},{},{},{},{},{}",
         now_us(),
         f(0x70), f(0x74), f(0x78), f(0x670), f(0x674), f(0x678),
-        f(0x128), f(0x12C), f(0x130), f(0x134), u(0x180), u(0xDE0)
+        f(0x128), f(0x12C), f(0x130), f(0x134), u(0x180), u(0xDE0),
+        c(0x18), c(0x1C), c(0x20), c(0x08), c(0x0C), c(0x10), c(0x28)
     );
     let mut rows = ROWS.lock().unwrap();
     rows.push(row);

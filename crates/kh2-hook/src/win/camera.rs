@@ -2,14 +2,14 @@
 //!
 //! KH2 (Checked (decomp), Steam; `docs/camera.md`): the field camera's update `0x140166100` runs
 //! its mode (`camera + 0x48`); mode 0 is the follow `0x140165110 (camera)`; then `0x140165700`
-//! springs the drawn look `+0x08` toward its goal `+0x84` (velocity `+0x94`), the drawn eye `+0x18`
-//! toward `+0x64` (velocity `+0x74`), checks the eye against the walls for mode 0, and hands the
+//! springs the drawn look `+0x08` toward its goal `+0x84` (previous goal `+0x94`), the drawn eye `+0x18`
+//! toward `+0x64` (previous goal `+0x74`), checks the eye against the walls for mode 0, and hands the
 //! view to the renderer. The subject is `camera + 0x50` (Sora).
 //!
 //! With `camera = kh1`, mode 0 on Sora is KH1's follow camera (`crate::kh1cam::kh1::Follow`, from
 //! the owner's KH1-in-ReCom, every number from the KH1 Steam decomp): KH2's follow function runs
-//! it instead of its own and writes its eye and look as KH2's goals and drawn view (velocities
-//! zeroed, so KH2's spring keeps them where KH1 put them). Its walls are KH2's own segment test
+//! it instead of its own and writes its eye and look as KH2's goals and drawn view (previous goals
+//! the same, so KH2's spring keeps them where KH1 put them). Its walls are KH2's own segment test
 //! `0x140171210 (segment, hit, face, object)` (Checked (decomp): the start and end vec4s, the hit
 //! vec4). Its inputs are KH2's: Sora's position `+0x70`, facing (`0x1403B56E0`), velocity `+0x20`,
 //! in the air (`0x1403BA9A0`), the pad (`0x14039B780(0)`: the right stick's unit direction
@@ -17,6 +17,19 @@
 //! Field Camera option (`0x1402E5310`, Auto) and its camera reverse options (`0x1402E5330` /
 //! `0x1402E5350`), the frame step `0x140717480`, keyboard and mouse `0x1404E5C50`.
 //! Runs once a frame while KH2's follow camera does.
+//!
+//! KH2's lock-on camera (mode 2, `0x140176C70`; Checked (decomp)) is KH1's lock camera the same
+//! way. KH2's lock-on start `0x140176910 (target)` sets mode 2 and keeps the target record at
+//! `0x140ABE540` (the enemy's handle, its target part, a special target's handle); KH2's
+//! `0x1403BE000 (record, out)` gives the target's point (`out + 0x18`) and its part's radius
+//! (`out + 4`). KH1's lock-on start (a 60-frame blend in, a 60-frame re-lock on a new target) and
+//! unlock (a 45-frame blend out) come from the first frame in mode 2, a change of target and the
+//! first frame back in mode 0.
+//!
+//! KH1's FOV (53°, `crate::kh1cam::kh2_fov`) is KH2's FOV goal `+0x38` (copied to `+0xA4` after
+//! the mode) and its drawn FOV `+0x28` while KH1's camera has the view. KH2's own follow and first
+//! person put `+0x38` back from the camera's base FOV `+0xE0` each frame (Checked (decomp):
+//! `0x140165110`, `0x140166100` mode 1), so `camera = kh2` keeps KH2's 1.5.
 
 use super::hook;
 use super::log;
@@ -37,9 +50,16 @@ const OPT_REV_V: usize = 0x2E_5350;
 const KBM: usize = 0x4E_5C50;
 const STEP: usize = 0x71_7480;
 const HANDLE: usize = 0x4A_D270;
+const LOCK: usize = 0x17_6C70;
+const LOCK_TARGET: usize = 0x3B_E000;
+const LOCK_RECORD: usize = 0xAB_E540;
 
 static BASE: AtomicUsize = AtomicUsize::new(0);
 static O_FOLLOW: AtomicUsize = AtomicUsize::new(0);
+static O_LOCK: AtomicUsize = AtomicUsize::new(0);
+/// KH1's lock camera has the view (mode 2), and the target record it locked on.
+static LOCKED: Mutex<Option<[u32; 3]>> = Mutex::new(None);
+static LOCK_LOGGED: AtomicBool = AtomicBool::new(false);
 static CAM: Mutex<Option<Follow>> = Mutex::new(None);
 /// When we last stepped, to know when the camera comes back to us (another mode or an event
 /// had it): more than a few frames without us is a fresh entry.
@@ -83,6 +103,15 @@ impl World for Kh2World {
             let (dir, len) = (h - from).normalize_len();
             Some(from + dir * (len - radius).max(0.0))
         }
+    }
+
+    /// KH1's flat wall probe `0x140196300` as eight flat rays of `radius` from `at` (Assumption:
+    /// eight rays stand for KH1's circle, as in KH1-in-ReCom).
+    fn near_wall(&mut self, at: Vec3, radius: f32) -> bool {
+        (0..8).any(|k| {
+            let a = k as f32 * std::f32::consts::FRAC_PI_4;
+            self.sweep(at, at + Vec3::new(a.sin() * radius, 0.0, a.cos() * radius), 0.0).is_some()
+        })
     }
 }
 
@@ -140,30 +169,101 @@ unsafe extern "system" fn follow(cam: usize) {
     let c = g.get_or_insert_with(Follow::default);
     // KH2's cut (`+0x41` = 1: a new room or an event's end) and a return to the follow: KH1's
     // re-place behind Sora; else the entry at the drawn view's yaw.
+    let unlocked = LOCKED.lock().map(|mut l| l.take().is_some()).unwrap_or(false);
     if *((cam + 0x41) as *const u8) == 1 {
         *((cam + 0x41) as *mut u8) = 0;
         c.behind(&inp, &mut w);
+    } else if unlocked && !fresh {
+        // KH1's unlock `0x1401E4110`: the follow with a 45-frame blend.
+        c.unlock(&inp, &mut w);
     } else if fresh {
         let (e, l) = (v4(cam + 0x18), v4(cam + 0x08));
         c.enter(kh1::yaw_of(e, l), &inp, &mut w);
     }
     c.step(&inp, &mut w);
-    let (eye, look) = c.view(inp.step);
-    // KH2's goals and drawn view, its spring's velocities zeroed.
-    put4(cam + 0x64, eye);
-    put4(cam + 0x18, eye);
-    put4(cam + 0x84, look);
-    put4(cam + 0x08, look);
-    for v in [0x74usize, 0x94] {
-        put4(cam + v, Vec3::ZERO);
-        *((cam + v + 12) as *mut f32) = 0.0;
+    put_view(cam, c, inp.step);
+    if !LOGGED.swap(true, Ordering::Relaxed) {
+        log!("camera kh1: KH1's follow camera on KH2's mode 0 (first eye {:?}, look {:?}; KH2's FOV {}, KH1's {})", (c.eye.x, c.eye.y, c.eye.z), (c.look.x, c.look.y, c.look.z), KH2_FOV_SEEN.lock().map(|g| *g).unwrap_or(0.0), crate::kh1cam::kh2_fov(kh1::FOV));
+    }
+}
+
+static KH2_FOV_SEEN: Mutex<f32> = Mutex::new(0.0);
+
+/// KH1's drawn view as KH2's goals and drawn view; the goals' previous values (`+0x74`, `+0x94`)
+/// the same, as KH2's own snap `0x140164D70` leaves them, so KH2's spring `0x140165BD0` keeps the
+/// view where KH1 put it. KH1's FOV the same way (`+0x38` goal, `+0xA4` / `+0xB4`, `+0x28`).
+unsafe fn put_view(cam: usize, c: &mut Follow, step: f32) {
+    let (eye, look) = c.view(step);
+    for at in [0x64usize, 0x74, 0x18] {
+        put4(cam + at, eye);
+    }
+    for at in [0x84usize, 0x94, 0x08] {
+        put4(cam + at, look);
+    }
+    let fov = crate::kh1cam::kh2_fov(kh1::FOV);
+    let seen = *((cam + 0x38) as *const f32);
+    if seen != fov {
+        if let Ok(mut g) = KH2_FOV_SEEN.lock() {
+            *g = seen;
+        }
+    }
+    for at in [0x38usize, 0xA4, 0xB4, 0x28] {
+        *((cam + at) as *mut f32) = fov;
     }
     // KH2's own yaw fields follow the view (its lock-on and resets start from them).
     let yaw = kh1::yaw_of(eye, look);
     *((cam + 0x5C) as *mut f32) = yaw;
     *((cam + 0x60) as *mut f32) = yaw;
-    if !LOGGED.swap(true, Ordering::Relaxed) {
-        log!("camera kh1: KH1's follow camera on KH2's mode 0 (first eye {:?}, look {:?})", (eye.x, eye.y, eye.z), (look.x, look.y, look.z));
+}
+
+/// KH2's lock target: its point and its part's radius (`0x1403BE000`).
+unsafe fn lock_target() -> (kh1::Target, [u32; 3]) {
+    #[repr(C, align(16))]
+    struct Out([u32; 12]);
+    let mut out = Out([0; 12]);
+    let rec = BASE.load(Ordering::Relaxed) + LOCK_RECORD;
+    let get: unsafe extern "system" fn(usize, *mut u32) = f(LOCK_TARGET);
+    get(rec, out.0.as_mut_ptr());
+    let r = rec as *const u32;
+    let p = out.0.as_ptr() as *const f32;
+    (kh1::Target { point: Vec3::new(*p.add(6), *p.add(7), *p.add(8)), radius: (*p.add(1)).max(0.0) }, [*r, *r.add(1), *r.add(2)])
+}
+
+unsafe extern "system" fn lock(cam: usize) {
+    let o: unsafe extern "system" fn(usize) = std::mem::transmute(O_LOCK.load(Ordering::Acquire));
+    let sora = if cam == 0 { 0 } else { *((cam + 0x50) as *const usize) };
+    if sora == 0 || !is_sora(sora) {
+        return o(cam);
+    }
+    let now = std::time::Instant::now();
+    let fresh = LAST.lock().map(|mut l| l.replace(now).is_none_or(|t| now.duration_since(t) > FRESH_AFTER)).unwrap_or(true);
+    let inp = input(cam, sora);
+    let mut w = Kh2World;
+    let (t, rec) = lock_target();
+    if t.point == Vec3::ZERO {
+        // No target point (KH2's record gives none): KH2's own lock camera this frame.
+        return o(cam);
+    }
+    let Ok(mut g) = CAM.lock() else { return o(cam) };
+    let c = g.get_or_insert_with(Follow::default);
+    let Ok(mut locked) = LOCKED.lock() else { return o(cam) };
+    if fresh {
+        // Back from another mode or an event: KH1's follow at the drawn view first.
+        let (e, l) = (v4(cam + 0x18), v4(cam + 0x08));
+        c.enter(kh1::yaw_of(e, l), &inp, &mut w);
+        *locked = None;
+    }
+    match *locked {
+        // KH1's lock-on start `0x1401E41A0`: a new target while locked re-locks over 60 frames.
+        Some(was) if was == rec => {}
+        Some(_) => c.lock_on(true),
+        None => c.lock_on(false),
+    }
+    *locked = Some(rec);
+    c.lock_step(&inp, &t, &mut w);
+    put_view(cam, c, inp.step);
+    if !LOCK_LOGGED.swap(true, Ordering::Relaxed) {
+        log!("camera kh1: KH1's lock camera on KH2's mode 2 (target {:?}, radius {})", (t.point.x, t.point.y, t.point.z), t.radius);
     }
 }
 
@@ -171,5 +271,8 @@ pub unsafe fn install(base: usize) {
     BASE.store(base, Ordering::Relaxed);
     if hook::install(base + FOLLOW, &[0x48, 0x89, 0x5C, 0x24, 0x08], follow as *const () as usize, &O_FOLLOW, "follow camera 0x140165110").is_some() {
         log!("camera kh1: KH1's follow camera with camera = kh1");
+    }
+    if hook::install(base + LOCK, &[0x48, 0x89, 0x5C, 0x24, 0x08], lock as *const () as usize, &O_LOCK, "lock-on camera 0x140176C70").is_some() {
+        log!("camera kh1: KH1's lock camera with camera = kh1");
     }
 }

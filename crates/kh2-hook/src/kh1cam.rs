@@ -1100,3 +1100,29 @@ pub mod kh1 {
         }
     }
 }
+
+/// KH1's FOV in KH2's projection.
+///
+/// KH1 (Checked (decomp), Steam): `0x14028CAF0 (deg)` keeps the FOV and the focal length
+/// `256 / tan(deg / 2)`; the projection `0x14018D410` divides by it a half-height of 229 (and a
+/// half-width of 407.11, 16:9). KH2 (Checked (decomp), Steam): the camera's FOV `+0x28` (radians)
+/// goes to `0x14019DDE0 (projection, fov, 0)`, which takes it across a half-width of 256, focal
+/// `256 / tan(fov / 2)` (its scales `+0x4C` / `+0x50` 1: Assumption); `0x14019CAD0` /
+/// `0x14019C820` divide by it a half-height of 208 (and 256 plus the wide-screen extra). The same
+/// vertical view needs `tan(fov / 2) = (229 / 208) × tan(deg / 2)`.
+pub fn kh2_fov(kh1_deg: f32) -> f32 {
+    let half = (kh1_deg * 0.5).to_radians();
+    2.0 * ((229.0 / 208.0) * half.tan()).atan()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn kh1_fov_in_kh2() {
+        let f = super::kh2_fov(super::kh1::FOV);
+        assert!((f - 1.004_03).abs() < 1e-4, "{f}");
+        // KH1's vertical view: 2 atan(229 / (256 / tan 26.5°)) ≈ 48.08°.
+        let v = 2.0 * (208.0 / (256.0 / (f * 0.5).tan())).atan();
+        assert!((v.to_degrees() - 48.08).abs() < 0.02, "{}", v.to_degrees());
+    }
+}

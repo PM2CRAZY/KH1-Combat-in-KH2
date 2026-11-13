@@ -1,3 +1,11 @@
+### 2026-11-13: Stage 63 (testing branch: KH1's lock camera and FOV on KH2's camera)
+- **KH1's lock camera on KH2's mode 2, KH1's FOV, the camera in the trace.** The owner (2026-11-13): "trace done. finish the camera."
+  - KH2's lock-on camera `0x140176C70` (prologue 48 89 5C 24 08) on Sora runs KH1's lock camera (`0x1401E2650`, from KH1-in-ReCom's `kh1cam`), the target point and part radius from KH2's `0x1403BE000 (0x140ABE540, out)` (point `out + 0x18`, radius `out + 4`). KH1's lock-on start (60-frame blend), re-lock on a new target (60) and unlock (45) from the first frame in mode 2, a new target record and the first frame back in mode 0. Checked (decomp) for KH2's fields and KH1's numbers; Assumption: the part's radius as KH1's lock radius.
+  - KH1's FOV 53° as KH2's 1.00403 rad (`kh1cam::kh2_fov`: KH1 `0x14028CAF0` / `0x14018D410` half-height 229 over focal 256 / tan 26.5°; KH2 `0x14019DDE0` / `0x14019CAD0` half-height 208 over focal 256 / tan(fov / 2)) on `+0x38`, `+0xA4`, `+0xB4`, `+0x28`. Checked (decomp); Assumption: KH2's projection scales 1 in the field.
+  - KH2's previous goals `+0x74` / `+0x94` written as KH2's snap `0x140164D70` does (t62 zeroed them as if velocities). Checked (decomp).
+  - KH1's flat wall probe (`0x140196300`) as eight flat rays on KH2's segment test. Assumption.
+  - Trace: camera mode, eye, look and FOV from `0x140718C60`. Checked (decomp) for the fields.
+
 ### 2026-11-13: Stage 62 (testing branch: KH1's follow camera on KH2's mode 0)
 The owner: "continue with the camera"; "feel free to look at any of the code we did for putting KH1 into ReCoM".
 
