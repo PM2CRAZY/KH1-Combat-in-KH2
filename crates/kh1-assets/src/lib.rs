@@ -201,9 +201,9 @@ pub const GUARD: [(usize, usize); 1] = [(173, 110)];
 /// Jump's 9..0xC → 12, 13, 10, 11): 0 the field idle (120 frames, standing tall), 1 the battle idle
 /// (170, the Keyblade stance), 2 / 3 / 4 the walks, 5 / 6 / 7 the runs, 8 the jump (26), 10 the
 /// fall (40, held), 11 the landing (28). The owner (t42): 12 is KH1's High Jump (it was on the
-/// jump). KH1's 9 / 13 (the jumps' tops) have no KH2 row; KH2's High Jump (201) isn't in
-/// `P_EX100.mset` (a DUMM row, Checked (files)), so KH1's 12 waits for where KH2 loads it from.
-pub const MOVES: [(usize, usize); 11] = [(0, 0), (2, 1), (4, 2), (6, 3), (7, 4), (8, 5), (10, 6), (11, 7), (14, 8), (18, 10), (22, 11)];
+/// jump): it goes on KH2's High Jump, motion 201, whose motion is its battle row 806 (201 × 4 + 2;
+/// rows 804 / 805 / 807 are DUMMs, Checked (files)). KH1's 9 / 13 (the jumps' tops) have no KH2 row.
+pub const MOVES: [(usize, usize); 12] = [(0, 0), (2, 1), (4, 2), (6, 3), (7, 4), (8, 5), (10, 6), (11, 7), (14, 8), (18, 10), (22, 11), (806, 12)];
 
 static SLOTS: std::sync::RwLock<Option<Vec<(usize, usize)>>> = std::sync::RwLock::new(None);
 

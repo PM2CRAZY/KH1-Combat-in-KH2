@@ -1,3 +1,8 @@
+### 2026-11-13: Stage 46 (testing branch: KH1 High Jump on KH2's High Jump)
+Owner: "high jump isnt KH1". The trace (t44) shows KH2 playing motion 201 for the High Jump; its motion is the battle row 806 (201 × 4 + 2; Checked (files): the other rows are DUMMs).
+
+- `MOVES`: row 806 ← KH1 motion 12 (KH1's High Jump).
+
 ### 2026-11-13: Stage 45 (testing branch: No root turn on our motions)
 Owner: "Guarding still flips sora". KH2's guard motion 173 turns Sora by its root block: rotation y −3.165 with a curve 0 → −2π → 0 (Checked (files)). We kept the block with the curve cut, so the KH1 guard was drawn turned −3.165 (180°).
 
