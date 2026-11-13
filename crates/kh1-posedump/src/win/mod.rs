@@ -25,6 +25,8 @@ static BASE: AtomicUsize = AtomicUsize::new(0);
 static ORIG: AtomicUsize = AtomicUsize::new(0);
 static RECORDING: AtomicBool = AtomicBool::new(false);
 static KEY_DOWN: AtomicBool = AtomicBool::new(false);
+static CALLS: AtomicUsize = AtomicUsize::new(0);
+static CALLS_IK: AtomicUsize = AtomicUsize::new(0);
 static LOG: Mutex<Option<File>> = Mutex::new(None);
 static OUT: Mutex<Option<(BufWriter<File>, HashSet<usize>, u64)>> = Mutex::new(None);
 
@@ -145,12 +147,28 @@ fn record(tag: u32, world: usize, instance: usize, t: f32, motion: usize) -> Opt
     Some(())
 }
 
+/// Logs a hook's first call, and every 3600th (about a minute), so the log shows it runs.
+fn note_call(n: &AtomicUsize, what: &str) {
+    let c = n.fetch_add(1, Ordering::Relaxed);
+    if c == 0 || (c + 1) % 3600 == 0 {
+        log!("{what}: {} calls", c + 1);
+    }
+}
+
+/// Watches F10 (every 30 ms) on its own thread, so a press counts whatever the game is doing.
+unsafe extern "system" fn keys(_: *mut c_void) -> u32 {
+    loop {
+        toggle_key();
+        Sleep(30);
+    }
+}
+
 type Pose = unsafe extern "system" fn(usize, usize, f32, usize);
 
 unsafe extern "system" fn pose(world: usize, instance: usize, t: f32, motion: usize) {
     let f: Pose = std::mem::transmute(ORIG.load(Ordering::Acquire));
     f(world, instance, t, motion);
-    toggle_key();
+    note_call(&CALLS, "skeleton pass");
     if RECORDING.load(Ordering::Relaxed) && instance != 0 {
         let _ = record(2, world, instance, t, motion);
     }
@@ -161,7 +179,7 @@ type PoseIk = unsafe extern "system" fn(usize, usize, f32);
 unsafe extern "system" fn pose_ik(world: usize, instance: usize, flags: f32) {
     let f: PoseIk = std::mem::transmute(ORIG_IK.load(Ordering::Acquire));
     f(world, instance, flags);
-    toggle_key();
+    note_call(&CALLS_IK, "ground-IK pass");
     if RECORDING.load(Ordering::Relaxed) && instance != 0 {
         let motion = read_u64(instance + 8).unwrap_or(0);
         let t = read(instance + 0x10, 4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).unwrap_or(-1.0);
@@ -193,6 +211,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
     if hook::install(base + POSE_RVA, &POSE_PROLOGUE, pose as *const () as usize, &ORIG, "KH1 skeleton pass 0x140391C70").is_some() {
         log!("hooked KH1's skeleton pass");
     }
+    CreateThread(std::ptr::null_mut(), 0, keys, std::ptr::null_mut(), 0, std::ptr::null_mut());
     if hook::install(base + POSE_IK_RVA, &POSE_IK_PROLOGUE, pose_ik as *const () as usize, &ORIG_IK, "KH1 skeleton pass with ground IK 0x140392560").is_some() {
         log!("hooked KH1's skeleton pass with ground IK");
     }
