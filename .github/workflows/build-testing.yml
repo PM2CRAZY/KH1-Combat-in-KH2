@@ -41,7 +41,8 @@ jobs:
           version=$(sed -n 's/^pub const VERSION: &str = "\(.*\)";/\1/p' crates/kh2-hook/src/lib.rs)
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
-          git add kh2-kh1.dll tools/kh1-posedump/kh1-posedump.dll
+          git add kh2-kh1.dll
+          git add -f tools/kh1-posedump/kh1-posedump.dll
           if git diff --cached --quiet; then echo "no change"; exit 0; fi
           git commit -m "Build ${version} (kh2-kh1.dll, from ${GITHUB_SHA::7})"
           for i in 1 2 3; do
