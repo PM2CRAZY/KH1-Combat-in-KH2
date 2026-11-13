@@ -1,3 +1,6 @@
+### 2026-11-13: Stage 35 (testing branch: Remove the Keyblade-switch diagnostic)
+Owner: "no crash!" (t34). The diagnostic hook on `0x140407DE0` (t31/t32, `win/itemcheck.rs`) is removed; the crash report (`win/crash.rs`) stays.
+
 ### 2026-11-13: Stage 34 (testing branch: KH1 model: motion set under KH2's size)
 Owner: "bro the game is still crashing when switching keyblades lets fix this now", then with `model = kh2` (combos kh1): "no crash". So the motion set's size (3.4 MB with the KH1 model, KH2's 2.6 MB) is the cause. Assumption: an area heap (default `0x142A0F7B0` = 0x280000, Checked (decomp)) that a bigger file overruns.
 

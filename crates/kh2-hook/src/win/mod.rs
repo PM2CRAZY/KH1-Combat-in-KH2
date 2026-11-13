@@ -6,7 +6,6 @@ mod build;
 mod crash;
 mod highjump;
 mod hook;
-mod itemcheck;
 mod prty;
 mod sora;
 mod sys;
@@ -183,7 +182,6 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         if s.trace {
             trace::enable(base);
         }
-        itemcheck::install(base);
         if s.style("movement") == crate::settings::Style::Kh1 {
             arc::install(base);
             prty::install(base);
