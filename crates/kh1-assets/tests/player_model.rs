@@ -143,14 +143,15 @@ fn kh2_motions_on_kh1_skeleton() {
     let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
     let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
     let t = std::time::Instant::now();
-    let (out, n) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1).unwrap();
-    eprintln!("{n} motions converted in {:?}, {} -> {} bytes", t.elapsed(), mset2.len(), out.len());
+    let (out, n) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true).unwrap();
+    eprintln!("swings {n:?}; converted in {:?}, {} -> {} bytes", t.elapsed(), mset2.len(), out.len());
     // Every motion reads back on KH1's skeleton, and plays the pose it was written from.
     let (a, b) = (kh2_formats::bar::Bar::parse(&mset2).unwrap(), kh2_formats::bar::Bar::parse(&out).unwrap());
     let mut worst = 0.0f32;
-    for (ea, eb) in a.entries.iter().zip(&b.entries) {
+    assert_eq!(a.entries.len(), b.entries.len());
+    for (row, (ea, eb)) in a.entries.iter().zip(&b.entries).enumerate() {
         assert_eq!((ea.kind, ea.duplicate, &ea.name), (eb.kind, eb.duplicate, &eb.name));
-        if ea.kind != 17 || ea.data.is_empty() || ea.name == "DUMM" { continue; }
+        if ea.kind != 17 || ea.data.is_empty() || ea.name == "DUMM" || kh1_assets::kh1_motion_at(row).is_some() { continue; }
         let (xa, xb) = (kh2_formats::bar::Bar::parse(ea.data).unwrap(), kh2_formats::bar::Bar::parse(eb.data).unwrap());
         let ma = xa.entries.iter().find(|e| e.kind == 9).unwrap();
         let mb = xb.entries.iter().find(|e| e.kind == 9).unwrap();
@@ -192,7 +193,7 @@ fn converted_size_by_channel() {
     let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
     let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
     let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
-    let (out, _) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1).unwrap();
+    let (out, _) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true).unwrap();
     let bar = kh2_formats::bar::Bar::parse(&out).unwrap();
     let mut keys = [0usize; 9];
     let mut curves = [0usize; 9];

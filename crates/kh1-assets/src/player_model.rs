@@ -152,62 +152,47 @@ pub fn build(kh1_mdls: &[u8], kh2_mdlx: &[u8]) -> Result<Vec<u8>> {
 }
 
 /// KH2 Sora's motion set on KH1 Sora's skeleton: every KH2 motion posed by KH2's own evaluator,
-/// moved onto KH1's bones (`kh1_data::retarget`), and written for the 293-bone skeleton; KH1's
-/// combo motions (`crate::KH1_MOTIONS`, at `crate::FIRST_KH2_MOTION` on) posed by KH1's own bone
-/// pass (`kh1_data::rig`), as KH1 plays them. Returns the set and how many motions it converted.
-pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Option<kh1_data::mset::Motion>]) -> Result<(Vec<u8>, usize)> {
-    use crate::convert::{extend_bar, kh2_round_trip, map_bar, write_bar, write_motion};
-    use kh2_formats::motion::{BAR_TYPE_ANB, BAR_TYPE_MOTION, BAR_TYPE_MOTION_TRIGGERS};
-    let mut count = 0;
-    let mut template: Option<(Vec<u8>, Vec<u8>)> = None;
-    let out = map_bar(kh2_mset, |slot, kind, data| {
+/// moved onto KH1's bones (`kh1_data::retarget`), and written for the 293-bone skeleton; in the
+/// swing slots (`crate::SWINGS`) KH1's combo motions instead, posed by KH1's own bone pass
+/// (`kh1_data::rig`), as KH1 plays them. Returns the set and the swings written (KH1 motion, KH2
+/// id, frames). With `kh1_swings` false (`combos = kh2`) the swings are KH2's, converted too.
+pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Option<kh1_data::mset::Motion>], kh1_swings: bool) -> Result<(Vec<u8>, Vec<(usize, usize, usize)>)> {
+    use crate::convert::{kh2_round_trip, map_bar, write_motion};
+    use kh2_formats::motion::{BAR_TYPE_ANB, BAR_TYPE_MOTION};
+    let mut swings = Vec::new();
+    let out = map_bar(kh2_mset, |row, kind, data| {
         if kind != BAR_TYPE_ANB || data.is_empty() {
             return Ok(data.to_vec());
         }
+        let swing = crate::kh1_motion_at(row).filter(|_| kh1_swings);
         map_bar(data, |_, k, m| {
             if k != BAR_TYPE_MOTION || !matches!(kh2_formats::anim::Interpolated::parse(m), Ok(Some(_))) {
                 return Ok(m.to_vec());
+            }
+            if let Some(k) = swing {
+                let motion = kh1_motions.get(k).cloned().flatten().ok_or_else(|| Error::NotFound(format!("KH1 motion {k}")))?;
+                let frames = motion.frames.max(1) as usize;
+                let (mut poses, mut travel) = (Vec::with_capacity(frames), Vec::with_capacity(frames));
+                for f in 0..frames {
+                    let p = kh1_data::rig::pose(&motion, kh1, f as f32);
+                    let t = p.helpers.last().map(|x| x.w_axis.truncate()).unwrap_or(glam::Vec3::ZERO);
+                    let back = glam::Mat4::from_translation(-t);
+                    poses.push(p.bones.iter().map(|x| back * *x).collect::<Vec<_>>());
+                    travel.push(t);
+                }
+                swings.push((k, row / 4, frames));
+                return write_motion(m, kh1, &poses, &travel);
             }
             let (poses, travel) = kh2_round_trip(m, kh2)?;
             // A fresh retarget a motion: its cloth and turn memory start from rest, not from
             // wherever the motion before it left them.
             let r = kh1_data::retarget::Retarget::new(kh1, kh2);
             let kh1_poses: Vec<_> = poses.iter().map(|p| r.pose(p)).collect();
-            count += 1;
-            let out = write_motion(m, kh1, &kh1_poses, &travel)?;
-            if slot == crate::TEMPLATE_MOTION * 4 {
-                let anb = Bar::parse(data)?;
-                let trig = anb.entries.iter().find(|e| e.kind == BAR_TYPE_MOTION_TRIGGERS).map(|e| e.data.to_vec()).unwrap_or_default();
-                template = Some((m.to_vec(), trig));
-            }
-            Ok(out)
+            write_motion(m, kh1, &kh1_poses, &travel)
         })
     })?;
-    let (tmotion, ttrig) = template.ok_or_else(|| Error::Format("KH2's motion set has no motion".into()))?;
-    let n = Bar::parse(kh2_mset)?.entries.len();
-    let dumm = (0u16, 1i16, *b"DUMM", None);
-    let mut extra: Vec<(u16, i16, [u8; 4], Option<Vec<u8>>)> = Vec::new();
-    while n + extra.len() < crate::FIRST_KH2_MOTION * 4 {
-        extra.push(dumm.clone());
+    if kh1_swings && swings.len() != crate::SWINGS.len() {
+        return Err(Error::Format(format!("KH2's motion set had {} of the {} swing slots", swings.len(), crate::SWINGS.len())));
     }
-    for &k in &crate::KH1_MOTIONS {
-        let m = kh1_motions.get(k).cloned().flatten().ok_or_else(|| Error::NotFound(format!("KH1 motion {k}")))?;
-        let frames = m.frames.max(1) as usize;
-        let (mut poses, mut travel) = (Vec::with_capacity(frames), Vec::with_capacity(frames));
-        for f in 0..frames {
-            let p = kh1_data::rig::pose(&m, kh1, f as f32);
-            let t = p.helpers.last().map(|x| x.w_axis.truncate()).unwrap_or(glam::Vec3::ZERO);
-            let back = glam::Mat4::from_translation(-t);
-            poses.push(p.bones.iter().map(|x| back * *x).collect::<Vec<_>>());
-            travel.push(t);
-        }
-        let data = write_motion(&tmotion, kh1, &poses, &travel)?;
-        let name = *format!("K{k:03}").as_bytes().first_chunk::<4>().unwrap();
-        let anb = write_bar(0, &[(BAR_TYPE_MOTION, 0, name, data), (BAR_TYPE_MOTION_TRIGGERS, 0, name, ttrig.clone())]);
-        extra.push((BAR_TYPE_ANB, 0, name, Some(anb)));
-        for _ in 0..3 {
-            extra.push(dumm.clone());
-        }
-    }
-    Ok((extend_bar(&out, &extra)?, count))
+    Ok((out, swings))
 }

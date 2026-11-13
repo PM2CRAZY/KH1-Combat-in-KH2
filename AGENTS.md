@@ -1,3 +1,11 @@
+### 2026-11-13: Stage 33 (testing branch: KH1 swings in KH2's own swing slots)
+Owner: "game crashed take the log" (t32): the Keyblade-switch crash. It does not happen with `combos = kh2` (owner, t31 build). The object with the overwritten collision list is at the same heap address each run (t31, t32 logs), so the cause is in the files we write for the combo, not the model.
+
+- `kh1_assets::SWINGS`: KH1's motions are written into KH2's swing slots (151 ← 98, 152 ← 99, 153 ← 100, 154/155 ← 101, 181 ← 102, 182 ← 103, 183/184 ← 104, the t12 row mapping), each keeping its slot's own triggers, instead of being added at 210..216.
+- `W_EX010.mset` is no longer written (a build removes one left by an older build): the Keyblade plays KH2's own motion of the same id. The `ptya` row patch and the table loader hook (`win/combos.rs`) are gone; nothing is hooked for combos.
+- With `model = kh1`, the same slots hold KH1's motions on KH1's skeleton (`combos = kh1`) or KH2's swings converted (`combos = kh2`).
+- Assumption: the crash came from the longer Keyblade motion set (loaded again on a switch) overrunning its room. Not checked in the decomp.
+
 ### 2026-11-13: Stage 32 (testing branch: Keyblade-switch crash: name the object)
 Owner: "crashed" (t31), then with `combos = kh2`, `model = kh2`: "no crash". So it comes from the KH1 combo (the KH1 model is not needed: the crash came before it).
 

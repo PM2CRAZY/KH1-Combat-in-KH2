@@ -3,7 +3,6 @@
 mod airsteer;
 mod arc;
 mod build;
-mod combos;
 mod crash;
 mod highjump;
 mod hook;
@@ -130,18 +129,12 @@ fn assets(mod_path: &str) {
     let model = settings().style("model") == crate::settings::Style::Kh1;
     if combos || model {
         let t = std::time::Instant::now();
-        match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION, model) {
+        match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION, model, combos) {
             Ok(Some(b)) => {
-                log!("assets: built {} bytes into {} in {} ms: KH1 motions {:?}; model = {}", b.bytes, dir.join("obj").display(), t.elapsed().as_millis(), b.motions, if model { "kh1" } else { "kh2" });
-                if combos {
-                    combos::motions_ready();
-                }
+                log!("assets: built {} bytes into {} in {} ms: KH1 swings (KH1 motion, KH2 slot, frames) {:?}; model = {}", b.bytes, dir.join("obj").display(), t.elapsed().as_millis(), b.motions, if model { "kh1" } else { "kh2" });
             }
             Ok(None) => {
                 log!("assets: already built ({}); model = {}", dir.join("obj").join("P_EX100.mset").display(), if model { "kh1" } else { "kh2" });
-                if combos {
-                    combos::motions_ready();
-                }
             }
             Err(e) => log!("assets: could not build: {e}"),
         }
@@ -196,9 +189,6 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
             prty::install(base);
             highjump::install(base);
             airsteer::install(base);
-        }
-        if s.style("combos") == crate::settings::Style::Kh1 {
-            combos::install(base);
         }
     }
     1

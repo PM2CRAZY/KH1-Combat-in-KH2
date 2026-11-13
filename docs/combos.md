@@ -67,3 +67,20 @@ KH1's (210..216); the ability rows, windows and order stay KH2's. Only when this
 made the motions. Open (Assumptions): KH1 request `0xC8 + n` → KH1 motion `98 + n`; KH1's target
 tests vs KH2's windows; KH1's combo length (stats `+0xD4` / `+0xD5`, runtime: a KH1 combo trace
 reads it); the jump approaches still KH2's.
+
+## t33: KH1's swings in KH2's own swing slots
+
+Until t32 the KH1 motions were added after KH2's (ids 210..216), the plain `ptya` rows were pointed
+at them (a hook on the table loader `0x1403F4C30`), and the Keyblade's motion set `W_EX010.mset` got
+copies of the replaced swings' Keyblade motions at the same ids. Switching Keyblades then crashed:
+`0x140407DE0`, which walks every object's collision list while it attacks, read an object's list
+(`+0xAB8`, at the same heap address each run) that held other data, and `0x1403B68B0` found no
+item for the garbage id (Checked (log, t31 / t32; decomp)). With `combos = kh2` (KH2's own Sora
+and Keyblade motion sets) it did not crash (Checked (owner)). Assumption: the longer Keyblade
+motion set, loaded again on a switch, overruns the room KH2 keeps for it.
+
+Now (`kh1_assets::SWINGS`) the KH1 motions are written into KH2's swing slots themselves: 151 ← 98,
+152 ← 99, 153 ← 100, 154 / 155 ← 101, 181 ← 102, 182 ← 103, 183 / 184 ← 104 (the t12 row mapping).
+Each slot keeps its own motion triggers. `ptya` is KH2's, untouched, and the Keyblade plays its own
+motion of the same id from KH2's own `W_EX010.mset`, which we no longer write (a build removes one
+an older build left). The hook no longer patches anything for combos.
