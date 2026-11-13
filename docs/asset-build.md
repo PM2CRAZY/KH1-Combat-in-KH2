@@ -139,3 +139,21 @@ helpers with them. Not compared with KH1's own pose in game yet.
 - Non-root bones again take the offset the pose gives (t14 forced the bind offset). The two are
   the same for KH1's swings, but KH2's own motions don't keep the bind offsets, so the round trip
   needs the pose's.
+- **t17 result (owner, in game):** the round-tripped A300 "looks exactly like KH2's base attack".
+  So the motion writer is right; the wrong-looking swings come from the KH1 side.
+- **KH1 helper math, re-checked against the KH1 decomp** (`0x140391C70`, `0x1401DB080`,
+  `0x1401DB4D0`, `0x1400E5A20`, `0x1400E5AD0`, `0x1400E6AC0`). Checked (decomp):
+  - KH1 matrices are row-vector (`v · M`, translation in the fourth row).
+  - A helper's matrix is scale, then X, Y and Z turns, then translation. As column matrices that
+    is `Rz · Ry · Rx`, the same as `kh2_anim::euler_quat`.
+  - `0x1401DB4D0 (out, a, b)` is `out = b · a` (row-vector), so `(helper k, parent, own)` is
+    parent × own as column matrices. That is what `rig.rs` does.
+  - Helper channel kinds 1–3 / 4–6 / 7–9 write scale / rotation / translation of the 10-float
+    helper record (scale, parent, rotation, translation). Matrix 0 is the actor's world matrix
+    with its Y and Z rows negated: one rotation for the whole body, so no change of shape.
+- **KH1 motion 98 (first ground swing, request 0xC8; sister notes) as `rig.rs` poses it:** at
+  frame 0 the hips helper sits 33.7 under the root helper (idle: 3.8) and is turned (1.04, −1.27, 0)
+  (pitch 60°, yaw −73°). The feet stay on their targets 41 units apart. So it is a deep, wide,
+  side-on lunge, and the KH2 conversion matches it (stick figures). Whether KH1 shows 98 this way
+  is not yet checked against the game: the bone pass (`0x1403900B0`: aims, two-bone IK) is the
+  remaining unchecked part.
