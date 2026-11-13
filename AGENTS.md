@@ -1,3 +1,12 @@
+### 2026-11-13: Stage 75 (testing branch: Phase 4: KH1's Cure inside KH2's own Cure)
+The owner: "perfect finish phase 4 now".
+
+- magic/CURE_1..3.mag built like the other spells: KH2's file and script for the Drive Forms, KH1's Cure for base Sora. From xm_cure01..03.mag (all the same, Checked (files)).
+- Cast: KH1's charge effect 0 on the Keyblade; release at 36 (t69).
+- Release: KH1 heals the command's member else the caster; KH2's menu picks none, so Sora only: ATKP 708 (kind 6) struck onto Sora's own record with trap_attack_strike (as KH2's Cure calls it). KH2's party-wide heal no longer for base Sora.
+- KH1's heal effect (effect 1) held over his feet at the body centre's height (0x4001 for KH1's bone 8: Assumption), following him while it plays.
+- Not yet: KH1's heal amount, the member choice (open design question).
+
 ### 2026-11-13: Stage 74 (testing branch: Phase 4: KH1's Thunder inside KH2's own Thunder)
 The owner: "perfect finish phase 4 now".
 

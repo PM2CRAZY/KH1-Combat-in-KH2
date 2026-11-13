@@ -368,3 +368,20 @@ Checked (files); KH1-in-ReCom's `recom-m7-magic.md` §7.6 (Checked (files + deco
   KH2's own spark doesn't play over KH1's bolt).
 - Sounds: KH2's Thunder's stand in (126 cast, 127 bolt).
 - Not yet: KH1's damage; KH1's hit stop (`sys 186(2)`).
+
+## t75: KH1's Cure inside KH2's own Cure (`magic = kh1`, step 5.5)
+
+`magic/CURE_1..3.mag` built as the others (KH2's script for the Drive Forms). From the owner's
+`xm_cure01..03.mag` (the same in all three), Checked (files); KH1-in-ReCom §7.7:
+
+- **Cast:** KH1's charge (effect 0) on the Keyblade; release at 36 (t69).
+- **Release** (`0x56`): KH1 strikes its heal straight onto the command's member, else the caster.
+  KH2's Magic menu picks no member, so **Sora only** (KH2's own Cure heals every party member near
+  him: base Sora no longer does; the Drive Forms still run KH2's). KH2's ATKP 708 (kind 6, heals by
+  Magic) struck with `trap_attack_strike` on Sora's own record, as KH2's Cure calls it.
+- **The heal effect** (effect 1) held at a fixed height over his feet and following him while it
+  plays (KH1: bone 8's height at the release; KH2's body centre `0x4001` stands in for that bone,
+  Assumption).
+- Sounds: KH2's Cure's stand in (129 cast, 130 heal).
+- Not yet: KH1's heal amount (KH1: power 15 / 27 / 36 + max MP; KH2's rows heal by Magic); the
+  member choice (KH1 asks which member; KH2's menu has no such step: an open design question).

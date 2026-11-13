@@ -135,7 +135,7 @@ pub fn mag(name: &[u8; 4], pax: &[u8], bdx: &[u8]) -> Vec<u8> {
 /// KH2's `magic/<SPELL>_n.mag` is level n (its MAGC rows; the Drive Forms cast the same files,
 /// the sister's `drive-model.md`); KH1's `xm_<spell>0n.mag` likewise (Checked (files): the scripts
 /// differ only in the level's numbers, Blizzard's shard speed 20 / 30 / 40).
-pub const SPELLS: [(&str, &str, Kind, usize); 9] = [
+pub const SPELLS: [(&str, &str, Kind, usize); 12] = [
     ("xm_fire01.mag", "magic/FIRE_1.mag", Kind::Fire, 0),
     ("xm_fire02.mag", "magic/FIRE_2.mag", Kind::Fire, 1),
     ("xm_fire03.mag", "magic/FIRE_3.mag", Kind::Fire, 2),
@@ -145,6 +145,9 @@ pub const SPELLS: [(&str, &str, Kind, usize); 9] = [
     ("xm_thunder01.mag", "magic/THUNDER_1.mag", Kind::Thunder, 0),
     ("xm_thunder02.mag", "magic/THUNDER_2.mag", Kind::Thunder, 1),
     ("xm_thunder03.mag", "magic/THUNDER_3.mag", Kind::Thunder, 2),
+    ("xm_cure01.mag", "magic/CURE_1.mag", Kind::Cure, 0),
+    ("xm_cure02.mag", "magic/CURE_2.mag", Kind::Cure, 1),
+    ("xm_cure03.mag", "magic/CURE_3.mag", Kind::Cure, 2),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -152,6 +155,7 @@ pub enum Kind {
     Fire,
     Blizzard,
     Thunder,
+    Cure,
 }
 
 /// KH2's own spell file (`kh2`, `magic/<SPELL>_n.mag`) with KH1's spell added (`kh1`, the matching
@@ -250,6 +254,16 @@ pub mod thunder {
     pub const ATKP: i32 = 250;
 }
 
+/// KH1's Cure (`xm_cure0n.mag`, the same in all three files, Checked (files); KH1-in-ReCom §7.7).
+pub mod cure {
+    /// KH2's Cure heal on the caster (ATKP 708, kind 6: heals by Magic; rows by the sub; Checked
+    /// (files): `CURE_1.mag`'s script, `00battle.bin`).
+    pub const ATKP: i32 = 708;
+    /// KH1 holds the heal effect at its bone 8's height over the target's feet, following him: KH2's
+    /// body centre (`0x4001`) stands in for that bone (Assumption).
+    pub const BONE: i32 = 0x4001;
+}
+
 /// Our elements, KH1's effect numbers moved up by `kh1` (`merge_pax`). KH1's sounds aren't in
 /// KH2's banks yet: the matching KH2 spell's own stand in (Assumption on what they are: KH2's
 /// PAX). Hit elements in `HIT_GROUP`: KH1's body hit (its set's `0x81` mask), its wall hit (`0x102`;
@@ -286,6 +300,8 @@ pub fn elements(kind: Kind, kh1: u16) -> Vec<Element> {
             el(MARK, 1, 0, 0, 0, -1),
             el(BOLT, 2, 0, 0, 0, 127),
         ],
+        // KH1 Cure: 0 the charge on the Keyblade, 1 the heal on Sora (placed by the script).
+        Kind::Cure => vec![el(CAST, 0, 0x4003, 0x2A1, 0, 129), el(SHOT, 1, 0, 0, 0, 130)],
     }
 }
 
@@ -362,6 +378,7 @@ fn code(kind: Kind, level: usize, a: &mut Asm) {
         Kind::Fire => fire_code(a),
         Kind::Blizzard => blizzard_code(level.min(2), a),
         Kind::Thunder => thunder_code(a),
+        Kind::Cure => cure_code(a),
     }
 }
 
@@ -686,6 +703,37 @@ fn thunder_code(a: &mut Asm) {
     a.ret();
 }
 
+fn cure_code(a: &mut Asm) {
+    use Mode::*;
+    // Trigger 21 (KH1's release, frame 36; `xm_cure01.mag` `0x56`): the heal struck straight onto
+    // Sora (KH1 `sys 23` / `sys 60` onto the command's member, else the caster; KH2's menu picks
+    // none, so Sora), then the heal effect, held at the body centre's height over his feet and
+    // following him while it plays.
+    a.label("release");
+    for (o, v) in [(0, 0.0f32), (4, 0.0), (8, 0.0), (12, 1.0)] {
+        a.push_f(v).pop(Wp, W_ZERO + o);
+    }
+    new_block(a);
+    a.push_a(Wp, W_CASTER).push_i(cure::ATKP).push_i(-1).push_v(Wp, W_SUB).sys("trap_attack_new").pop(SpD, B_ATK);
+    a.push_v(SpD, B_ATK).push_a(Wp, W_CASTER).push_i(0).push_i(0).sys("trap_attack_strike");
+    a.push_v(SpD, B_ATK).sys("trap_attack_free");
+    a.push_v(Wp, W_RES).push_i(SHOT).push_i(1).push_i(0).sys("trap_pax_start").pop(SpD, B_FX);
+    a.push_a(Wp, W_CASTER).push_i(cure::BONE).push_a(Wp, W_ZERO).sys("trap_obj_apply_bone_matrix").push_dpop(4);
+    a.push_a(Wp, W_CASTER).sys("trap_obj_pos").push_dpop(4).bin("sub.s").pop(SpD, B_SCRATCH);
+    a.push_v(Sp, 0).push_i(B_THREAD as i32).bin("add").push_pc("heal").push_v(Sp, 0).sys("trap_magic_start_thread").store();
+    a.ret();
+
+    a.label("heal").pop(Sp, 0);
+    a.label("heal_follow");
+    a.push_v(SpD, B_FX).sys("trap_effect_is_alive").beqz("heal_end");
+    a.push_v(Sp, 0).sys("trap_obj_pos").memcpy(SpD, 16, B_POS);
+    a.push_v(SpD, B_POS + 4).push_v(SpD, B_SCRATCH).bin("add.s").pop(SpD, B_POS + 4);
+    a.push_v(SpD, B_FX).push_a(SpD, B_POS).sys("trap_effect_set_pos");
+    a.halt().b("heal_follow");
+    a.label("heal_end").push_v(Sp, 0).sys("trap_memory_free");
+    a.ret();
+}
+
 /// KH2's own spell PAX with KH1's set added: KH2's elements and effects first, unchanged (the
 /// Drive Forms run KH2's own script on them), then ours; one DPX of both sets' effects (KH1's
 /// renumbered by `KH1_NUMBERS`: KH2 finds an effect by its number, Checked (decomp `0x1402BC9B0`
@@ -889,6 +937,10 @@ mod tests {
                     let z = match args[1].i() {
                         0x4003 => 30.0,
                         0x4007 => 15.0,
+                        0x4001 => {
+                            args[0] = self.ret_vec(vm, [0.0, -90.0, 0.0, 1.0]);
+                            return Ok(());
+                        }
                         b => panic!("bone {b:#x}"),
                     };
                     args[0] = self.ret_vec(vm, [0.0, -100.0, z, 1.0])
@@ -1179,6 +1231,17 @@ mod tests {
     }
 
     #[test]
+    fn kh1_cure_heals_sora_as_kh1s() {
+        let mut w = World::new(None, None);
+        w.motion_end = 68;
+        let w = cast_with(&script(Kind::Cure, 0), 0, w);
+        // One heal, on Sora (his record's object), at the release; the effect over his body centre.
+        assert_eq!(w.strikes.len(), 1);
+        assert_eq!(w.strikes[0].0, 28);
+        assert!(w.started.iter().any(|s| s.0 == SHOT && s.1 == [0.0, -90.0, 0.0]), "{:?}", w.started);
+    }
+
+    #[test]
     fn blizzard_cone_is_kh1s() {
         let s = blizzard::shards();
         for (off, dir, _) in &s[..6] {
@@ -1193,7 +1256,7 @@ mod tests {
     fn script_avoids_the_games_30_fps_patches() {
         // KH2 replaces some float pushes at fixed code positions (`kh2_bdx::vm::pc_patch`); none of
         // ours may sit there.
-        for kind in [Kind::Fire, Kind::Blizzard, Kind::Thunder] {
+        for kind in [Kind::Fire, Kind::Blizzard, Kind::Thunder, Kind::Cure] {
             for level in 0..3 {
                 let p = kh2_bdx::Program::parse(&script(kind, level)).unwrap();
                 let mut pc = (12 + 8 * (p.triggers.len() as u32 + 1)) / 2;
