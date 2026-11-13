@@ -1,3 +1,8 @@
+### 2026-11-13: Stage 30 (testing branch: Crash report: the faulting function's stack words)
+Owner: "you can open the camp menu, switching keyblades crashes the game". t29's report: a read of 0x2 at 0x1403B68E0 (in 0x1403B68B0, which looks an item id up in the item table by bsearch and reads the row without checking it was found), called from 0x140407EBC (in 0x140407DE0, which walks Sora's collision entries of types 5 and 14 while an attack is on and looks up each one's item: entry +2 for type 5, else Sora +0xCF0). Checked (decomp). Same place as the keyblade-switch crash before the KH1 model. The id itself isn't in the report.
+
+- `win/crash.rs`: also logs the first 16 stack words raw. 0x1403B68B0 saves the caller's rbx, which holds the item id, at rsp+0x30. Checked (exe bytes: `40 53 48 83 EC 30`, the caller passes `mov ecx, ebx`).
+
 ### 2026-11-13: Stage 29 (testing branch: KH1 model: a smaller motion set)
 Owner: "entering the camp menu crashes the game again" (t27). Suspect: the converted motion set was 9.8 MB against KH2's own 2.6 MB, and the camp menu crashed before on Sora's motion file (t14). Assumption until the t28 crash report says where it faults.
 

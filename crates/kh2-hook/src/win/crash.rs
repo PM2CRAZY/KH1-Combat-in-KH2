@@ -52,6 +52,18 @@ unsafe extern "system" fn handler(p: *mut Pointers) -> i32 {
         .collect();
     let access = if r.code == 0xC000_0005 && r.params >= 2 { format!(" ({} {:#x})", if r.info[0] == 1 { "writing" } else if r.info[0] == 8 { "running" } else { "reading" }, r.info[1]) } else { String::new() };
     crate::win::log_line_try(&format!("CRASH {:#010x} at {}{access}; {}", r.code, rel(r.address), regs.join(" ")));
+    // The first 16 stack words as they are (saved registers and locals of the faulting
+    // function: a value its caller passed is often among them).
+    let mut raw = Vec::new();
+    for i in 0..16 {
+        let mut v = 0usize;
+        let mut read = 0usize;
+        if super::sys::ReadProcessMemory(super::sys::GetCurrentProcess(), (rsp + i * 8) as *const c_void, &mut v as *mut usize as *mut c_void, 8, &mut read) == 0 || read != 8 {
+            break;
+        }
+        raw.push(format!("{v:#x}"));
+    }
+    crate::win::log_line_try(&format!("CRASH rsp={rsp:#x} words: {}", raw.join(" ")));
     // Exe return addresses on the stack (a code address just after a call).
     let mut found = Vec::new();
     for i in 0..512 {
