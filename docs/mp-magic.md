@@ -45,10 +45,17 @@ table `0x1403DCA50` (`0x1405C7425` the MP of each prize). The hit record (Phase 
   `+0x3BF8`.) Not found yet: Sora's starting max MP (the new-game record) and KH1's story MP ups
   (Assumption: event scripts; not needed for the owner's choice 4).
 
+**KH2's max MP** (Checked (decomp) `0x1403C1D90`, the status build from the save's character
+record): record `+6` MP, `+7` max MP (bytes), into status `+0x180` / `+0x184`. So KH2's max MP can't
+pass 255: KH1's bars go on it at **10 a bar** (not the 100 the plan first said): up to 25 bars.
+KH2's MP-up rewards (Checked (files), `00battle.bin` `bons`, character 1): five, rewards 23, 26,
+29 (+10 each), 51 (+40), 68 (+10), so record `+7` − 100 tells how many he has (prefix sums 10, 20,
+30, 70, 80; Assumption: he gets them in reward order).
+
 ## Plan (one system per version)
 
-1. **KH1's pool on KH2's MP fields.** KH2's MP = bars × 100 + the yellow gauge as a share of the
-   next bar; max MP = KH1's max bars × 100 (KH1's per-level max: its level-up table, to be read;
+1. **KH1's pool on KH2's MP fields.** KH2's MP = bars × 10 + the yellow gauge as a share of the
+   next bar; max MP = KH1's max bars × 10 (KH1's per-level max: its level-up table, to be read;
    question if KH2's levels can't map onto it). MP Charge never starts for base Sora (the "below
    0" branch of `0x1403D3CF0` refuses instead), and the magic menu greys a spell he can't pay for.
 2. **KH1's MP from hits.** At the hit record (`0x1403CE740`), a hit by Sora on an enemy adds KH1's
