@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 52 (testing branch: Phase 3: KH1's Square rule (guard standing or walking, roll running))
+The owner: "lets finish phase 3". Third system: when Square guards (defence = kh1).
+
+- KH1 (Checked (decomp)): Square handler `0x1402A7B30` guards with Guard equipped when Dodge Roll isn't, or his move speed is under his run speed (stats +8); the ground step `0x1402A5F10` makes the move speed walk 2 up to a 0.8 tilt, run 8 past it. KH2 (Checked (decomp + exe)): `0x1403A81F0` guards only at move speed `+0x1C` 0 (test at `0x1403A83C8`); its speed is the same walk / run pick (`0x1403A8FA0`).
+- `win/roll.rs`: the 12-byte test (bytes checked) calls a stub: base Sora guards when `+0x1C` < `+0x12C` (run), others when it is 0.
+- Not ported: a tilt of exactly 0.8. Still open: KH1's guard arc. Not checked in game. Docs: `docs/defence.md` (t52).
+
 ### 2026-11-13: Stage 51 (testing branch: Phase 3: KH1's Dodge Roll in KH2's roll)
 The owner: "lets finish phase 3". Second system: the Dodge Roll (defence = kh1).
 

@@ -37,8 +37,24 @@ project's `docs/kh1-roll-guard-native.md` (KH1 Steam addresses, re-checked here 
   the load at `0x1403A848D` (`movss xmm1, [rax+0x40]`, bytes checked) calls a stub that gives base
   Sora 12; Quick Run's store comes after it and keeps KH2's; Drive Forms keep KH2's. KH1's 12 means
   "hits land without damage or reaction", KH2's "hits don't land": the same for Sora.
-- Not yet: when Square rolls rather than guards (KH1: a light tilt still guards; KH2 rolls on any
-  tilt). Not checked in game.
+- Square's guard-or-roll rule: t52. Not checked in game.
+
+## t52: KH1's Square rule: guard standing or walking, roll running
+
+- KH1 (Checked (decomp), the Square handler `0x1402A7B30`): with Guard equipped, Square guards when
+  Dodge Roll isn't equipped or his move speed (`move +0xC`) is under his run speed (stats `+8`);
+  else it rolls. The ground step `0x1402A5F10` (state 0's, `0x1402B1B80(0, ...)`) sets the move
+  speed to his walk speed (stats `+4`, 2) up to a 0.8 tilt and his run speed (8) past it. So KH1
+  guards standing or walking.
+- KH2 (Checked (decomp + exe), `0x1403A81F0`): guards only at a move speed `+0x1C` of 0 (the test
+  at `0x1403A83C8`), so a walking Square rolled. Its move speed is picked the same way (walk
+  `+0x128` under 0.8, run `+0x12C` from it, `0x1403A8FA0`). Without Dodge Roll it guards at any
+  tilt, as KH1.
+- `win/roll.rs` (`defence = kh1`): the 12-byte test (bytes checked) is a call into a stub: base Sora
+  guards when `+0x1C` is under `+0x12C`; anyone else (Drive Forms) at 0, as KH2.
+- Not ported: KH1's tilt of exactly 0.8 walks (KH2's runs). Not checked in game.
+- Still open: the guard's arc (KH1 ±100° around his facing, attack data `+0x64`); KH2's guard is
+  the Keyblade's guard window (ATKP 161), whose reach is its collision shape, not an angle.
 
 ## Next
 
