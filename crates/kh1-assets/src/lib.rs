@@ -159,6 +159,10 @@ pub const REPLACES: [(usize, usize); 7] = [(98, 151), (99, 152), (100, 153), (10
 /// Test build (t17, off from t19): KH1 motion 98's slot holds KH2's own first swing (A300) passed through the
 /// converter, so the owner can see in game whether the converter itself keeps a KH2 swing whole.
 pub const ROUND_TRIP_FIRST_SWING: bool = false;
+/// Test build (t22): KH1 motion 98's slot holds KH2's own rest pose (the `.mdlx` bind), held
+/// still, so the owner can see whether KH2's mesh sits right on the rest's bone frames (the
+/// transfer turns every bone from them; KH2's own motions use other frames for 175 bones).
+pub const REST_POSE_FIRST_SWING: bool = true;
 
 /// The KH2 motion id KH1 motion `kh1` is built as.
 pub fn kh2_motion_of(kh1: usize) -> Option<usize> {
@@ -195,7 +199,10 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
     let mut built = Built::default();
     for &k in &KH1_MOTIONS {
         let m = motions.get(k).cloned().flatten().ok_or_else(|| Error::NotFound(format!("KH1 motion {k}")))?;
-        let (poses, travel) = if ROUND_TRIP_FIRST_SWING && k == KH1_MOTIONS[0] {
+        let (poses, travel) = if REST_POSE_FIRST_SWING && k == KH1_MOTIONS[0] {
+            let rest = kh2_anim::Pose::bind(&kh2_bones).bones;
+            (vec![rest; 48], vec![glam::Vec3::ZERO; 48])
+        } else if ROUND_TRIP_FIRST_SWING && k == KH1_MOTIONS[0] {
             convert::kh2_round_trip(tmotion.data, &kh2_bones)?
         } else {
             convert::kh2_poses(&m, &kh1_bones, &kh2_bones)

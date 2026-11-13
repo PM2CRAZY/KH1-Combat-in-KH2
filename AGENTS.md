@@ -1,3 +1,6 @@
+### 2026-11-13: Stage 22 (testing branch: test: KH2's rest pose in the first ground swing)
+Test build. KH2's own `.mdlx` rest pose (bind), held still, plays as the first ground swing. If KH2's mesh looks clean on it (a T-pose), the rest's bone frames are the ones the mesh follows and the stretching is elsewhere; if the mesh twists, the transfer must turn bones from frames KH2's own motions use. Checked: nothing yet (the owner's look decides).
+
 ### 2026-11-13: Stage 21 (testing branch: KH1 swings: Euler forms like KH2's; KH1 ground truth)
 Owner: KH1's swings on KH2 Sora are "stretched like CRAZY"; recorded KH1's own poses with kh1-posedump.
 
