@@ -20,8 +20,11 @@ const SORA_ROW: usize = 1;
 static BASE: AtomicUsize = AtomicUsize::new(0);
 static O_PREF_SET: AtomicUsize = AtomicUsize::new(0);
 
+/// KH2's jump and turn, as the row held them before we changed it (for a switch back to KH2).
+static KH2_ROW: std::sync::Mutex<Option<[f32; 2]>> = std::sync::Mutex::new(None);
+
 unsafe fn patch_row() {
-    if *((BASE.load(Ordering::Relaxed) + PRTY) as *const usize) == 0 {
+    if !crate::settings::kh1(crate::settings::MOVEMENT) || *((BASE.load(Ordering::Relaxed) + PRTY) as *const usize) == 0 {
         return;
     }
     let at = super::sora::prty_row(SORA_ROW);
@@ -36,6 +39,9 @@ unsafe fn patch_row() {
         log!("movement kh1: Sora's prty row holds {have:?}, not KH2's {kh2:?}: left alone");
         return;
     }
+    if let Ok(mut g) = KH2_ROW.lock() {
+        *g = Some([have[2], have[3]]);
+    }
     *row.add(2) = KH1_JUMP;
     *row.add(3) = KH1_TURN;
     log!("movement kh1: Sora's prty row: jump {KH1_JUMP}, turn {KH1_TURN} (KH2's 185, 0.262)");
@@ -48,13 +54,41 @@ unsafe extern "system" fn pref_set(file: usize) {
     patch_row();
 }
 
+/// The Config menu switched movement: Sora's row, and the copy KH2's `0x14040A480` made of it in
+/// base Sora's movement block (`+0x130` jump, `+0x134` turn; Checked (decomp)), now.
+pub unsafe fn apply(kh1: bool) {
+    let at = super::sora::prty_row(SORA_ROW);
+    if at == 0 {
+        return;
+    }
+    let row = at as *mut f32;
+    let vals = if kh1 {
+        patch_row();
+        (*row.add(2) == KH1_JUMP).then_some([KH1_JUMP, KH1_TURN])
+    } else {
+        let kh2 = KH2_ROW.lock().ok().and_then(|mut g| g.take());
+        if let Some([j, t]) = kh2 {
+            *row.add(2) = j;
+            *row.add(3) = t;
+        }
+        kh2
+    };
+    let sora = super::sora::current();
+    if let Some([j, t]) = vals {
+        if super::sora::is_base_sora(sora) {
+            *((sora + 0x130) as *mut f32) = j;
+            *((sora + 0x134) as *mut f32) = t;
+        }
+    }
+}
+
 pub unsafe fn install(base: usize) {
     BASE.store(base, Ordering::Relaxed);
     // (Installed at the DLL's load, before KH2 loads its system files; if `pref` is already in,
     // its row is changed now too.)
     let ours = pref_set as *const () as usize;
     if hook::install(base + PREF_SET, &[0x40, 0x53, 0x48, 0x83, 0xEC, 0x20], ours, &O_PREF_SET, "pref setter 0x1403E9360").is_none() {
-        log!("movement kh1: KH1's jump height and turn rate not used");
+        log!("movement: KH1's jump height and turn rate can't be used");
         return;
     }
     patch_row();

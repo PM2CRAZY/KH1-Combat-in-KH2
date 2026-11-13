@@ -51,6 +51,8 @@ const KBM: usize = 0x4E_5C50;
 const STEP: usize = 0x71_7480;
 const HANDLE: usize = 0x4A_D270;
 const LOCK: usize = 0x17_6C70;
+/// KH2's field camera (`0x140164F00` runs it). Checked (decomp).
+const CAMERA: usize = 0x71_8C60;
 const LOCK_TARGET: usize = 0x3B_E000;
 const LOCK_RECORD: usize = 0xAB_E540;
 
@@ -157,8 +159,11 @@ unsafe fn input(cam: usize, sora: usize) -> Input {
 
 unsafe extern "system" fn follow(cam: usize) {
     let o: unsafe extern "system" fn(usize) = std::mem::transmute(O_FOLLOW.load(Ordering::Acquire));
+    if cam == 0 || !crate::settings::kh1(crate::settings::CAMERA) {
+        return o(cam);
+    }
     let sora = *((cam + 0x50) as *const usize);
-    if cam == 0 || sora == 0 || !is_sora(sora) {
+    if sora == 0 || !is_sora(sora) {
         return o(cam);
     }
     let now = std::time::Instant::now();
@@ -231,7 +236,7 @@ unsafe fn lock_target() -> (kh1::Target, [u32; 3]) {
 
 unsafe extern "system" fn lock(cam: usize) {
     let o: unsafe extern "system" fn(usize) = std::mem::transmute(O_LOCK.load(Ordering::Acquire));
-    let sora = if cam == 0 { 0 } else { *((cam + 0x50) as *const usize) };
+    let sora = if cam == 0 || !crate::settings::kh1(crate::settings::CAMERA) { 0 } else { *((cam + 0x50) as *const usize) };
     if sora == 0 || !is_sora(sora) {
         return o(cam);
     }
@@ -267,12 +272,27 @@ unsafe extern "system" fn lock(cam: usize) {
     }
 }
 
+/// The Config menu switched the camera: back to KH2's, its FOV goal from the camera's base FOV
+/// `+0xE0` at once (KH2's follow would put it back too); to KH1's, KH1's entry on its next frame.
+pub unsafe fn apply(kh1: bool) {
+    let cam = BASE.load(Ordering::Relaxed) + CAMERA;
+    if let Ok(mut l) = LAST.lock() {
+        *l = None;
+    }
+    if let Ok(mut l) = LOCKED.lock() {
+        *l = None;
+    }
+    if !kh1 && BASE.load(Ordering::Relaxed) != 0 {
+        *((cam + 0x38) as *mut f32) = *((cam + 0xE0) as *const f32);
+    }
+}
+
 pub unsafe fn install(base: usize) {
     BASE.store(base, Ordering::Relaxed);
     if hook::install(base + FOLLOW, &[0x48, 0x89, 0x5C, 0x24, 0x08], follow as *const () as usize, &O_FOLLOW, "follow camera 0x140165110").is_some() {
-        log!("camera kh1: KH1's follow camera with camera = kh1");
+        log!("camera: KH1's follow camera while camera = kh1");
     }
     if hook::install(base + LOCK, &[0x48, 0x89, 0x5C, 0x24, 0x08], lock as *const () as usize, &O_LOCK, "lock-on camera 0x140176C70").is_some() {
-        log!("camera kh1: KH1's lock camera with camera = kh1");
+        log!("camera: KH1's lock camera while camera = kh1");
     }
 }

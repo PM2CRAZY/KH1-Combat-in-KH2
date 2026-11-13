@@ -1,9 +1,9 @@
 //! The mod's page in KH2's own Config screen (the owner: "make the config menu tab between main
 //! config and mod config by using r1 and l1"; the settings stay in `kh2-kh1.ini`). L1 or R1 flips
 //! the screen between KH2's 8 rows and ours: the systems, KH2 / KH1 each, drawn, moved through
-//! and changed by KH2's own Config code with our rows in its table. Leaving the screen on our page
-//! writes the ini (read at the next launch) and gives KH2's rows and values back before KH2 saves
-//! its own.
+//! and changed by KH2's own Config code with our rows in its table. A value changed on our page
+//! switches that system at once (`super::switch`; Sora's model at the next launch) and writes the
+//! ini; leaving the screen on our page gives KH2's rows and values back before KH2 saves its own.
 //!
 //! KH2's Config screen (camp mode `0x24`, Checked (decomp / exe), `docs/kh2-config-menu.md`):
 //! - its rows come from the static table `0x1405BC340` (8 rows of 0x14: option count, label text,
@@ -140,10 +140,14 @@ fn texts() -> &'static [(u16, Vec<u8>)] {
             let Some((key, label)) = row else { continue };
             t.push((T_ROW + i as u16, encode(label)));
             let what = crate::settings::SYSTEMS.iter().find(|(k, _)| k == key).map_or("", |(_, w)| *w);
-            t.push((T_HELP + 2 * i as u16, encode(&format!("KH2: {what}. Applies at the next launch"))));
-            t.push((T_HELP + 2 * i as u16 + 1, encode(&format!("KH1: {what}. Applies at the next launch"))));
+            let when = match crate::settings::SYSTEMS.iter().position(|(k, _)| k == key) {
+                Some(n) if crate::settings::NEXT_LAUNCH.contains(&n) => "Applies at the next launch",
+                _ => "Applies at once",
+            };
+            t.push((T_HELP + 2 * i as u16, encode(&format!("KH2: {what}. {when}"))));
+            t.push((T_HELP + 2 * i as u16 + 1, encode(&format!("KH1: {what}. {when}"))));
         }
-        t.push((T_HELP + 2 * 7, encode("L1 / R1: back to KH2's Config. Changes are saved when you leave")));
+        t.push((T_HELP + 2 * 7, encode("L1 / R1: back to KH2's Config. Changes apply and are saved at once")));
         t
     })
 }
@@ -294,6 +298,18 @@ unsafe fn pad_word() -> u64 {
     }
 }
 
+/// Our page's 9 values while it is shown.
+unsafe fn page_values() -> Option<[u8; 9]> {
+    let ours = STATE.lock().map(|st| st.ours).unwrap_or(false);
+    let v = values();
+    if !ours || v == 0 {
+        return None;
+    }
+    let mut out = [0u8; 9];
+    std::ptr::copy_nonoverlapping(v as *const u8, out.as_mut_ptr(), 9);
+    Some(out)
+}
+
 unsafe extern "system" fn step() {
     let pressed = {
         let Ok(mut st) = STATE.lock() else { return };
@@ -308,8 +324,26 @@ unsafe extern "system" fn step() {
         }
     }
     let row5_before = values().checked_add(5).map(|a| *(a as *const u8));
+    let before = page_values();
     let o: unsafe extern "system" fn() = std::mem::transmute(O_STEP.load(Ordering::Acquire));
     o();
+    // A value changed on our page: that system switches now, and the ini is written.
+    if let (Some(b), Some(a)) = (before, page_values()) {
+        if a != b {
+            for (i, row) in PAGE.iter().enumerate() {
+                let Some((key, _)) = row else { continue };
+                if a[i] != b[i] {
+                    if let Some(n) = crate::settings::SYSTEMS.iter().position(|(k, _)| k == key) {
+                        super::switch(n, a[i] == 1);
+                    }
+                }
+            }
+            if let Ok(mut st) = STATE.lock() {
+                st.mod_values = a;
+            }
+            write_ini(&a);
+        }
+    }
     // KH2 switches the vibration at once when row 5 changes; on our page row 5 is ours.
     if let Ok(st) = STATE.lock() {
         let v = values();

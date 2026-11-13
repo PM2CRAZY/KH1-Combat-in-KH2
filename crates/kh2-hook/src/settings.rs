@@ -1,6 +1,44 @@
 //! `kh2-kh1.ini` in the game folder: one KH2 / KH1 toggle per system (all KH2 by default, which is
-//! vanilla KH2). Read once at start. Parsing is plain Rust so it is tested on any platform; the
-//! file itself is read and written by the Windows side.
+//! vanilla KH2). Read at start; the Config menu's mod page changes a system at once ([`set_kh1`],
+//! read by the systems through [`kh1`]) and writes the file. Parsing is plain Rust so it is tested
+//! on any platform; the file itself is read and written by the Windows side.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// `SYSTEMS` indices, for [`kh1`].
+pub const MOVEMENT: usize = 0;
+pub const COMBOS: usize = 1;
+pub const DEFENCE: usize = 2;
+pub const MP: usize = 3;
+pub const MAGIC: usize = 4;
+pub const ABILITIES: usize = 5;
+pub const CAMERA: usize = 6;
+pub const MODEL: usize = 7;
+
+static LIVE: [AtomicBool; 8] = [const { AtomicBool::new(false) }; 8];
+
+/// Whether system `i` (`SYSTEMS` order) plays like KH1 now.
+#[inline]
+pub fn kh1(i: usize) -> bool {
+    LIVE.get(i).is_some_and(|b| b.load(Ordering::Relaxed))
+}
+
+/// Sets system `i` now; returns whether it changed.
+pub fn set_kh1(i: usize, on: bool) -> bool {
+    LIVE.get(i).is_some_and(|b| b.swap(on, Ordering::Relaxed) != on)
+}
+
+/// Every system's switch from `s` (at start).
+pub fn set_all(s: &Settings) {
+    for (i, st) in s.styles.iter().enumerate() {
+        set_kh1(i, *st == Style::Kh1);
+    }
+}
+
+/// The systems whose change waits for the next launch: Sora's model (Panacea keeps the HD
+/// texture list of the model it first loads, so another model in the same run would get the
+/// first one's textures).
+pub const NEXT_LAUNCH: &[usize] = &[MODEL];
 
 /// Which game a system plays like.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -86,7 +124,8 @@ impl Settings {
     pub fn render(&self) -> String {
         let mut out = String::from(
             "# KH1-Combat-in-KH2 settings. Each system plays like kh2 (vanilla) or kh1.\n\
-             # Read when the game starts.\n\n",
+             # The Config menu's mod page (L1 / R1) changes them in game at once (the player model at\n\
+             # the next launch).\n\n",
         );
         for ((k, what), st) in SYSTEMS.iter().zip(&self.styles) {
             out.push_str(&format!("# {what}\n{k} = {}\n\n", st.name()));
@@ -102,6 +141,15 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn indices_follow_systems() {
+        for (i, k) in [(MOVEMENT, "movement"), (COMBOS, "combos"), (DEFENCE, "defence"), (MP, "mp"), (MAGIC, "magic"), (ABILITIES, "abilities"), (CAMERA, "camera"), (MODEL, "model")] {
+            assert_eq!(SYSTEMS[i].0, k);
+        }
+        assert_eq!(SYSTEMS.len(), LIVE.len());
+        assert!(set_kh1(CAMERA, true) && kh1(CAMERA) && !set_kh1(CAMERA, true) && set_kh1(CAMERA, false) && !kh1(CAMERA));
+    }
 
     #[test]
     fn default_is_all_kh2() {

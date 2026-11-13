@@ -46,7 +46,7 @@ pub const KH1_ROLL_STAR_TIME: f32 = 12.0;
 static LOGGED: AtomicBool = AtomicBool::new(false);
 
 extern "system" fn star_time(actor: usize, kh2: f32) -> f32 {
-    if !is_base_sora(actor) {
+    if !crate::settings::kh1(crate::settings::DEFENCE) || !is_base_sora(actor) {
         return kh2;
     }
     if !LOGGED.swap(true, Ordering::Relaxed) {
@@ -63,7 +63,7 @@ static GUARD_LOGGED: AtomicBool = AtomicBool::new(false);
 /// Whether Square guards now (KH2 then tries its guard; otherwise the roll and the rest).
 extern "system" fn square_guards(actor: usize) -> u8 {
     let speed = unsafe { *((actor + 0x1C) as *const f32) };
-    if !is_base_sora(actor) {
+    if !crate::settings::kh1(crate::settings::DEFENCE) || !is_base_sora(actor) {
         return (speed == 0.0) as u8;
     }
     let run = unsafe { *((actor + 0x12C) as *const f32) };
@@ -89,7 +89,7 @@ unsafe fn install_square(base: usize) {
     new[1..5].copy_from_slice(&((stub as i64 - (site as i64 + 5)) as i32).to_le_bytes());
     new[5..9].copy_from_slice(&[0x84, 0xC0, 0x74, 0x13]);
     if hook::patch(site, &SQUARE_TEST_BYTES, &new, "the Square guard test 0x1403A83C8") {
-        log!("defence kh1: KH1's Square rule on base Sora (guard below his run speed; test 0x1403A83C8 -> {stub:#x})");
+        log!("defence: while defence = kh1, KH1's Square rule on base Sora (guard below his run speed; test 0x1403A83C8 -> {stub:#x})");
     }
 }
 
@@ -109,6 +109,6 @@ pub unsafe fn install(base: usize) {
     call[0] = 0xE8;
     call[1..].copy_from_slice(&((stub as i64 - (site as i64 + 5)) as i32).to_le_bytes());
     if hook::patch(site, &LOAD_BYTES, &call, "the roll's star time load 0x1403A848D") {
-        log!("defence kh1: KH1's roll no-damage time on base Sora (load 0x1403A848D -> {stub:#x})");
+        log!("defence: while defence = kh1, KH1's roll no-damage time on base Sora (load 0x1403A848D -> {stub:#x})");
     }
 }

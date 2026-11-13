@@ -46,3 +46,11 @@ pub fn is_base_sora(actor: usize) -> bool {
         row != 0 && unsafe { *((actor + 0x148) as *const usize) } == row
     }
 }
+
+/// Sora's object now (0 when there is none).
+pub fn current() -> usize {
+    if base() == 0 {
+        return 0;
+    }
+    unsafe { *((base() + SORA_PTR) as *const usize) }
+}

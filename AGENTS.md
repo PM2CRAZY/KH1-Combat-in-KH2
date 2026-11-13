@@ -1,3 +1,11 @@
+### 2026-11-13: Stage 65 (testing branch: the mod's Config switches apply at once)
+- **Config switches apply at once.** The owner (2026-11-13): "you should have the mod config settings change in game the moment you select an option".
+  - `settings::kh1` / `set_kh1`: each system's switch now; every system's hooks installed at launch (Steam), each running KH2's own code while its system is kh2.
+  - `win::switch` from the mod page's step (a value changed): movement re-patches or restores Sora's `prty` row 1 and his copy (`+0x130` / `+0x134`, Checked (decomp) `0x14040A480`) and fall cap `+0x138`; combos / defence / mp patch or restore their table bytes (`combo_tables::Saved`); mp sets Sora's max MP now (KH1's bars × 10, or the record's `+7`); camera resets the FOV goal from `+0xE0`. The ini is written at once.
+  - Sora's motion files are built again on a thread; Panacea reads loose files on each load (Checked (OpenKH source)); Assumption: KH2 loads them again on a room change.
+  - Sora's model stays a next-launch switch: Panacea caches the model's HD texture list (Checked (OpenKH source)).
+  - Not checked in game.
+
 ### 2026-11-13: Stage 64 (testing branch: magic rows with no KH2 cost keep it)
 - **KH1's spell costs skip KH2's free magic rows.** The t62 log: `(2, 0, 100)`, cmd 2 (exec 2, arg 2) given KH1's Thunder cost though KH2 charges nothing for it. `mp::patch_costs` leaves rows whose KH2 cost is 0. Checked (files: the log); Assumption: cmd 2 is not the cast itself.
 

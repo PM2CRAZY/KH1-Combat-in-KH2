@@ -118,7 +118,52 @@ pub unsafe extern "C" fn OnInit(mod_path: *const u16) {
         s = String::from_utf16_lossy(std::slice::from_raw_parts(mod_path, n));
     }
     log!("loaded by Panacea (mod folder {s})");
+    if let Ok(mut g) = MOD_PATH.lock() {
+        *g = s.clone();
+    }
     assets(&s);
+}
+
+/// The mod folder Panacea gave `OnInit` (for a rebuild after a switch in the Config menu).
+static MOD_PATH: Mutex<String> = Mutex::new(String::new());
+/// Sora's model as this launch loads it (`model` changes at the next launch: `settings::NEXT_LAUNCH`).
+static BOOT_MODEL: AtomicBool = AtomicBool::new(false);
+/// One build at a time; a switch while one runs builds again after it.
+static BUILDING: Mutex<()> = Mutex::new(());
+
+/// A system switched in the Config menu: it plays the new way at once. Hooks are installed at
+/// launch and ask `settings::kh1` each call; table data is patched or put back now; the built
+/// motion files are built again (on their own thread), for KH2's next load of Sora's files
+/// (Panacea reads a loose file again on each load: Checked (OpenKH Panacea source,
+/// `TransformFilePath`); Assumption: KH2 loads Sora's motion set again on a room or world change).
+pub fn switch(i: usize, on: bool) {
+    use crate::settings::*;
+    if crate::settings::NEXT_LAUNCH.contains(&i) || !set_kh1(i, on) {
+        return;
+    }
+    if unsafe { build::detect(GetModuleHandleA(std::ptr::null()) as usize) } != build::Build::Steam {
+        return;
+    }
+    log!("config menu: {} = {} now", SYSTEMS[i].0, if on { "kh1" } else { "kh2" });
+    unsafe {
+        match i {
+            MOVEMENT => {
+                prty::apply(on);
+                arc::apply(on);
+            }
+            COMBOS => combo_tables::apply_combos(on),
+            DEFENCE => combo_tables::apply_guard(on),
+            MP => mp::apply(on),
+            CAMERA => camera::apply(on),
+            _ => {}
+        }
+    }
+    if matches!(i, MOVEMENT | COMBOS | DEFENCE) {
+        let dir = MOD_PATH.lock().map(|g| g.clone()).unwrap_or_default();
+        if !dir.is_empty() {
+            std::thread::spawn(move || assets(&dir));
+        }
+    }
 }
 
 /// The build step (`kh1_assets`, `docs/asset-build.md`): with `combos = kh1`, KH2 Sora's motion
@@ -127,14 +172,14 @@ pub unsafe extern "C" fn OnInit(mod_path: *const u16) {
 /// files into KH2's packages), again only when the mod's version or KH1's files change. With
 /// `combos = kh2`, a file of ours there is removed, so KH2 loads its own.
 fn assets(mod_path: &str) {
+    let _one = BUILDING.lock();
     if unsafe { build::detect(GetModuleHandleA(std::ptr::null()) as usize) } != build::Build::Steam || mod_path.is_empty() {
         return;
     }
     let dir = std::path::PathBuf::from(mod_path);
-    let combos = settings().style("combos") == crate::settings::Style::Kh1;
-    let model = settings().style("model") == crate::settings::Style::Kh1;
-    let defence = settings().style("defence") == crate::settings::Style::Kh1;
-    let movement = settings().style("movement") == crate::settings::Style::Kh1;
+    use crate::settings::{kh1, COMBOS, DEFENCE, MOVEMENT};
+    let (combos, defence, movement) = (kh1(COMBOS), kh1(DEFENCE), kh1(MOVEMENT));
+    let model = BOOT_MODEL.load(Ordering::Relaxed);
     if combos || model || defence || movement {
         let t = std::time::Instant::now();
         match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION, model, combos, defence, movement) {
@@ -191,28 +236,22 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         if s.trace {
             trace::enable(base);
         }
+        // Every system's hooks, whatever its setting: each asks `settings::kh1` when KH2 calls it
+        // and runs KH2's own code untouched while the system is kh2, so the Config menu can switch
+        // it at once (`switch`).
+        crate::settings::set_all(s);
+        let model = s.style("model") == crate::settings::Style::Kh1;
+        BOOT_MODEL.store(model, Ordering::Relaxed);
         config_menu::install(base);
-        if s.style("movement") == crate::settings::Style::Kh1 {
-            arc::install(base);
-            prty::install(base);
-            highjump::install(base);
-            airsteer::install(base);
-        }
-        if s.style("camera") == crate::settings::Style::Kh1 {
-            camera::install(base);
-        }
-        if s.style("defence") == crate::settings::Style::Kh1 {
-            roll::install(base);
-            reactions::install(base);
-        }
-        let (combos, model, defence) = (s.style("combos") == crate::settings::Style::Kh1, s.style("model") == crate::settings::Style::Kh1, s.style("defence") == crate::settings::Style::Kh1);
-        let mp_kh1 = s.style("mp") == crate::settings::Style::Kh1;
-        if mp_kh1 {
-            mp::install(base);
-        }
-        if combos || model || defence || mp_kh1 {
-            combo_tables::install(base, combos, model, defence, mp_kh1);
-        }
+        arc::install(base);
+        prty::install(base);
+        highjump::install(base);
+        airsteer::install(base);
+        camera::install(base);
+        roll::install(base);
+        reactions::install(base);
+        mp::install(base);
+        combo_tables::install(base, model);
     }
     1
 }

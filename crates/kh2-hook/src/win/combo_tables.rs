@@ -22,6 +22,51 @@
 use super::hook;
 use super::log;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Mutex;
+
+/// Bytes we changed in KH2's loaded tables, with KH2's own, so a switch back to KH2 in the Config
+/// menu puts them back. Cleared when KH2's loader runs again (fresh tables, KH2's bytes).
+pub struct Saved(Mutex<Vec<(usize, Vec<u8>)>>);
+
+impl Saved {
+    pub const fn new() -> Self {
+        Saved(Mutex::new(Vec::new()))
+    }
+
+    /// Writes `new` at `at`, keeping KH2's bytes the first time.
+    pub unsafe fn write(&self, at: usize, new: &[u8]) {
+        if let Ok(mut g) = self.0.lock() {
+            if !g.iter().any(|(a, _)| *a == at) {
+                g.push((at, std::slice::from_raw_parts(at as *const u8, new.len()).to_vec()));
+            }
+        }
+        std::ptr::copy_nonoverlapping(new.as_ptr(), at as *mut u8, new.len());
+    }
+
+    /// KH2's bytes back.
+    pub unsafe fn restore(&self) -> usize {
+        let Ok(mut g) = self.0.lock() else { return 0 };
+        let n = g.len();
+        for (at, old) in g.drain(..) {
+            std::ptr::copy_nonoverlapping(old.as_ptr(), at as *mut u8, old.len());
+        }
+        n
+    }
+
+    /// Forgets what was saved (KH2 loaded its tables again).
+    pub fn forget(&self) {
+        if let Ok(mut g) = self.0.lock() {
+            g.clear();
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.lock().map(|g| g.is_empty()).unwrap_or(true)
+    }
+}
+
+static SAVED_COMBOS: Saved = Saved::new();
+static SAVED_GUARD: Saved = Saved::new();
 
 const LOADER: usize = 0x3F_4C30;
 const ATKP: usize = 0x2AE_57B0;
@@ -61,11 +106,11 @@ unsafe fn patch_ptya() {
         let Some(&(_, h, v)) = AIR_ROWS.iter().find(|x| x.0 == id).filter(|_| ability == 0) else { continue };
         let f = |o: usize| (r + o) as *mut f32;
         done.push((id, *f(0x0C), *f(0x18), *f(0x1C)));
-        *f(0x0C) = h;
-        *f(0x10) = h;
-        *f(0x14) = h;
-        *f(0x18) = v;
-        *f(0x1C) = v;
+        let mut new = Vec::with_capacity(20);
+        for x in [h, h, h, v, v] {
+            new.extend_from_slice(&x.to_le_bytes());
+        }
+        SAVED_COMBOS.write(r + 0x0C, &new);
     }
     log!("combos kh1: KH1's air swing hop and speed on ptya rows (id, KH2's height, speed min, max): {done:?}");
 }
@@ -90,16 +135,13 @@ unsafe fn patch() {
             let at = (r + 6) as *mut u16;
             if *at != p {
                 changed.push((id, *at, p));
-                *at = p;
+                SAVED_COMBOS.write(at as usize, &p.to_le_bytes());
             }
         }
     }
     log!("combos kh1: KH1's swing powers on ATKP (id, KH2's, KH1's): {changed:?}");
 }
 
-static COMBOS: AtomicBool = AtomicBool::new(false);
-static DEFENCE: AtomicBool = AtomicBool::new(false);
-static MP: AtomicBool = AtomicBool::new(false);
 
 /// KH1's guard arc on KH2's guard (`defence = kh1`). KH1's guard (attack data `0x4DA8`, `+0x64`)
 /// meets attacks within an arc cosine of -0.174, 100 degrees either side of his facing (the
@@ -123,38 +165,79 @@ unsafe fn patch_guard_arc() {
         if *((r + 2) as *const u16) == GUARD_ATKP {
             let at = (r + 0x22) as *mut u8;
             changed.push(*at);
-            *at = KH1_GUARD_ARC;
+            SAVED_GUARD.write(at as usize, &[KH1_GUARD_ARC]);
         }
     }
     log!("defence kh1: KH1's guard arc {KH1_GUARD_ARC} degrees on ATKP {GUARD_ATKP} (KH2's {changed:?})");
 }
 static MODEL: AtomicBool = AtomicBool::new(false);
 
+static LOADED: AtomicBool = AtomicBool::new(false);
+
 unsafe extern "system" fn loader() {
     let o: unsafe extern "system" fn() = std::mem::transmute(O_LOADER.load(Ordering::Acquire));
     o();
-    if COMBOS.load(Ordering::Relaxed) {
+    LOADED.store(true, Ordering::Relaxed);
+    SAVED_COMBOS.forget();
+    SAVED_GUARD.forget();
+    super::mp::forget_costs();
+    use crate::settings::{kh1, COMBOS, DEFENCE, MP};
+    if kh1(COMBOS) {
         patch();
         patch_ptya();
     }
+    // Sora's model is the one this launch loads (the next launch for a change).
     if MODEL.load(Ordering::Relaxed) {
         super::weapon_hold::patch(BASE.load(Ordering::Relaxed));
     }
-    if DEFENCE.load(Ordering::Relaxed) {
+    if kh1(DEFENCE) {
         patch_guard_arc();
     }
-    if MP.load(Ordering::Relaxed) {
+    if kh1(MP) {
         super::mp::patch_costs(BASE.load(Ordering::Relaxed));
     }
 }
 
-/// Hooks KH2's table loader for what patches its tables: `combos = kh1` (above), `model = kh1`
-/// (`weapon_hold`), `defence = kh1` (the guard arc) and `mp = kh1` (`mp::patch_costs`).
-pub unsafe fn install(base: usize, combos: bool, model: bool, defence: bool, mp: bool) {
+/// The Config menu switched combos: KH1's swing powers and air rows, or KH2's back.
+pub unsafe fn apply_combos(kh1: bool) {
+    if !LOADED.load(Ordering::Relaxed) {
+        return;
+    }
+    if kh1 {
+        if SAVED_COMBOS.is_empty() {
+            patch();
+            patch_ptya();
+        }
+    } else {
+        let n = SAVED_COMBOS.restore();
+        log!("combos kh2: KH2's swing powers and air rows back ({n} changes undone)");
+    }
+}
+
+/// The Config menu switched defence: KH1's guard arc, or KH2's back.
+pub unsafe fn apply_guard(kh1: bool) {
+    if !LOADED.load(Ordering::Relaxed) {
+        return;
+    }
+    if kh1 {
+        if SAVED_GUARD.is_empty() {
+            patch_guard_arc();
+        }
+    } else {
+        SAVED_GUARD.restore();
+        log!("defence kh2: KH2's guard arc back");
+    }
+}
+
+pub fn loaded() -> bool {
+    LOADED.load(Ordering::Relaxed)
+}
+
+/// Hooks KH2's table loader for what patches its tables, by each system's switch at the time
+/// (`combos`, `defence`, `mp`; a switch in the Config menu patches or restores at once) and Sora's
+/// model at launch (`weapon_hold`).
+pub unsafe fn install(base: usize, model: bool) {
     BASE.store(base, Ordering::Relaxed);
-    MP.store(mp, Ordering::Relaxed);
-    COMBOS.store(combos, Ordering::Relaxed);
-    DEFENCE.store(defence, Ordering::Relaxed);
     MODEL.store(model, Ordering::Relaxed);
     hook::install(base + LOADER, &[0x48, 0x89, 0x5C, 0x24, 0x08], loader as *const () as usize, &O_LOADER, "table loader 0x1403F4C30");
 }

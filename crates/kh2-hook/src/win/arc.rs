@@ -109,26 +109,51 @@ fn said(what: &str) {
     }
 }
 
+/// The arc is ours: installed and `movement = kh1` now.
+fn on() -> bool {
+    ON.load(Ordering::Relaxed) && crate::settings::kh1(crate::settings::MOVEMENT)
+}
+
+/// KH2's fall cap for base Sora, as his constructor left it (for a switch back to KH2).
+static KH2_CAP: AtomicUsize = AtomicUsize::new(0);
+
 type NewFn = unsafe extern "system" fn(usize, usize, u64, u64, u64, u64) -> usize;
 unsafe extern "system" fn sora_new(a: usize, b: usize, c: u64, d: u64, e: u64, g: u64) -> usize {
     let o: NewFn = std::mem::transmute(O_SORA_NEW.load(Ordering::Acquire));
     let r = o(a, b, c, d, e, g);
-    if ON.load(Ordering::Relaxed) && a != 0 {
+    if a != 0 {
         if super::sora::is_base_sora(a) || *((a + 0x148) as *const usize) == 0 {
-            *f(a, 0x138) = KH1_FALL_CAP;
-            log!("movement kh1: Sora built at {a:#x}, fall cap 20");
-        } else {
+            KH2_CAP.store((*f(a, 0x138)).to_bits() as usize, Ordering::Relaxed);
+            if on() {
+                *f(a, 0x138) = KH1_FALL_CAP;
+                log!("movement kh1: Sora built at {a:#x}, fall cap 20");
+            }
+        } else if on() {
             log!("movement kh1: Sora built at {a:#x} on another prty row (a form?): KH2's fall cap kept");
         }
     }
     r
 }
 
+/// The Config menu switched movement: base Sora's fall cap now.
+pub unsafe fn apply(kh1: bool) {
+    let sora = super::sora::current();
+    if sora == 0 || !super::sora::is_base_sora(sora) {
+        return;
+    }
+    let kh2 = KH2_CAP.load(Ordering::Relaxed);
+    if kh1 {
+        *f(sora, 0x138) = KH1_FALL_CAP;
+    } else if kh2 != 0 {
+        *f(sora, 0x138) = f32::from_bits(kh2 as u32);
+    }
+}
+
 type LaunchH = unsafe extern "system" fn(usize, f32);
 unsafe extern "system" fn launch_h(actor: usize, h: f32) {
     let o: LaunchH = std::mem::transmute(O_LAUNCH_H.load(Ordering::Acquire));
     o(actor, h);
-    if ON.load(Ordering::Relaxed) && is_sora(actor) {
+    if on() && is_sora(actor) {
         relaunch(actor, h);
         said("launch");
     }
@@ -139,7 +164,7 @@ unsafe extern "system" fn launch_v(actor: usize, v: *const f32) {
     let h = if v.is_null() { 0.0 } else { *v.add(1) };
     let o: LaunchV = std::mem::transmute(O_LAUNCH_V.load(Ordering::Acquire));
     o(actor, v);
-    if ON.load(Ordering::Relaxed) && is_sora(actor) {
+    if on() && is_sora(actor) {
         relaunch(actor, h);
         said("launch");
     }
@@ -149,7 +174,7 @@ type StepA = unsafe extern "system" fn(u64, *mut f32, usize, f32, u64, u64) -> *
 unsafe extern "system" fn step_a(a: u64, out: *mut f32, actor: usize, dt: f32, e: u64, g: u64) -> *mut f32 {
     let o: StepA = std::mem::transmute(O_STEP_A.load(Ordering::Acquire));
     let r = o(a, out, actor, dt, e, g);
-    if ON.load(Ordering::Relaxed) && is_sora(actor) && !out.is_null() {
+    if on() && is_sora(actor) && !out.is_null() {
         if let Some(d) = fall(actor, dt) {
             *out.add(1) = d;
             set_down(actor, d);
@@ -163,7 +188,7 @@ type StepB = unsafe extern "system" fn(u64, *mut f32, usize, f32) -> *mut f32;
 unsafe extern "system" fn step_b(a: u64, out: *mut f32, actor: usize, dt: f32) -> *mut f32 {
     let o: StepB = std::mem::transmute(O_STEP_B.load(Ordering::Acquire));
     let r = o(a, out, actor, dt);
-    if ON.load(Ordering::Relaxed) && is_sora(actor) && !out.is_null() {
+    if on() && is_sora(actor) && !out.is_null() {
         if let Some(d) = fall(actor, dt) {
             *out.add(1) = d;
             set_down(actor, d);
@@ -177,7 +202,7 @@ type StepC = unsafe extern "system" fn(u64, usize, f32) -> f32;
 unsafe extern "system" fn step_c(a: u64, actor: usize, dt: f32) -> f32 {
     let o: StepC = std::mem::transmute(O_STEP_C.load(Ordering::Acquire));
     let r = o(a, actor, dt);
-    if ON.load(Ordering::Relaxed) && is_sora(actor) {
+    if on() && is_sora(actor) {
         if let Some(d) = fall(actor, dt) {
             said("fall");
             return d;
@@ -186,7 +211,7 @@ unsafe extern "system" fn step_c(a: u64, actor: usize, dt: f32) -> f32 {
     r
 }
 
-/// Installs the wrappers (Steam, `movement = kh1` only). All or nothing: if any function's first
+/// Installs the wrappers (Steam; they act while `movement = kh1`). All or nothing: if any function's first
 /// bytes differ, none of KH1's arc is used.
 pub unsafe fn install(base: usize) {
     BASE.store(base, Ordering::Relaxed);
@@ -213,5 +238,5 @@ pub unsafe fn install(base: usize) {
         }
     }
     ON.store(true, Ordering::Relaxed);
-    log!("movement kh1: KH1's gravity {KH1_GRAVITY} and fall cap {KH1_FALL_CAP} on Sora's arc");
+    log!("movement: KH1's gravity {KH1_GRAVITY} and fall cap {KH1_FALL_CAP} on Sora's arc while movement = kh1");
 }

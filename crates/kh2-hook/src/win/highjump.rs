@@ -20,7 +20,7 @@ static O_B: AtomicUsize = AtomicUsize::new(0);
 
 /// A height other than his own `+0x130` is a High Jump's.
 unsafe fn kh1(actor: usize, h: f32) -> f32 {
-    if is_base_sora(actor) && h != *((actor + 0x130) as *const f32) {
+    if crate::settings::kh1(crate::settings::MOVEMENT) && is_base_sora(actor) && h != *((actor + 0x130) as *const f32) {
         KH1_HIGH_JUMP
     } else {
         h
@@ -43,7 +43,7 @@ pub unsafe fn install(base: usize) {
     let a = hook::install(base + HEIGHT_A, &[0x48, 0x89, 0x5C, 0x24, 0x08], height_a as *const () as usize, &O_A, "jump height 0x1403B59B0");
     let b = a.is_some() && hook::install(base + HEIGHT_B, &[0x40, 0x53, 0x48, 0x83, 0xEC, 0x30], height_b as *const () as usize, &O_B, "jump height 0x1403B5A40").is_some();
     if b {
-        log!("movement kh1: High Jump at any level is KH1's {KH1_HIGH_JUMP} on base Sora");
+        log!("movement: while movement = kh1, High Jump at any level is KH1's {KH1_HIGH_JUMP} on base Sora");
     } else {
         log!("movement kh1: KH1's High Jump not used");
     }

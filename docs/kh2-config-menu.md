@@ -85,3 +85,38 @@ The owner: "make the config menu tab between main config and mod config by using
 - the apply `0x140365460` (hooked): if our page is up, our values go into `kh2-kh1.ini` (read at
   the next launch) and KH2's values and rows come back before KH2's apply saves them;
 - the open `0x140365580` (hooked) starts on KH2's page with our values read from the ini.
+
+## t65: switches apply at once
+
+The owner (2026-11-13): "you should have the mod config settings change in game the moment you
+select an option".
+
+- Every system's hooks are installed at launch (Steam), whatever its setting. Each asks
+  `settings::kh1(system)` when KH2 calls it and runs KH2's own code untouched while that system is
+  kh2. Cost: one flag read per call of a hooked function.
+- A value changed on the mod page (KH2's own left / right in its step `0x140364D70`, compared
+  before and after) calls `win::switch(system, kh1)` and writes `kh2-kh1.ini` at once.
+- What `switch` does now, per system:
+  - movement: Sora's `prty` row 1 (jump 190 / 185, turn π/16 / 0.262) and base Sora's own copy of
+    it (`+0x130`, `+0x134`, which KH2's `0x14040A480` copies at his build; Checked (decomp)), his
+    fall cap `+0x138` (20, or the value his constructor left); the arc, High Jump and air steering
+    hooks follow the flag.
+  - combos: the ATKP swing powers and Sora's `ptya` air rows patched, or KH2's bytes put back (kept
+    when we patched; forgotten when KH2's loader `0x1403F4C30` loads the tables again).
+  - defence: ATKP 161's guard arc the same way; the roll, Square, reaction and knock-back hooks
+    follow the flag.
+  - mp: the `cmd` costs the same way; Sora's MP at once: KH1's bars × 10 as his max (status
+    `+0x184`), or KH2's max from his save record (`+7`, KH2's status build's source) with the gauge
+    `+0x1BC` emptied (not while an MP Charge runs, `+0x1C0`).
+  - camera: the follow and lock hooks follow the flag; back to KH2's, its FOV goal `+0x38` from the
+    camera's base FOV `+0xE0` at once; to KH1's, KH1's entry on its next frame.
+  - magic, abilities: nothing to switch yet.
+- Sora's motion files (movement, combos, defence): built again on their own thread after a switch.
+  Panacea checks the mod folder for a loose file on every load (`TransformFilePath`: Checked
+  (OpenKH Panacea source)), so KH2 gets the new set the next time it loads Sora's motions.
+  Assumption: that is on a room or world change, not at once. Until then the loaded set's motions
+  play (a switched system's numbers and rules apply at once).
+- Sora's model: at the next launch. Panacea keeps the list of HD textures of the first model file
+  it loads for `obj/P_EX100.mdlx` (`GetRemasteredFiles`, cached by name; Checked (OpenKH Panacea
+  source)), so another model in the same run would be drawn with the first one's texture list.
+  The KH1 Keyblade hold (`weapon_hold`) goes with the model loaded at launch.

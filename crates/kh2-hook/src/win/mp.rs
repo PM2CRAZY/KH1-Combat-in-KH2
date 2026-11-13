@@ -51,7 +51,7 @@ const FINISHERS: [u16; 4] = [129, 130, 133, 134];
 unsafe extern "system" fn hit_record(attack: usize, atkp: usize, target: usize, kind: u8) -> usize {
     let o: unsafe extern "system" fn(usize, usize, usize, u8) -> usize = std::mem::transmute(O_HIT.load(Ordering::Acquire));
     let rec = o(attack, atkp, target, kind);
-    if rec == 0 || attack == 0 || atkp == 0 {
+    if rec == 0 || attack == 0 || atkp == 0 || !crate::settings::kh1(crate::settings::MP) {
         return rec;
     }
     let base = BASE.load(Ordering::Relaxed);
@@ -105,7 +105,7 @@ unsafe fn put_max(status: usize, max: i32) {
 unsafe extern "system" fn build(status: usize, record: usize) {
     let o: unsafe extern "system" fn(usize, usize) = std::mem::transmute(O_BUILD.load(Ordering::Acquire));
     o(status, record);
-    if status == 0 {
+    if status == 0 || !crate::settings::kh1(crate::settings::MP) {
         return;
     }
     // The record it was built from: the one passed, or its own handle `+0x250` (as the build reads it).
@@ -131,7 +131,7 @@ unsafe extern "system" fn build(status: usize, record: usize) {
 
 unsafe extern "system" fn change(obj: usize, delta: i32, flag: u8) -> u64 {
     let o: unsafe extern "system" fn(usize, i32, u8) -> u64 = std::mem::transmute(O_CHANGE.load(Ordering::Acquire));
-    if delta == 0 || !is_base_sora(obj) {
+    if delta == 0 || !crate::settings::kh1(crate::settings::MP) || !is_base_sora(obj) {
         return o(obj, delta, flag);
     }
     let status = *((obj + 0x5C0) as *const usize);
@@ -160,7 +160,7 @@ unsafe extern "system" fn change(obj: usize, delta: i32, flag: u8) -> u64 {
 unsafe extern "system" fn command_state(obj: usize, cmd: usize, state: i32) -> i32 {
     let o: unsafe extern "system" fn(usize, usize, i32) -> i32 = std::mem::transmute(O_STATE.load(Ordering::Acquire));
     let r = o(obj, cmd, state);
-    if r >= 4 || cmd == 0 || !is_base_sora(obj) {
+    if r >= 4 || cmd == 0 || !crate::settings::kh1(crate::settings::MP) || !is_base_sora(obj) {
         return r;
     }
     let status = *((obj + 0x5C0) as *const usize);
@@ -182,7 +182,7 @@ unsafe extern "system" fn command_state(obj: usize, cmd: usize, state: i32) -> i
 /// gauge emptied, no charge), as the owner chose for the Limits.
 unsafe extern "system" fn charge_by(obj: usize, share: f32) {
     let o: unsafe extern "system" fn(usize, f32) = std::mem::transmute(O_CHARGE.load(Ordering::Acquire));
-    if !is_base_sora(obj) {
+    if !crate::settings::kh1(crate::settings::MP) || !is_base_sora(obj) {
         return o(obj, share);
     }
     let status = *((obj + 0x5C0) as *const usize);
@@ -194,6 +194,51 @@ unsafe extern "system" fn charge_by(obj: usize, share: f32) {
 }
 
 /// KH1's spell costs on KH2's magic commands (after KH2's table loader).
+static SAVED_COSTS: super::combo_tables::Saved = super::combo_tables::Saved::new();
+
+pub fn forget_costs() {
+    SAVED_COSTS.forget();
+}
+
+/// The Config menu switched MP: KH1's costs or KH2's back, and Sora's MP in KH1's bars or KH2's
+/// numbers now (his status `+0x184` max: KH1's bars × 10, or the save record's `+7`, KH2's own
+/// build's source; the gauge `+0x1BC` emptied for KH2 unless an MP Charge runs).
+pub unsafe fn apply(kh1: bool) {
+    let base = BASE.load(Ordering::Relaxed);
+    if super::combo_tables::loaded() {
+        if kh1 {
+            if SAVED_COSTS.is_empty() {
+                patch_costs(base);
+            }
+        } else {
+            SAVED_COSTS.restore();
+        }
+    }
+    let sora = super::sora::current();
+    if sora == 0 || !is_base_sora(sora) {
+        return;
+    }
+    let status = *((sora + 0x5C0) as *const usize);
+    let rec = sora_record();
+    if status == 0 || rec == 0 || *((status + 0x1C0) as *const f32) > 0.0 {
+        return;
+    }
+    if kh1 {
+        let max = max_bars();
+        put_max(status, max);
+        let m = get(status, max);
+        *((status + 0x180) as *mut i32) = m.kh2(max);
+        *((status + 0x1BC) as *mut f32) = m.units as f32;
+    } else {
+        let max = *((rec + 7) as *const u8) as i32;
+        *((status + 0x184) as *mut i32) = max;
+        let p = (status + 0x180) as *mut i32;
+        *p = (*p).min(max);
+        *((status + 0x1BC) as *mut f32) = 0.0;
+    }
+    log!("mp {}: Sora's MP now {} of {}", if kh1 { "kh1" } else { "kh2" }, *((status + 0x180) as *const i32), *((status + 0x184) as *const i32));
+}
+
 pub unsafe fn patch_costs(base: usize) {
     let t = *((base + CMD_TABLE) as *const usize);
     if t == 0 {
@@ -214,7 +259,7 @@ pub unsafe fn patch_costs(base: usize) {
                 continue;
             }
             done.push((*((r) as *const u16), *at, c));
-            *at = c;
+            SAVED_COSTS.write(at as usize, &[c]);
         }
     }
     log!("mp kh1: KH1's spell costs on KH2's magic commands (id, KH2's, KH1's): {done:?}");
@@ -228,8 +273,8 @@ pub unsafe fn install(base: usize) {
     let d = c && hook::install(base + CHARGE_BY, &[0x48, 0x8B, 0x81, 0x48, 0x01, 0x00, 0x00], charge_by as *const () as usize, &O_CHARGE, "MP Charge start 0x1403D4A20").is_some();
     let e = d && hook::install(base + HIT_RECORD, &[0x48, 0x89, 0x5C, 0x24, 0x08], hit_record as *const () as usize, &O_HIT, "hit record 0x1403CE740").is_some();
     if e {
-        log!("mp kh1: KH1's MP on base Sora ({} MP a bar, no MP Charge)", kh1mp::MP_PER_BAR);
+        log!("mp: KH1's MP on base Sora while mp = kh1 ({} MP a bar, no MP Charge)", kh1mp::MP_PER_BAR);
     } else {
-        log!("mp kh1: KH1's MP not used");
+        log!("mp: KH1's MP can't be used");
     }
 }

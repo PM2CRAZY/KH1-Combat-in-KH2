@@ -30,7 +30,7 @@ unsafe extern "system" fn air(actor: usize, out: *mut f32, step: f32, keep: f32,
     let old = if actor != 0 { [*v, *v.add(2)] } else { [0.0, 0.0] };
     let o: AirFn = std::mem::transmute(O_AIR.load(Ordering::Acquire));
     let r = o(actor, out, step, keep, drag);
-    if !plain || out.is_null() || !is_base_sora(actor) {
+    if !plain || out.is_null() || !crate::settings::kh1(crate::settings::MOVEMENT) || !is_base_sora(actor) {
         return r;
     }
     let speed = *((actor + 0x1C) as *const f32);

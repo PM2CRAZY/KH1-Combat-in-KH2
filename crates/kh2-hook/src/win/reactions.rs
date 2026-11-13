@@ -161,7 +161,7 @@ unsafe fn mercy(obj: usize, free: f32) {
 
 unsafe extern "system" fn reaction(obj: usize, hit: usize) {
     let o: unsafe extern "system" fn(usize, usize) = std::mem::transmute(O_REACTION.load(Ordering::Acquire));
-    if hit == 0 || !is_base_sora(obj) || *((hit + 0x18) as *const u8) & 1 != 0 {
+    if hit == 0 || !crate::settings::kh1(crate::settings::DEFENCE) || !is_base_sora(obj) || *((hit + 0x18) as *const u8) & 1 != 0 {
         return o(obj, hit);
     }
     let r = (hit + 0x26) as *mut u8;
@@ -228,7 +228,7 @@ pub unsafe fn install(base: usize) {
     let b = a.is_some() && hook::install(base + BLOW_STEP, &[0x48, 0x89, 0x5C, 0x24, 0x08], blow_step as *const () as usize, &O_BLOW, "blow step 0x140422780").is_some();
     let ok = b && hook::install(base + REACTION, &[0x40, 0x55, 0x56, 0x41, 0x56], reaction as *const () as usize, &O_REACTION, "reaction 0x1403D2FE0").is_some();
     if ok {
-        log!("defence kh1: KH1's reactions on base Sora (share of max HP, KH1's push, knock-down {:?}, 30 frames after)", kh1_assets::KNOCKDOWN_IDS);
+        log!("defence: while defence = kh1, KH1's reactions on base Sora (share of max HP, KH1's push, knock-down {:?}, 30 frames after)", kh1_assets::KNOCKDOWN_IDS);
     } else {
         log!("defence kh1: KH1's reactions not used");
     }
