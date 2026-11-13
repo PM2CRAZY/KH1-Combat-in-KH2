@@ -227,3 +227,43 @@ owner's `xm_*.mag`, Checked (files) there):
 - Not yet: KH1's air cast hop (30) and air speed × 0.5 (`0x1402A3600`); KH1's Fire fast path
   (Fire again during the release, or from a swing's combo window); the spells themselves (KH2's
   Fire / Blizzard / Thunder / Cure scripts and effects still run): the next steps of the plan above.
+
+## t70: KH1's Fire inside KH2's own Fire (`magic = kh1`, step 5.2)
+
+The build step writes `magic/FIRE_1.mag` … `FIRE_3.mag` into the mod folder from the player's own
+files: **KH2's own spell file with KH1's Fire added to it** (`kh1_assets::spells::fire_mag`). KH2
+loads, runs, draws and collides it as its own spell; there is no spell player of ours.
+
+- **One file for both.** The Drive Forms cast the same files (sub 10 and up; the sister's
+  `drive-model.md`, and `00battle.bin`'s ATKP 502 rows, Checked (files)), so KH2's script,
+  elements and effects stay, unchanged and where they were; KH1's are added after them.
+- **The script** (`kh2_bdx::asm`, a BDX writer of ours): KH2's own `fire` code word for word, then
+  ours. The trigger table points at two small stubs: trigger 20 (the cast) takes base Sora's casts
+  (sub < 10) to KH1's Fire and the Drive Forms' to KH2's own entry, and keeps the choice in a work
+  word past both scripts' work; trigger 21 (the release) follows it. KH1's Fire as before: from the
+  Keyblade, 40 a frame, 30 frames, at most 3° a frame toward the target, radius 50, fades its last
+  20, ends on its first hit (KH1-in-ReCom's decoding of `xm_fire01.mag`, Checked (files) there).
+  None of our float pushes sits where KH2 rewrites one for 60 fps (`kh2_bdx::vm::pc_patch`,
+  checked by a test). The test machine runs base Sora's cast in the merged file and gets the same
+  flight as our script alone.
+- **The effects:** one DPX holding KH2's 8 effects and KH1's 10, and both DPDs. KH2 looks an effect
+  up by its number (`0x1402BC9B0`, the sister's `kh2-effects.md` §3, Checked there), so KH1's are
+  renumbered +200 (200..204, 300..304; KH2's are 0..7). KH2's DPX load relocates every DPD of
+  the list (`0x1402BDDE0` → `0x1402C21E0` for each), Checked (decomp). A particle data's shapes,
+  models and vertex sets go into KH2's number-indexed tables as it becomes active
+  (`0x1402C1610`, Checked (decomp)), the same as for two separate effect files.
+- **The elements:** KH2's 13, then ours: 100 the cast on the Keyblade (weapon tip `0x4003`), 101
+  the ball, 103 the hit, 105 / 106 wall and clash, the hit ones in hit-effect group 3.
+- **The hit effect** (`kh2-hook`, `combo_tables::patch_spells`): base Sora's Fire rows (ATKP 502,
+  subs 0..5, those with a hit effect) take `effect_on_hit` 3 at KH2's table load, so KH2's hit
+  picks KH1's spark; put back when Magic is switched to KH2 in the Config menu.
+- **HD textures:** KH2's own for its DPD, then KH1's, as `remastered/magic/FIRE_n.mag/-i.dds`
+  (Panacea takes a mod folder's list when it has as many as the file's textures). Without KH1's
+  HD textures none are written. Assumption: Panacea then gives the SD textures for the whole file.
+- **Sounds:** KH2 stand-ins on the elements (116 cast, 118 hit) until KH1's sounds are a KH2 sound
+  bank. KH1's own particle sounds (`+0xFC`) are cleared.
+- Magic switched to KH2: the files are removed; KH2 loads its own at its next load of a spell
+  file. Assumption: KH2 loads a spell's file again on a room or world change (an already loaded
+  one plays until then).
+- Not yet: KH1's re-pick of a new target within 500 when the first is gone; KH1's damage (KH2's
+  Fire rows' powers still); KH1's sounds; Blizzard, Thunder, Cure next.

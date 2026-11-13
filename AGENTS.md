@@ -1,3 +1,12 @@
+### 2026-11-13: Stage 70 (testing branch: Phase 4: KH1's Fire inside KH2's own Fire)
+The owner: "perfect finish phase 4 now" (KH1's spells with KH1's effects, KH1's behaviour).
+
+- `magic/FIRE_1..3.mag` built from the player's files: KH2's own spell file with KH1's Fire added (`kh1_assets::spells::fire_mag`). KH2's `fire` BDX code stays word for word (the Drive Forms, sub >= 10, still run it); ours follows, reached through trigger-20/21 stubs that take base Sora's casts (sub < 10) to KH1's Fire. Writer: `kh2_bdx::asm::Asm::finish_onto`.
+- One DPX of KH2's 8 effects and KH1's 10 (renumbered +200) and both DPDs. KH2 finds effects by number (0x1402BC9B0, sister's kh2-effects.md, Checked there); its DPX load relocates every DPD of the list (0x1402BDDE0 -> 0x1402C21E0), Checked (decomp).
+- Elements: KH2's 13, then ours (100 cast on weapon tip 0x4003, 101 ball, 103 hit, 105/106 wall/clash) in hit-effect group 3. kh2-hook: ATKP 502 rows of subs 0..5 with a hit effect take effect_on_hit 3 at KH2's table load (0x1403F4C30), live with the Config menu's Magic row, restored on KH2. Checked (files): 00battle.bin's ATKP 502 rows.
+- HD textures: KH2's own, then KH1's, as remastered/magic/FIRE_n.mag/-i.dds. Assumption: without KH1's HD none are written and Panacea gives SD.
+- Checked (files + test VM): base Sora's cast in the merged file flies as our script alone (40 a frame, 30 frames, <= 3 deg a frame homing, fades the last 20); no float push of ours at KH2's 60 fps rewrite positions. Not checked in game. Not yet: KH1's re-pick within 500, KH1's damage, KH1's sounds (KH2 stand-ins 116 / 118).
+
 ### 2026-11-13: Stage 69 (testing branch: Phase 4: KH1's casts on KH2's cast rows)
 - **KH1's cast motions and release frames on KH2's cast rows (magic = kh1).** The owner (2026-11-13): "finish phase 4"; step 5's first part.
   - `kh1_assets::CASTS`: KH1 54 + 57 / 79 + 82 (Fire), 55 / 80 (Blizzard), 56 / 81 (Thunder and Cure) on KH2's rows 224 / 232 / 236 / 244 / 248 / 256; KH2's magic-cast events (frame trigger 17) at KH1's releases (Fire 28, Blizzard 28, Thunder 30, Cure 36; KH1-in-ReCom's decoding of `xm_*.mag`, Checked (files) there); other triggers moved piecewise (`swing_triggers::cast`). Checked (files) for both games' motions and triggers (test `canon_hidden_bones`).

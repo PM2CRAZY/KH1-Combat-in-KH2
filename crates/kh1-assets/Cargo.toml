@@ -10,4 +10,5 @@ license = "MIT OR Apache-2.0"
 kh2-formats.workspace = true
 kh1-data.workspace = true
 kh2-anim.workspace = true
+kh2-bdx.workspace = true
 glam = "0.29"

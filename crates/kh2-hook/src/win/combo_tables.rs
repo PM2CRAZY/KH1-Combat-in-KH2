@@ -67,6 +67,7 @@ impl Saved {
 
 static SAVED_COMBOS: Saved = Saved::new();
 static SAVED_GUARD: Saved = Saved::new();
+static SAVED_SPELLS: Saved = Saved::new();
 
 const LOADER: usize = 0x3F_4C30;
 const ATKP: usize = 0x2AE_57B0;
@@ -170,6 +171,51 @@ unsafe fn patch_guard_arc() {
     }
     log!("defence kh1: KH1's guard arc {KH1_GUARD_ARC} degrees on ATKP {GUARD_ATKP} (KH2's {changed:?})");
 }
+/// KH1's spells' hit effects (`magic = kh1`). Our spell files (`kh1_assets::spells`) keep KH2's
+/// own elements for the Drive Forms and add KH1's, whose hit elements are tagged hit-effect group
+/// 3 (`spells::fire::HIT_GROUP`). KH2 finds a hit's effect by its ATKP row's `effect_on_hit`
+/// (`+0x0B`) among the elements' tags (the sister's `kh2-effects.md`, Checked there), so base
+/// Sora's Fire rows take group 3: ATKP 502 (Fire), the rows of subs 0..5 (`+1`: the level and
+/// finisher, sub = level × 2 − 2 (+1); the Drive Forms' are 10 and up, Checked (files):
+/// `00battle.bin`), those with a hit effect (`effect_on_hit` ≠ 0; 0 is a row with none).
+const SPELL_ROWS: [(u16, u8); 1] = [(502, 3)];
+
+unsafe fn patch_spells() {
+    let t = *((BASE.load(Ordering::Relaxed) + ATKP) as *const usize);
+    if t == 0 {
+        return;
+    }
+    let n = (*((t + 4) as *const i32)).clamp(0, 0x10000) as usize;
+    let mut changed = 0;
+    for i in 0..n {
+        let r = t + 8 + i * ROW;
+        let (id, sub) = (*((r + 2) as *const u16), *((r + 1) as *const u8));
+        let Some(&(_, g)) = SPELL_ROWS.iter().find(|x| x.0 == id) else { continue };
+        let at = r + 0x0B;
+        if sub < 10 && *(at as *const u8) != 0 {
+            SAVED_SPELLS.write(at, &[g]);
+            changed += 1;
+        }
+    }
+    log!("magic kh1: KH1's hit effects on {changed} of base Sora's spell rows (ATKP {:?})", SPELL_ROWS.map(|x| x.0));
+}
+
+/// The Config menu switched magic: KH1's spells' hit effects, or KH2's back. (The spell files
+/// themselves are built or removed for KH2's next load of them.)
+pub unsafe fn apply_spells(kh1: bool) {
+    if !LOADED.load(Ordering::Relaxed) {
+        return;
+    }
+    if kh1 {
+        if SAVED_SPELLS.is_empty() {
+            patch_spells();
+        }
+    } else {
+        SAVED_SPELLS.restore();
+        log!("magic kh2: KH2's spell hit effects back");
+    }
+}
+
 static MODEL: AtomicBool = AtomicBool::new(false);
 
 static LOADED: AtomicBool = AtomicBool::new(false);
@@ -180,8 +226,9 @@ unsafe extern "system" fn loader() {
     LOADED.store(true, Ordering::Relaxed);
     SAVED_COMBOS.forget();
     SAVED_GUARD.forget();
+    SAVED_SPELLS.forget();
     super::mp::forget_costs();
-    use crate::settings::{kh1, COMBOS, DEFENCE, MP};
+    use crate::settings::{kh1, COMBOS, DEFENCE, MAGIC, MP};
     if kh1(COMBOS) {
         patch();
         patch_ptya();
@@ -195,6 +242,9 @@ unsafe extern "system" fn loader() {
     }
     if kh1(MP) {
         super::mp::patch_costs(BASE.load(Ordering::Relaxed));
+    }
+    if kh1(MAGIC) {
+        patch_spells();
     }
 }
 

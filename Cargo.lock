@@ -101,6 +101,7 @@ dependencies = [
  "glam",
  "kh1-data",
  "kh2-anim",
+ "kh2-bdx",
  "kh2-formats",
 ]
 
@@ -123,6 +124,13 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "kh2-formats",
+]
+
+[[package]]
+name = "kh2-bdx"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
 ]
 
 [[package]]

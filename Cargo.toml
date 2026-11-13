@@ -6,6 +6,7 @@ members = [
     "crates/kh2-anim",
     "crates/kh1-data",
     "crates/kh1-assets",
+    "crates/kh2-bdx",
     "crates/kh1-posedump",
 ]
 
@@ -19,6 +20,7 @@ kh2-formats = { path = "crates/kh2-formats" }
 kh2-anim = { path = "crates/kh2-anim" }
 kh1-data = { path = "crates/kh1-data" }
 kh1-assets = { path = "crates/kh1-assets" }
+kh2-bdx = { path = "crates/kh2-bdx" }
 md-5 = "0.10"
 sha2 = "0.10"
 flate2 = "1"

@@ -154,6 +154,7 @@ pub fn switch(i: usize, on: bool) {
             COMBOS => combo_tables::apply_combos(on),
             DEFENCE => combo_tables::apply_guard(on),
             MP => mp::apply(on),
+            MAGIC => combo_tables::apply_spells(on),
             CAMERA => camera::apply(on),
             _ => {}
         }
@@ -185,6 +186,9 @@ fn assets(mod_path: &str) {
         match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION, model, combos, defence, movement, magic) {
             Ok(Some(b)) => {
                 log!("assets: built {} bytes into {} in {} ms: KH1 swings (KH1 motion, KH2 slot, frames) {:?}; model = {}", b.bytes, dir.join("obj").display(), t.elapsed().as_millis(), b.motions, if model { "kh1" } else { "kh2" });
+                for n in &b.notes {
+                    log!("assets: {n}");
+                }
             }
             Ok(None) => {
                 log!("assets: already built ({}); model = {}", dir.join("obj").join("P_EX100.mset").display(), if model { "kh1" } else { "kh2" });
@@ -199,6 +203,7 @@ fn assets(mod_path: &str) {
             let _ = std::fs::remove_file(dir.join("obj").join("P_EX100.mdlx"));
             let _ = std::fs::remove_dir_all(dir.join("remastered").join("obj").join("P_EX100.mdlx"));
             let _ = std::fs::remove_file(&stamp);
+            kh1_assets::remove_spells(&dir);
             log!("assets: combos, defence, movement, magic and model = kh2: our built files removed (KH2 loads its own)");
         }
     }

@@ -14,6 +14,7 @@
 pub mod convert;
 pub mod player_model;
 pub mod swing_triggers;
+pub mod spells;
 
 use kh1_data::{Kh1Install, Source};
 use kh2_formats::bar::Bar;
@@ -415,6 +416,8 @@ pub const REST_POSE_FIRST_SWING: bool = false;
 pub struct Built {
     pub motions: Vec<(usize, usize, usize)>,
     pub bytes: usize,
+    /// What else was built (the spell files).
+    pub notes: Vec<String>,
 }
 
 /// KH2 Sora's motion set with KH1's combo motions written into KH2's swing slots (`SWINGS`), on
@@ -547,7 +550,7 @@ pub fn build_kh1_model(root: impl AsRef<Path>, kh1_swings: bool) -> Result<(Vec<
     hd.retain(|a| u32::from_str_radix(a.name.trim_start_matches('-').trim_end_matches(".dds"), 16).unwrap_or(0) >= 0x1000);
     let count = kh1_data::mdls::parse_mesh(&mdls)?.1.len();
     let textures = if hd.len() == count { hd.into_iter().enumerate().map(|(i, a)| (format!("-{i}.dds"), a.data)).collect() } else { Vec::new() };
-    let built = Built { motions: swings, bytes: mset.len() + model.len() };
+    let built = Built { motions: swings, bytes: mset.len() + model.len(), notes: Vec::new() };
     Ok((model, mset, textures, built))
 }
 
@@ -555,6 +558,50 @@ pub fn build_kh1_model(root: impl AsRef<Path>, kh1_swings: bool) -> Result<(Vec<
 /// stamp, and with `kh1_model` KH1 Sora's `obj/P_EX100.mdlx` and HD textures
 /// (`remastered/obj/P_EX100.mdlx/`), unless the stamp says the files there are already this
 /// build's. Returns what was built (`None`: up to date).
+/// KH1's spells as KH2 spell files (`spells`): (KH1's file, KH2's file, BAR name).
+pub const KH1_SPELLS: [(&str, &str, &[u8; 4]); 3] = [("xm_fire01.mag", "magic/FIRE_1.mag", b"fire"), ("xm_fire02.mag", "magic/FIRE_2.mag", b"fire"), ("xm_fire03.mag", "magic/FIRE_3.mag", b"fire")];
+
+/// The spell files and their HD textures (KH1's for the set, by offset in KH1's file, named in
+/// texture order as Panacea serves a mod file's `remastered/<file>/` folder; Checked (OpenKH
+/// Panacea source: `ScanRemasteredFolder` sorts a mod's files and uses them when there are as many as
+/// the file's textures). Without KH1's HD textures for a set, none are written (Panacea then gives
+/// the game's own list: Assumption, not checked).
+fn build_spells(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, files: &mut Vec<(std::path::PathBuf, Vec<u8>)>, notes: &mut Vec<String>) -> Result<()> {
+    for (kh1_name, kh2_name, _) in KH1_SPELLS {
+        let src = kh1.read(Source::Original, kh1_name)?;
+        let set = spells::kh1_effect_set(&src).ok_or_else(|| Error::Format(format!("{kh1_name}: no effect set")))?;
+        let own = kh2.read(kh2_name)?;
+        let merged = spells::fire_mag(&own, &src).ok_or_else(|| Error::Format(format!("{kh2_name}: not a spell file we know")))?;
+        files.push((mod_dir.join(kh2_name), merged));
+        let dpd_at = u32::from_le_bytes(set[16..20].try_into().unwrap()) as usize;
+        let textures = kh2_formats::dpd::Dpd::parse(&set[dpd_at..]).map(|d| d.textures.len()).unwrap_or(0);
+        let mut hd: Vec<_> = kh1.read_remastered_all(Source::Original, kh1_name).unwrap_or_default().into_iter().filter(|a| a.name.ends_with(".dds")).collect();
+        hd.sort_by_key(|a| u32::from_str_radix(a.name.trim_start_matches('-').trim_end_matches(".dds"), 16).unwrap_or(u32::MAX));
+        // KH2's own HD textures first (its DPD is first in the merged file), then KH1's.
+        let mut own_hd: Vec<_> = kh2.read_remastered_all(kh2_name).unwrap_or_default().into_iter().filter(|a| a.name.ends_with(".dds")).collect();
+        own_hd.sort_by_key(|a| u32::from_str_radix(a.name.trim_start_matches('-').trim_end_matches(".dds"), 16).unwrap_or(u32::MAX));
+        let dir = mod_dir.join("remastered").join(kh2_name);
+        let _ = std::fs::remove_dir_all(&dir);
+        if hd.len() == textures && textures > 0 {
+            for (i, a) in own_hd.into_iter().chain(hd).enumerate() {
+                files.push((dir.join(format!("-{i}.dds")), a.data));
+            }
+            notes.push(format!("{kh2_name}: KH1's {kh1_name}, {textures} HD textures"));
+        } else {
+            notes.push(format!("{kh2_name}: KH1's {kh1_name}, {textures} textures, {} HD (none written)", hd.len()));
+        }
+    }
+    Ok(())
+}
+
+/// Our spell files out of the mod folder (KH2 loads its own).
+pub fn remove_spells(mod_dir: &Path) {
+    for (_, kh2_name, _) in KH1_SPELLS {
+        let _ = std::fs::remove_file(mod_dir.join(kh2_name));
+        let _ = std::fs::remove_dir_all(mod_dir.join("remastered").join(kh2_name));
+    }
+}
+
 pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str, kh1_model: bool, kh1_swings: bool, kh1_guard: bool, kh1_moves: bool, kh1_casts: bool) -> Result<Option<Built>> {
     select_kh1_casts(kh1_casts);
     select_kh1_slots(kh1_swings, kh1_guard, kh1_moves);
@@ -570,11 +617,19 @@ pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &s
     if !kh1_swings {
         let _ = std::fs::remove_file(&blade);
     }
-    if out.is_file() && mdlx.is_file() == kh1_model && blade.is_file() == kh1_swings && std::fs::read_to_string(&stamp_file).ok().as_deref() == Some(want.as_str()) {
+    if !kh1_casts {
+        remove_spells(mod_dir);
+    }
+    let spells_built = KH1_SPELLS.iter().all(|s| mod_dir.join(s.1).is_file());
+    if out.is_file() && mdlx.is_file() == kh1_model && blade.is_file() == kh1_swings && spells_built == kh1_casts && std::fs::read_to_string(&stamp_file).ok().as_deref() == Some(want.as_str()) {
         return Ok(None);
     }
     let io = |e: std::io::Error| Error::Format(e.to_string());
     let mut files: Vec<(std::path::PathBuf, Vec<u8>)> = Vec::new();
+    let mut notes = Vec::new();
+    if kh1_casts {
+        build_spells(&Kh1Install::locate(root)?, &Kh2Install::locate(root)?, mod_dir, &mut files, &mut notes)?;
+    }
     if kh1_swings {
         // The Keyblade's hit windows and trail at KH1's times (`swing_triggers`), same motions.
         let kh1 = Kh1Install::locate(root)?;
@@ -606,5 +661,7 @@ pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &s
         std::fs::rename(&tmp, path).map_err(io)?;
     }
     std::fs::write(&stamp_file, want).map_err(io)?;
+    let mut built = built;
+    built.notes = notes;
     Ok(Some(built))
 }
