@@ -107,3 +107,10 @@ level difference × 20 %), within 1 unit and 250 %) isn't applied: KH2's enemies
 The Config page already has the Camera row (`camera = kh2 / kh1`, t40); it does nothing yet. KH1's
 field and lock-on camera go in as a KH2 camera mode, from the sister project's `kh1-camera.md`
 (KH1's camera, Checked (decomp) there) and `kh1-kh2-camera.md`. Research next.
+
+## t64: magic rows with no KH2 cost keep it
+
+The t63 log showed the cost patch giving cmd 2 (a magic row, exec 2, arg 2, KH2 cost 0) KH1's
+Thunder cost of 100. A row with no cost in KH2 isn't a paid cast (Assumption: it is a menu or
+script entry, not the spell itself), so it keeps its 0; only rows KH2 charges for get KH1's cost.
+Checked (files: the t62 log's own list of rows).

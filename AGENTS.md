@@ -1,3 +1,6 @@
+### 2026-11-13: Stage 64 (testing branch: magic rows with no KH2 cost keep it)
+- **KH1's spell costs skip KH2's free magic rows.** The t62 log: `(2, 0, 100)`, cmd 2 (exec 2, arg 2) given KH1's Thunder cost though KH2 charges nothing for it. `mp::patch_costs` leaves rows whose KH2 cost is 0. Checked (files: the log); Assumption: cmd 2 is not the cast itself.
+
 ### 2026-11-13: Stage 63 (testing branch: KH1's lock camera and FOV on KH2's camera)
 - **KH1's lock camera on KH2's mode 2, KH1's FOV, the camera in the trace.** The owner (2026-11-13): "trace done. finish the camera."
   - KH2's lock-on camera `0x140176C70` (prologue 48 89 5C 24 08) on Sora runs KH1's lock camera (`0x1401E2650`, from KH1-in-ReCom's `kh1cam`), the target point and part radius from KH2's `0x1403BE000 (0x140ABE540, out)` (point `out + 0x18`, radius `out + 4`). KH1's lock-on start (60-frame blend), re-lock on a new target (60) and unlock (45) from the first frame in mode 2, a new target record and the first frame back in mode 0. Checked (decomp) for KH2's fields and KH1's numbers; Assumption: the part's radius as KH1's lock radius.

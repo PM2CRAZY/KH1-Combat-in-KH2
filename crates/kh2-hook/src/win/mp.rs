@@ -209,6 +209,10 @@ pub unsafe fn patch_costs(base: usize) {
         let arg = *((r + 4) as *const i16);
         if let Some(&(_, c)) = kh1mp::KH1_SPELL_COSTS.iter().find(|x| x.0 == arg) {
             let at = (r + 0x1C) as *mut u8;
+            // A magic row with no cost in KH2 (cmd 2) is not a cast; it keeps its 0.
+            if *at == 0 {
+                continue;
+            }
             done.push((*((r) as *const u16), *at, c));
             *at = c;
         }
