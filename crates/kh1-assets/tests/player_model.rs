@@ -156,10 +156,13 @@ fn kh2_motions_on_kh1_skeleton() {
         let (xa, xb) = (kh2_formats::bar::Bar::parse(ea.data).unwrap(), kh2_formats::bar::Bar::parse(eb.data).unwrap());
         let ma = xa.entries.iter().find(|e| e.kind == 9).unwrap();
         let mb = xb.entries.iter().find(|e| e.kind == 9).unwrap();
-        let (pa, _) = kh1_assets::convert::kh2_round_trip(ma.data, &kh2).unwrap();
+        let (pa, ta) = kh1_assets::convert::kh2_round_trip(ma.data, &kh2).unwrap();
         let (pb, _) = kh1_assets::convert::kh2_round_trip(mb.data, &kh1).unwrap();
         let r = kh1_data::retarget::Retarget::new(&kh1, &kh2);
-        let all: Vec<_> = pa.iter().map(|p| r.pose(p)).collect();
+        let all: Vec<_> = pa.iter().zip(&ta).map(|(p, t)| {
+            let (off, on) = (glam::Mat4::from_translation(-*t), glam::Mat4::from_translation(*t));
+            r.pose(&p.iter().map(|m| off * *m).collect::<Vec<_>>()).into_iter().map(|m| on * m).collect::<Vec<_>>()
+        }).collect();
         for f in [0, pa.len() / 2, pa.len() - 1] {
             let want = &all[f];
             for (j, (x, y)) in want.iter().zip(&pb[f]).enumerate() {
@@ -391,4 +394,39 @@ fn kh2_swing_travel() {
         let n = im.frame_count as f32;
         eprintln!("KH2 {id} {}: frames {n} travel mid {:?} end {:?}", e.name, info.root_at(n / 2.0), info.root_at(n - 1.0));
     }
+}
+
+#[test]
+fn kh2_swing_root_in_bones() {
+    let Some((_, mdlx)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
+    let raw = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let bar = kh2_formats::bar::Bar::parse(&raw).unwrap();
+    for id in [151usize, 154, 173] {
+        let x = kh2_formats::bar::Bar::parse(bar.entries[id * 4].data).unwrap();
+        let m = x.entries.iter().find(|e| e.kind == 9).unwrap();
+        let (poses, travel) = kh1_assets::convert::kh2_round_trip(m.data, &kh2).unwrap();
+        for f in [0, poses.len() / 2, poses.len() - 1] {
+            let b0 = poses[f][0].w_axis.truncate();
+            let b2 = poses[f][2].w_axis.truncate();
+            let yaw = |m: &glam::Mat4| { let v = m.transform_vector3(glam::Vec3::Z); v.x.atan2(v.z).to_degrees() };
+            eprintln!("KH2 {id} f{f}: travel {:?} bone0 {:?} bone2 {:?} yaw0 {:.0}", travel[f].to_array().map(|x| x.round()), b0.to_array().map(|x| x.round()), b2.to_array().map(|x| x.round()), yaw(&poses[f][0]));
+        }
+    }
+}
+
+#[test]
+fn all_slots_size() {
+    let Some((mdls, mdlx)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset2 = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
+    kh1_assets::select_kh1_slots(true, true, true);
+    let (out, s) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true, &Default::default()).unwrap();
+    kh1_assets::select_kh1_slots(true, false, false);
+    eprintln!("all KH1 slots: {} rows, {} -> {} bytes", s.len(), mset2.len(), out.len());
+    assert!(out.len() < mset2.len());
 }

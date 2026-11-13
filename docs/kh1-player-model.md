@@ -108,3 +108,19 @@ So the converted set is now smaller than KH2's own: 2.39 MB (KH2's 2.61 MB; the 
 - Hermite keys: after fitting, keys their neighbours can do without are removed; tangents rounded
   to 1/1024 a frame (the fit checks with the rounded ones), so most share one stored value.
 - Read back, every joint within 0.67 units of the pose written (`kh2_motions_on_kh1_skeleton`).
+
+## t43: the travel stays in the bones; one Euler form for every motion
+
+- The owner (t41, t42): "Sora still rubber bands during his ground combo". Checked (files): KH2's
+  own motions keep the travel in the bones (A300's root ends at z 145, its travel at 150; 154 at
+  141 / 144), so KH2 draws the model at the object less the travel. Our KH1 motions had the travel
+  taken out of the bones: Sora was drawn behind himself and caught up when a swing ended. Checked
+  (trace, t42): the object itself moved by KH1's travel (74 / 133 / 186 on 151 / 153 / 155). Now
+  the bones keep it (KH1's rig poses as they are; `kh2_poses` puts it back after the transfer; the
+  converted KH2 motions take it off for the transfer only, which scales the hips' place).
+- The owner: "Sora still flips 180 during his KH1 guard with the KH1 player model". Assumption:
+  KH2 blends motions by mixing their Euler numbers, and a turn's form was chosen per motion
+  (nearest the bind): KH1's root turns about 110° from its bind (`kh1-posedump.md`), so two
+  motions could start in the two forms of the same turn and the blend went round by 180°. Every
+  motion for KH1's skeleton now starts from the forms of one reference pose (KH1's battle idle,
+  motion 1, frame 0; `convert::set_own_seed`).

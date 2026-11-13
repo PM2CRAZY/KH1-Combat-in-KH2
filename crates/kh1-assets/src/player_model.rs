@@ -160,6 +160,10 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
     use crate::convert::{kh2_round_trip, map_bar, write_motion};
     use kh2_formats::motion::{BAR_TYPE_ANB, BAR_TYPE_MOTION};
     let mut swings = Vec::new();
+    // Every motion's first Euler forms from KH1's battle idle (motion 1, frame 0).
+    if let Some(idle) = kh1_motions.get(1).and_then(|m| m.as_ref()) {
+        crate::convert::set_own_seed(kh1, &kh1_data::rig::pose(idle, kh1, 0.0).bones);
+    }
     let out = map_bar(kh2_mset, |row, kind, data| {
         if kind != BAR_TYPE_ANB || data.is_empty() {
             return Ok(data.to_vec());
@@ -179,11 +183,11 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
                 let motion = kh1_motions.get(k).cloned().flatten().ok_or_else(|| Error::NotFound(format!("KH1 motion {k}")))?;
                 let frames = motion.frames.max(1) as usize;
                 let (mut poses, mut travel) = (Vec::with_capacity(frames), Vec::with_capacity(frames));
+                // The travel stays in the bones, as in KH2's own motions (`convert::kh2_poses`).
                 for f in 0..frames {
                     let p = kh1_data::rig::pose(&motion, kh1, f as f32);
                     let t = p.helpers.last().map(|x| x.w_axis.truncate()).unwrap_or(glam::Vec3::ZERO);
-                    let back = glam::Mat4::from_translation(-t);
-                    poses.push(p.bones.iter().map(|x| back * *x).collect::<Vec<_>>());
+                    poses.push(p.bones);
                     travel.push(t);
                 }
                 swings.push((k, row / 4, frames));
@@ -193,7 +197,17 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
             // A fresh retarget a motion: its cloth and turn memory start from rest, not from
             // wherever the motion before it left them.
             let r = kh1_data::retarget::Retarget::new(kh1, kh2);
-            let kh1_poses: Vec<_> = poses.iter().map(|p| r.pose(p)).collect();
+            // KH2's bones carry the travel; it comes off for the transfer (which scales the hips'
+            // place by the two Soras' heights) and goes back on after.
+            let kh1_poses: Vec<_> = poses
+                .iter()
+                .zip(&travel)
+                .map(|(p, t)| {
+                    let (off, on) = (glam::Mat4::from_translation(-*t), glam::Mat4::from_translation(*t));
+                    let body: Vec<_> = p.iter().map(|m| off * *m).collect();
+                    r.pose(&body).into_iter().map(|m| on * m).collect::<Vec<_>>()
+                })
+                .collect();
             write_motion(m, kh1, &kh1_poses, &travel)
         })
     })?;

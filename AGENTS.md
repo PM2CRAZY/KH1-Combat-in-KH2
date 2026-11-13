@@ -1,3 +1,9 @@
+### 2026-11-13: Stage 43 (testing branch: KH1 motions: travel in the bones, one Euler form)
+Owner: "Sora still rubber bands during his ground combo", "Sora still flips 180 during his KH1 guard with the KH1 player model".
+
+- Travel: KH2's own motions keep it in the bones (Checked (files): A300 root z 145 / travel 150), KH2 draws the model at the object less the travel; ours took it out, so Sora was drawn behind himself and snapped forward when a swing ended. The trace (t42) showed the object moving by KH1's travel. Now the bones keep it, on both skeletons; converted KH2 motions take it off only for the transfer.
+- Euler forms: every motion for KH1's skeleton starts from one reference pose's forms (KH1 battle idle, frame 0), so KH2's blends (which mix Euler numbers) can't go the long way round. Assumption: the cause of the guard's 180° flip.
+
 ### 2026-11-13: Stage 42 (testing branch: KH1 idle, walk, run, jump, fall and land motions)
 Owner (t41 video): "Sora still has his KH2 walking, running, idle, keyblade idle, jumping, falling etc animation instead of his KH1 animation".
 

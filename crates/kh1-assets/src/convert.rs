@@ -168,7 +168,12 @@ pub fn kh2_poses(motion: &Motion, kh1: &[Bone], kh2: &[Bone]) -> (Vec<Vec<Mat4>>
         let body: Vec<Mat4> = p.bones.iter().map(|m| back * *m).collect();
         let mut kp = inv.pose(&body);
         soften_lean(kh2, &mut kp);
-        poses.push(kp);
+        // KH2's own motions keep the travel in the bones too (A300's root ends at z 145 with its
+        // travel at 150, Checked (files)): KH2 draws the model at the object less the travel, so
+        // bones without it were drawn behind Sora and caught up when the swing ended (the owner,
+        // t41: "rubberbands").
+        let on = Mat4::from_translation(t);
+        poses.push(kp.into_iter().map(|m| on * m).collect());
         travel.push(t);
     }
     (poses, travel)
@@ -325,6 +330,24 @@ fn fit_hermite(v: &[f32], tol: f32) -> Vec<(usize, f32, f32)> {
     keys.into_iter().map(|i| (i, v[i], slope(i))).collect()
 }
 
+static OWN_SEED: std::sync::RwLock<Option<Vec<Option<[f32; 3]>>>> = std::sync::RwLock::new(None);
+
+/// The Euler forms every motion for a new skeleton starts from (`write_motion`): the bones' angles
+/// in one reference pose, so all motions pick the same form of a turn and KH2's blends between
+/// them, which mix these numbers, stay short. Until set, the bind's.
+pub fn set_own_seed(bones: &[Bone], reference: &[Mat4]) {
+    let bind: Vec<Option<[f32; 3]>> = bones.iter().map(|b| Some(b.rotation)).collect();
+    let l = locals(bones, std::slice::from_ref(&reference.to_vec()), &bind);
+    let seed = l.iter().map(|c| c.first().map(|x| [x[3], x[4], x[5]])).collect();
+    if let Ok(mut s) = OWN_SEED.write() {
+        *s = Some(seed);
+    }
+}
+
+fn own_seed(bones: &[Bone]) -> Vec<Option<[f32; 3]>> {
+    OWN_SEED.read().ok().and_then(|s| s.clone()).filter(|s| s.len() == bones.len()).unwrap_or_else(|| bones.iter().map(|b| Some(b.rotation)).collect())
+}
+
 /// A KH2 motion (BAR type 9 data) for `poses` / `travel`, on `template` (a KH2 Sora motion).
 pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &[Vec3]) -> Result<Vec<u8>> {
     let h = BASE + 0x10;
@@ -343,7 +366,7 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
         return Err(Error::Format("skeleton bones must follow their parents".into()));
     }
     let frames = poses.len();
-    let seed = if own { kh2.iter().map(|b| Some(b.rotation)).collect() } else { template_angles(template, kh2) };
+    let seed = if own { own_seed(kh2) } else { template_angles(template, kh2) };
     let loc = locals(kh2, poses, &seed);
     // For a new skeleton, each bone's rotation tolerance is what moves the farthest joint it
     // carries by `REACH_TOL` (a finger may turn more than the hips for the same error on screen),
