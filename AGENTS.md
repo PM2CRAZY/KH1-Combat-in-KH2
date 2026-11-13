@@ -1,3 +1,11 @@
+### 2026-11-13: Stage 58 (testing branch: Phase 3: KH1's air knock-back motions)
+The owner: "finish phase 3". KH1's air knock-back (t54's big air hits, defence = kh1).
+
+- KH1 `0x14029CC40` (Checked (decomp)): request 0x50 front / 0x51 (slots 69 / 70, 38 frames), fall queued with an 8-frame blend, launch `0x1402B7F20(actor, 20.0, dir)`, lands on his feet. KH2's launch plays 16 / 18 until landing, then 17 / 19 (`0x1403D2FE0` case 4).
+- `kh1_assets::AIR_KNOCKBACK`: rows 66 / 74 ← KH1 69 / 70 + 8-frame blend into the fall + the fall looping (`POSTLUDE`, `Return::Frame`); rows 70 / 78 ← KH1 landing, blended into the battle idle.
+- Sizes: `REACH_TOL` 0.12 → 0.16 (P_EX100.mset 2,527,536 of KH2's 2,611,760); W_EX010 rows 70 / 78 share row 22's (same KH1 landing, `SHARED_KEYBLADE`, `map_bar_shared` may now drop a row's own data): 266,960 of 270,224.
+- Still KH2's: the launch numbers (question to the owner). Not checked in game. Docs: `docs/defence.md` (t58).
+
 ### 2026-11-13: Stage 57 (testing branch: Phase 3: KH1's guard arc)
 The owner: "finish phase 3". The guard's arc (defence = kh1).
 

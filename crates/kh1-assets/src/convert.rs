@@ -31,7 +31,7 @@ const OWN_TRAVEL_JOINT: i16 = 1;
 const ROT_TOL: f32 = 0.004;
 const POS_TOL: f32 = 0.05;
 /// How far (model units) a rotation's rounding may move the farthest joint a bone carries.
-const REACH_TOL: f32 = 0.12;
+const REACH_TOL: f32 = 0.16;
 const ROT_TOL_MAX: f32 = 0.03;
 /// The grid key tangents are rounded to (value per frame).
 const TANGENT_STEP: f32 = 1.0 / 1024.0;
@@ -825,9 +825,24 @@ fn map_bar_ex(original: &[u8], fills: &[(usize, usize)], share: bool, mut f: imp
     let rows: Vec<&[u8]> = (0..n).map(|i| &original[16 + i * 16..32 + i * 16]).collect();
     let mut out = original[..table_end].to_vec();
     let mut placed: std::collections::HashMap<usize, (usize, usize)> = std::collections::HashMap::new();
+    // In `share` mode a row of `fills` that has data of its own drops it (its offset not used by
+    // any other row) and shares the template's instead.
+    let dropped: std::collections::HashSet<usize> = if share {
+        fills
+            .iter()
+            .filter(|(row, _)| rows.get(*row).is_some_and(|r| i32_at(r, 12).unwrap_or(0) > 0))
+            .filter_map(|&(row, _)| {
+                let off = i32_at(rows[row], 8).ok()? as usize;
+                let others = rows.iter().enumerate().filter(|(i, r)| *i != row && i32_at(r, 8).ok() == Some(off as i32)).count();
+                (others == 0).then_some(row)
+            })
+            .collect()
+    } else {
+        Default::default()
+    };
     for (i, r) in rows.iter().enumerate() {
         let (off, size) = (i32_at(r, 8)? as usize, i32_at(r, 12)?.max(0) as usize);
-        if size == 0 || placed.contains_key(&off) {
+        if size == 0 || placed.contains_key(&off) || dropped.contains(&i) {
             continue;
         }
         let data = original.get(off..off + size).ok_or_else(|| Error::Format(format!("BAR entry {i} out of bounds")))?;
@@ -841,7 +856,7 @@ fn map_bar_ex(original: &[u8], fills: &[(usize, usize)], share: bool, mut f: imp
     let mut filled: std::collections::HashMap<usize, (usize, usize, usize)> = std::collections::HashMap::new();
     for &(row, t) in fills {
         let (Some(r), Some(tr)) = (rows.get(row), rows.get(t)) else { continue };
-        if i32_at(r, 12)? > 0 {
+        if i32_at(r, 12)? > 0 && !dropped.contains(&row) {
             continue;
         }
         let (off, size) = (i32_at(tr, 8)? as usize, i32_at(tr, 12)?.max(0) as usize);

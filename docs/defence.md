@@ -75,6 +75,25 @@ project's `docs/kh1-roll-guard-native.md` (KH1 Steam addresses, re-checked here 
   degrees a link to keep `W_EX010.mset` within KH2's size (268,400 of 270,224).
 - Not checked in game.
 
+## t58: KH1's air knock-back motions
+
+KH1 (Checked (decomp), `0x14029CC40`): a big hit in the air plays request `0x50` from the front
+(`dot(facing, push) < 0`) or `0x51` (slots 69 / 70, 38 frames), queues the fall (request 6) with
+an 8-frame blend, and launches him (`0x1402B7F20(actor, 20.0, dir)`); he lands on his feet (the
+landing, slot 11). KH2's launch (t54's big air hits) plays 16 from the front by the same test, 18
+from behind, until he lands, then 17 / 19 (`0x1403D2FE0` case 4, Checked (decomp)).
+
+- `kh1_assets::AIR_KNOCKBACK`: rows 66 / 74 (16 / 18) ← KH1 69 / 70, each with KH1's 8-frame blend
+  into the fall and then the fall looping (`POSTLUDE`); rows 70 / 78 (17 / 19) ← KH1's landing,
+  blended into KH1's battle idle (`TAILS`).
+- Sizes: `convert::REACH_TOL` 0.12 → 0.16 units (each joint within 0.16 of the pose written),
+  `P_EX100.mset` 2,527,536 (KH2's 2,611,760); the Keyblade's rows 70 / 78 share row 22's (the same
+  KH1 landing, `SHARED_KEYBLADE`, duplicate-marked): `W_EX010.mset` 266,960 (KH2's 270,224).
+- Still KH2's: the launch's numbers (up 24, sideways 40, × 0.8 a 30 Hz tick, gravity 20/49; the
+  OG rewrite's `combat-model.md`). KH1's is a hop of 20 under KH1's arc and 16 sideways. KH2's
+  blow brakes every tick where KH1's doesn't, so no pair of KH2 numbers gives KH1's path: a
+  question to the owner. Not checked in game.
+
 ## t57: KH1's guard arc
 
 KH1's guard (attack row `0x3D`, data `0x4DA8`) meets attacks within an arc cosine of -0.174:

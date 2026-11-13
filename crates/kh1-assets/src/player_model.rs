@@ -223,9 +223,22 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
                     let t0 = p.helpers.last().map(|x| x.w_axis.truncate()).unwrap_or(glam::Vec3::ZERO);
                     crate::convert::append_blend(&mut poses, &mut travel, &p.bones, t0, &mb, crate::KH1_BLEND);
                 }
+                let mut ret = crate::return_at(row, pre_frames);
+                // The looping motion after it (`crate::POSTLUDE`), from where he is.
+                if let Some(pm) = crate::postlude_at(row).and_then(|n| kh1_motions.get(n).and_then(|m| m.as_ref())) {
+                    let base = travel.last().copied().unwrap_or(glam::Vec3::ZERO);
+                    ret = crate::convert::Return::Frame(poses.len());
+                    for f in 0..pm.frames.max(1) as usize {
+                        let p = kh1_data::rig::pose(pm, kh1, f as f32);
+                        let t = p.helpers.last().map(|x| x.w_axis.truncate()).unwrap_or(glam::Vec3::ZERO);
+                        let on = glam::Mat4::from_translation(base);
+                        poses.push(p.bones.iter().map(|m| on * *m).collect());
+                        travel.push(base + t);
+                    }
+                }
                 swings.push((k, row / 4, frames));
                 let mut out = write_motion(m, &mb, &poses, &travel)?;
-                crate::convert::set_return_for(&mut out, crate::return_at(row, pre_frames));
+                crate::convert::set_return_for(&mut out, ret);
                 return Ok(out);
             }
             let (poses, travel) = kh2_round_trip(m, kh2)?;

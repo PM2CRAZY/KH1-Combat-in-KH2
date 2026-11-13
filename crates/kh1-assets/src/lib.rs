@@ -233,7 +233,7 @@ pub const KNOCKDOWN_IDS: [u16; 2] = [20, 21];
 /// into the idle). (row, the next KH1 motion). KH2's landing has one row (22, its field one); a
 /// battle row of ours (20, `LANDING_BATTLE`) ends in the battle idle instead.
 /// The air flinches blend into the fall row's first pose, KH1's top (`PRELUDE`, t56).
-pub const TAILS: [(usize, usize); 4] = [(22, 0), (20, 1), (58, 9), (62, 9)];
+pub const TAILS: [(usize, usize); 8] = [(22, 0), (20, 1), (58, 9), (62, 9), (66, 10), (74, 10), (70, 1), (78, 1)];
 /// KH1's blend length (`0x14029FA30(.., 8.0)`).
 pub const KH1_BLEND: usize = 8;
 
@@ -252,6 +252,23 @@ pub const LANDING_BATTLE: (usize, usize, usize) = (20, 22, 11);
 /// fall looping on its own. Not 1:1: a fall off a ledge plays the top first too (KH1 starts it at
 /// its fall); the High Jump's own top (slot 13) isn't played (KH2's one fall row).
 pub const PRELUDE: [(usize, usize); 1] = [(18, 9)];
+
+/// KH1's air knock-back as KH1 plays it: KH1 `0x14029CC40` (Checked (decomp)) plays request `0x50`
+/// (front, `dot(facing, push) < 0`) or `0x51` (slots 69 / 70, 38 frames), queues the fall
+/// (request 6, slot 10) with an 8-frame blend, and launches him (`0x1402B7F20(actor, 20.0, dir)`).
+/// KH2's launch plays 16 from the front (the same test) and 18 from behind (`0x1403D2FE0` case 4,
+/// Checked (decomp)), rows 66 / 74, until he lands, then 17 / 19 (rows 70 / 78). So rows 66 / 74:
+/// KH1's knock-back, its blend into the fall (`TAILS`), then the fall looping (`POSTLUDE`); rows
+/// 70 / 78: KH1's landing (KH1 lands on his feet: slot 11), its blend into the battle idle.
+pub const AIR_KNOCKBACK: [(usize, usize); 4] = [(66, 69), (74, 70), (70, 11), (78, 11)];
+
+/// KH1's motion played after `row`'s own in it, looping (`AIR_KNOCKBACK`).
+pub const POSTLUDE: [(usize, usize); 2] = [(66, 10), (74, 10)];
+
+/// The looping motion after `row`'s own, if any.
+pub fn postlude_at(row: usize) -> Option<usize> {
+    POSTLUDE.iter().find(|p| p.0 == row).map(|p| p.1)
+}
 
 /// KH1's motion played before `row`'s own in it (`PRELUDE`).
 pub fn prelude_at(row: usize) -> Option<usize> {
@@ -275,8 +292,14 @@ pub fn tail_at(row: usize) -> Option<usize> {
 
 /// The empty rows the build fills (row, template row): `KNOCKDOWN`'s, when chosen.
 pub fn fills() -> Vec<(usize, usize)> {
-    KNOCKDOWN.iter().chain(std::iter::once(&LANDING_BATTLE)).filter(|k| kh1_motion_at(k.0).is_some()).map(|k| (k.0, k.1)).collect()
+    KNOCKDOWN.iter().chain(std::iter::once(&LANDING_BATTLE)).chain(&SHARED_KEYBLADE).filter(|k| kh1_motion_at(k.0).is_some()).map(|k| (k.0, k.1)).collect()
 }
+
+/// Rows with a Keyblade motion of their own that, in `W_EX010.mset`, share another row's because
+/// both hold the same KH1 motion (row, its twin, KH1 motion): the knocked landings (70 / 78) are
+/// KH1's landing as row 22 is. Sora's own rows keep their own data (theirs end in other blends);
+/// `convert::map_bar_shared` only. Keeps the Keyblade's set within KH2's size.
+pub const SHARED_KEYBLADE: [(usize, usize, usize); 2] = [(70, 22, 11), (78, 22, 11)];
 
 /// KH1's own idle, walk, run, jump, fall and landing in KH2's (`movement = kh1`). Motion set rows
 /// (KH2 id × 4 + variant), KH1 motion.
@@ -327,6 +350,7 @@ pub fn select_kh1_slots(swings: bool, guard: bool, moves: bool) {
         v.extend_from_slice(&ROLL);
         v.extend_from_slice(&REACTIONS);
         v.extend(KNOCKDOWN.iter().map(|k| (k.0, k.2)));
+        v.extend_from_slice(&AIR_KNOCKBACK);
     }
     if moves {
         v.extend_from_slice(&MOVES);
@@ -409,6 +433,16 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
                     if let (Some(p0), Some(&t0)) = (np.first(), nt.first()) {
                         convert::append_blend(&mut poses, &mut travel, p0, t0, &kh2_bones, KH1_BLEND);
                     }
+                }
+                // The looping motion after it (`POSTLUDE`), from where he is.
+                if let Some(pm) = postlude_at(row).and_then(|n| motions.get(n).and_then(|x| x.as_ref())) {
+                    let (pp, pt) = convert::kh2_poses(pm, &kh1_bones, &kh2_bones);
+                    let base = travel.last().copied().unwrap_or(glam::Vec3::ZERO) - pt.first().copied().unwrap_or(glam::Vec3::ZERO);
+                    let on = glam::Mat4::from_translation(base);
+                    let at = poses.len();
+                    poses.extend(pp.iter().map(|p| p.iter().map(|m| on * *m).collect::<Vec<_>>()));
+                    travel.extend(pt.iter().map(|t| base + *t));
+                    RETURN.with(|r| r.set(convert::Return::Frame(at)));
                 }
                 (poses, travel)
             };
