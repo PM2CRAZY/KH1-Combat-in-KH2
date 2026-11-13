@@ -75,6 +75,27 @@ project's `docs/kh1-roll-guard-native.md` (KH1 Steam addresses, re-checked here 
   degrees a link to keep `W_EX010.mset` within KH2's size (268,400 of 270,224).
 - Not checked in game.
 
+## The owner's choices for the rest of the hit reactions (2026-11-13)
+
+Asked after t53; all three answered with KH1's:
+1. **What reaction a hit gives:** KH1's rule. The damage's share of his max HP picks it (btltbl's
+   reaction block: under 20 % a flinch, 20 % and over a knock-down; KH1 `0x14029BBD0` /
+   `0x1402BF290`), with KH1's push (750 × share, at most 150; the curve 0.22314 a step, × 0.8 a
+   step). KH2's special reactions (Magnet and the rest, reaction groups 5 and up) stay KH2's.
+2. **Big hits:** KH1's knock-down in place on the ground (slots 65 / 66, 72 frames, "may be left"
+   58) and KH1's air knock-back in the air (requests `0x50` / `0x51`, slots 69 / 70, 38 frames: hop
+   20, 16 sideways along the push).
+3. **After a reaction:** KH1's 30 frames without damage, counted from when the reaction ends
+   (KH1 `0x140297F30(actor, 30.0)`, its count starting once the action flag clears).
+
+Where it goes in KH2 (research so far, Checked (decomp)): Sora's reaction slot is a thin wrapper
+`0x140406890` (vtable entry at `0x1405CC928`) around KH2's generic reaction `0x1403D2FE0 (object,
+hit)`: the hit's push direction at `+0x0`, a "no effect" bit at `+0x18`, the reaction byte at
+`+0x26` (folded by `0x1403CE980`), the attack's ATKP handle at `+0x20` (hit-back `+0xC` / `+0xE`,
+read by `0x1403CEAB0` / `0x1403CEA00`). Still to find: where the hit's damage is applied (for the
+share) relative to this call, and a KH2 state to play the in-place knock-down in (KH2's flinch
+state, `0x1403D43B0`, with KH1's motion on a free row, is the candidate).
+
 ## Next
 
 1. Done in t51 (above).
