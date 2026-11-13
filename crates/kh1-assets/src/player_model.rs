@@ -196,13 +196,27 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
                 let motion = kh1_motions.get(k).cloned().flatten().ok_or_else(|| Error::NotFound(format!("KH1 motion {k}")))?;
                 let frames = motion.frames.max(1) as usize;
                 let (mut poses, mut travel) = (Vec::with_capacity(frames), Vec::with_capacity(frames));
+                // KH1's motion before this one in the same row (`crate::PRELUDE`), then this one,
+                // its travel on from where the first left him.
+                let pre = crate::prelude_at(row).and_then(|n| kh1_motions.get(n).and_then(|m| m.as_ref()));
+                let mut order: Vec<&kh1_data::mset::Motion> = pre.into_iter().collect();
+                order.push(&motion);
+                let mut base = glam::Vec3::ZERO;
                 // The travel stays in the bones, as in KH2's own motions (`convert::kh2_poses`).
-                for f in 0..frames {
-                    let p = kh1_data::rig::pose(&motion, kh1, f as f32);
-                    let t = p.helpers.last().map(|x| x.w_axis.truncate()).unwrap_or(glam::Vec3::ZERO);
-                    poses.push(p.bones);
-                    travel.push(t);
+                for mo in order {
+                    let n = mo.frames.max(1) as usize;
+                    let mut last = glam::Vec3::ZERO;
+                    for f in 0..n {
+                        let p = kh1_data::rig::pose(mo, kh1, f as f32);
+                        let t = p.helpers.last().map(|x| x.w_axis.truncate()).unwrap_or(glam::Vec3::ZERO);
+                        let on = glam::Mat4::from_translation(base);
+                        poses.push(p.bones.iter().map(|m| on * *m).collect());
+                        travel.push(base + t);
+                        last = t;
+                    }
+                    base += last;
                 }
+                let pre_frames = pre.map(|m| m.frames.max(1) as usize).unwrap_or(0);
                 // KH1's blend into the next motion, where KH2 doesn't blend (`crate::TAILS`).
                 if let Some(next) = crate::tail_at(row).and_then(|n| kh1_motions.get(n).and_then(|m| m.as_ref())) {
                     let p = kh1_data::rig::pose(next, kh1, 0.0);
@@ -210,7 +224,9 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
                     crate::convert::append_blend(&mut poses, &mut travel, &p.bones, t0, &mb, crate::KH1_BLEND);
                 }
                 swings.push((k, row / 4, frames));
-                return write_motion(m, &mb, &poses, &travel);
+                let mut out = write_motion(m, &mb, &poses, &travel)?;
+                crate::convert::set_return_for(&mut out, crate::return_at(row, pre_frames));
+                return Ok(out);
             }
             let (poses, travel) = kh2_round_trip(m, kh2)?;
             // A fresh retarget a motion: its cloth and turn memory start from rest, not from

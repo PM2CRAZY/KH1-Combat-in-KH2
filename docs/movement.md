@@ -140,6 +140,25 @@ The combo's end: KH2 goes from the finisher to the battle idle (row 0), which wa
 (standing tall) after KH1's crouched finisher; it is now KH1's battle idle, which KH1's own
 finishers end into. Not checked in game. KH1's +0 cycles (2, 5) are no longer used.
 
+## t56: the jump plays once; KH1's top, then its fall
+
+The owner (t55, trace): "when jumping without high jump equipped, sora does the jump animation a
+second time mid air". The trace: motion 3 (the jump) for 27 frames of the rise, then 4 (the fall)
+at the top, then 5. KH2's jump and High Jump rows loop while he rises (returns 12 of 8..21 and
+21 of 4..36, Checked (files)), so ours (KH1's 8, 26 frames; 12, 34 frames) went back into
+themselves for the frames left. KH1 plays its jump once; at the top it plays its top (request 5,
+slot 9, 14 frames) with its fall (request 6, slot 10) queued after (`0x1402C7AB0`, Checked
+(decomp); the slot change at the top, the sister project's notes).
+
+- Rows 14 and 806 now hold their last frame (`convert::Return::End`, `kh1_assets::return_at`).
+- The fall row (18) is KH1's top then KH1's fall (`kh1_assets::PRELUDE`), looping on the fall
+  alone (return at frame 14).
+- The air flinches' baked blend (t55) now ends on the top's first pose (the fall row's start),
+  0.00 apart (test `built_tails_meet`).
+- Not 1:1: a fall off a ledge and a fall after an air flinch play KH1's top first (KH1 goes
+  straight to its fall there; KH2 has one fall row); the High Jump's own top (slot 13) isn't
+  played. `P_EX100.mset` 2,585,600 bytes (KH2's 2,611,760). Not checked in game.
+
 ## t55: KH1's field run back; KH1's blend into the fall and the idle
 
 The owner (t54): "Now sora is using his KH2 out of battle run, it should be the KH1 out of battle

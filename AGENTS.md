@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 56 (testing branch: The jump plays once; KH1's top, then its fall)
+The owner (t55, trace): "when jumping without high jump equipped, sora does the jump animation a second time mid air". Trace: motion 3 for 27 frames of the rise, then 4 at the top.
+
+- KH2's jump and High Jump rows loop while he rises (returns 12 of 8..21, 21 of 4..36, Checked (files)); ours looped back into KH1's jump. Rows 14 / 806 now hold their last frame (`convert::Return`, `set_return_for`, `kh1_assets::return_at`).
+- KH1 plays its top (request 5, slot 9) then its fall (6, slot 10) at the top (`0x1402C7AB0`, Checked (decomp)): the fall row 18 is KH1 9 then 10 (`PRELUDE`), looping on 10 alone; the air flinches' blend (t55) now ends on 9's first pose (0.00, `built_tails_meet`).
+- Not 1:1: ledge falls and post-flinch falls show the top first; the High Jump's top (13) isn't played. P_EX100.mset 2,585,600. Not checked in game. Docs: `docs/movement.md` (t56).
+
 ### 2026-11-13: Stage 55 (testing branch: KH1's field run back; KH1's blend into the fall and the idle)
 The owner (t54): "Now sora is using his KH2 out of battle run, it should be the KH1 out of battle run. When sora gets hit in air ... it doesnt seamlessly transition back into his falling animation. also, when landing, sora doesn't transition from landing to his idle seamlessly".
 

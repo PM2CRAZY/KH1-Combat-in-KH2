@@ -655,6 +655,29 @@ fn write_motion_ex(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &
     Ok(body)
 }
 
+/// Where a written motion goes back to at its end (`crate::return_at`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Return {
+    /// As the template loops (`write_motion`'s own).
+    Template,
+    /// Held on its last frame (a one-shot).
+    End,
+    /// Back to this 60 Hz frame (a loop of the rest).
+    Frame(usize),
+}
+
+/// Sets a written motion's return point (header `+0x8C`, 30 Hz frames, at most its end).
+pub fn set_return_for(motion: &mut [u8], r: Return) {
+    let h = BASE + 0x10;
+    let Some(end) = motion.get(h + 0x84..h + 0x88).map(|b| f32::from_le_bytes(b.try_into().unwrap())) else { return };
+    let ret = match r {
+        Return::Template => return,
+        Return::End => end,
+        Return::Frame(f) => (f as f32 / 2.0).min(end),
+    };
+    motion[h + 0x8C..h + 0x90].copy_from_slice(&ret.to_le_bytes());
+}
+
 /// `original` (a BAR file) with `extra` entries added at the end. The original's data is kept
 /// byte for byte, only moved down by the longer entry table, so entries that share data (KH2 marks
 /// them `duplicate` and relocates the data once) still share it. An extra entry with `None` data

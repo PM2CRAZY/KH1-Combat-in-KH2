@@ -800,3 +800,28 @@ fn built_tails_meet() {
     assert!(out.len() < mset2.len());
     eprintln!("set {} bytes; row 20 {}", out.len(), bar.entries[20].name);
 }
+
+#[test]
+fn jump_headers() {
+    let Some((mdls, mdlx)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset2 = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
+    for k in [8usize, 9, 10, 11, 12, 13] {
+        let m = mset1[k].as_ref().unwrap();
+        eprintln!("KH1 {k}: {} frames, events {:?}", m.frames, m.events.iter().map(|e| (e.kind, e.keys.iter().map(|k| k.0).collect::<Vec<_>>())).collect::<Vec<_>>());
+    }
+    kh1_assets::select_kh1_slots(true, true, true);
+    let (out, _) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true, &Default::default()).unwrap();
+    for (name, set) in [("KH2", &mset2), ("built", &out)] {
+        let bar = kh2_formats::bar::Bar::parse(set).unwrap();
+        for row in [14usize, 18, 22, 806] {
+            let inner = kh2_formats::bar::Bar::parse(bar.entries[row].data).unwrap();
+            let m = inner.entries.iter().find(|x| x.kind == kh2_formats::motion::BAR_TYPE_MOTION).unwrap();
+            let i = kh2_formats::motion::MotionInfo::parse(m.data).unwrap();
+            eprintln!("{name} row {row}: start {} end {} fps {} return {}", i.frame_start, i.frame_end, i.fps, i.frame_return);
+        }
+    }
+}

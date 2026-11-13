@@ -232,13 +232,41 @@ pub const KNOCKDOWN_IDS: [u16; 2] = [20, 21];
 /// (`convert::append_blend`; the owner, t54: the air hit doesn't flow into the fall, the landing
 /// into the idle). (row, the next KH1 motion). KH2's landing has one row (22, its field one); a
 /// battle row of ours (20, `LANDING_BATTLE`) ends in the battle idle instead.
-pub const TAILS: [(usize, usize); 4] = [(22, 0), (20, 1), (58, 10), (62, 10)];
+/// The air flinches blend into the fall row's first pose, KH1's top (`PRELUDE`, t56).
+pub const TAILS: [(usize, usize); 4] = [(22, 0), (20, 1), (58, 9), (62, 9)];
 /// KH1's blend length (`0x14029FA30(.., 8.0)`).
 pub const KH1_BLEND: usize = 8;
 
 /// KH1's landing on KH2's landing's battle variant (row 20 = 5 × 4 + 0; KH2 plays .0 first in
 /// battle with the Keyblade out, `MOVES`' notes), made on the field row 22 as its template.
 pub const LANDING_BATTLE: (usize, usize, usize) = (20, 22, 11);
+
+/// KH1's jump as KH1 plays it (the owner, t55: "when jumping without high jump equipped, sora does
+/// the jump animation a second time mid air"). KH2's jump (row 14) and High Jump (806) loop (their
+/// returns 12 of 8..21, 21 of 4..36; Checked (files)) while he rises, so ours went back into the
+/// jump. KH1 plays its jump once and, at the top, its top (request 5, slot 9: 14 frames) and then
+/// its fall (request 6, slot 10) queued after it (KH1 `0x1402C7AB0`: `0x14029F7C0(.., 5, 0)`,
+/// `0x14029FA30(.., 6, 0)`; the state-2 step changes the slot at the top, the sister project's
+/// `animations.md`; Checked (decomp) for the pair). KH2 starts its fall (motion 4, row 18) at
+/// the top, so: the rises hold their last frame, and the fall row is KH1's top then its fall, the
+/// fall looping on its own. Not 1:1: a fall off a ledge plays the top first too (KH1 starts it at
+/// its fall); the High Jump's own top (slot 13) isn't played (KH2's one fall row).
+pub const PRELUDE: [(usize, usize); 1] = [(18, 9)];
+
+/// KH1's motion played before `row`'s own in it (`PRELUDE`).
+pub fn prelude_at(row: usize) -> Option<usize> {
+    PRELUDE.iter().find(|p| p.0 == row).map(|p| p.1)
+}
+
+/// How `row`'s KH1 motion ends (`PRELUDE`'s notes): the rises held, the fall looping after the top
+/// (`pre` frames, the prelude's length).
+pub fn return_at(row: usize, pre: usize) -> convert::Return {
+    match row {
+        14 | 806 => convert::Return::End,
+        18 if pre > 0 => convert::Return::Frame(pre),
+        _ => convert::Return::Template,
+    }
+}
 
 /// The next motion's tail for `row`, if any.
 pub fn tail_at(row: usize) -> Option<usize> {
@@ -275,6 +303,11 @@ pub fn fills() -> Vec<(usize, usize)> {
 pub const MOVES: [(usize, usize); 12] = [(0, 1), (2, 0), (4, 4), (6, 3), (7, 3), (8, 7), (10, 6), (11, 6), (14, 8), (18, 10), (22, 11), (806, 12)];
 
 static SLOTS: std::sync::RwLock<Option<Vec<(usize, usize)>>> = std::sync::RwLock::new(None);
+
+thread_local! {
+    /// The return the KH2-skeleton build picked for the motion it is writing.
+    static RETURN: std::cell::Cell<convert::Return> = const { std::cell::Cell::new(convert::Return::Template) };
+}
 
 /// The motion set rows this build writes KH1 motions into (row = KH2 id × 4 + variant, KH1
 /// motion): the swings with `combos = kh1`, the guard with `defence = kh1`, the moves with
@@ -355,6 +388,21 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
                 convert::kh2_round_trip(own, &kh2_bones)?
             } else {
                 let (mut poses, mut travel) = convert::kh2_poses(&m, &kh1_bones, &kh2_bones);
+                // KH1's motion before this one in the row (`PRELUDE`), its travel carried on.
+                let pre_frames = if let Some(pm) = prelude_at(row).and_then(|n| motions.get(n).and_then(|x| x.as_ref())) {
+                    let (mut pp, mut pt) = convert::kh2_poses(pm, &kh1_bones, &kh2_bones);
+                    let base = pt.last().copied().unwrap_or(glam::Vec3::ZERO);
+                    let on = glam::Mat4::from_translation(base);
+                    let n = pp.len();
+                    pp.extend(poses.iter().map(|p| p.iter().map(|m| on * *m).collect::<Vec<_>>()));
+                    pt.extend(travel.iter().map(|t| base + *t));
+                    poses = pp;
+                    travel = pt;
+                    n
+                } else {
+                    0
+                };
+                RETURN.with(|r| r.set(return_at(row, pre_frames)));
                 // KH1's blend into the next motion, where KH2 doesn't blend (`TAILS`).
                 if let Some(next) = tail_at(row).and_then(|n| motions.get(n).and_then(|x| x.as_ref())) {
                     let (np, nt) = convert::kh2_poses(next, &kh1_bones, &kh2_bones);
@@ -365,7 +413,9 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
                 (poses, travel)
             };
             built.motions.push((k, row / 4, poses.len()));
-            convert::write_motion(own, &kh2_bones, &poses, &travel)
+            let mut out = convert::write_motion(own, &kh2_bones, &poses, &travel)?;
+            convert::set_return_for(&mut out, RETURN.with(|r| r.replace(convert::Return::Template)));
+            Ok(out)
         })
     })?;
     if built.motions.len() != kh1_slots().len() {
