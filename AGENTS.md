@@ -1,3 +1,6 @@
+### 2026-11-13: Stage 19 (testing branch: first ground swing back to KH1's)
+Owner (t17): the round-tripped A300 "looks exactly like KH2's base attack". The test is done: KH1 motion 98's slot holds KH1's first ground swing again (`ROUND_TRIP_FIRST_SWING = false`). Checked: files.
+
 ### 2026-11-13: Stage 18 (testing branch: kh1-posedump: KH1's own poses as ground truth)
 Owner: "Yes i will run it, and please feel free to use any overlapping code from the sister mod if it speeds things up, lets get Phase 2 finished".
 

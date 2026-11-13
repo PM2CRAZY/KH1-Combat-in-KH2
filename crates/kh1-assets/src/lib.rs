@@ -156,9 +156,9 @@ pub const TEMPLATE_MOTION: usize = 151;
 /// The KH2 swing each KH1 motion takes the place of (`combos.rs`'s rows): the keyblade plays
 /// that swing's own keyblade motion during the KH1 one.
 pub const REPLACES: [(usize, usize); 7] = [(98, 151), (99, 152), (100, 153), (101, 154), (102, 181), (103, 182), (104, 184)];
-/// Test build (t17): KH1 motion 98's slot holds KH2's own first swing (A300) passed through the
+/// Test build (t17, off from t19): KH1 motion 98's slot holds KH2's own first swing (A300) passed through the
 /// converter, so the owner can see in game whether the converter itself keeps a KH2 swing whole.
-pub const ROUND_TRIP_FIRST_SWING: bool = true;
+pub const ROUND_TRIP_FIRST_SWING: bool = false;
 
 /// The KH2 motion id KH1 motion `kh1` is built as.
 pub fn kh2_motion_of(kh1: usize) -> Option<usize> {
