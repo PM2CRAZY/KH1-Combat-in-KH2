@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 60 (testing branch: Phase 4: KH1's MP pool on KH2's MP)
+The owner: "go ahead" (Phase 4 step 1; choices: KH1's bars, KH1's refill from hits, KH1's level gains + KH2's MP-up rewards).
+
+- `kh1mp.rs` (tested): KH1's bars and gauge (next bar (bars + 1) × 30 units), KH1's check / payment (units break a bar into bars × 30), 10 KH2 MP a bar (KH2's max MP is the record's byte +7, Checked (decomp) `0x1403C1D90`), max bars = KH1 start + levels 12/24/36/48/60 (Checked (files) btltbl +0x3AC0) + KH2's MP-up rewards (Checked (files) bons: 23, 26, 29, 51, 68).
+- `win/mp.rs`: hooks the status build `0x1403C1D90`, the MP change `0x1403D3CF0`, the command state `0x1403D88E0` and a script's MP Charge `0x1403D4A20` (prologues checked); KH1's spell costs into KH2's `cmd` rows (0x142A161E8, cost +0x1C; Fire 30, Blizzard 30, Thunder 100, Cure 100, Checked (files) KH1 attack data +0x30) after the table loader. No MP Charge for base Sora; the gauge kept in status +0x1BC.
+- Assumptions: KH1 starts at 2 bars; rewards in order. Not yet: refill from hits (step 2). Not checked in game. Docs: `docs/mp-magic.md` (t60).
+
 ### 2026-11-13: Stage 59 (testing branch: Phase 3: KH1's air knock-back path)
 The owner (answer): "KH1's exact path" for big hits in the air.
 

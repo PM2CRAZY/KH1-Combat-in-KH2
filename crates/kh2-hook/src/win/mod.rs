@@ -10,6 +10,7 @@ mod crash;
 mod highjump;
 mod hook;
 mod prty;
+mod mp;
 mod reactions;
 mod roll;
 mod sora;
@@ -201,8 +202,12 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
             reactions::install(base);
         }
         let (combos, model, defence) = (s.style("combos") == crate::settings::Style::Kh1, s.style("model") == crate::settings::Style::Kh1, s.style("defence") == crate::settings::Style::Kh1);
-        if combos || model || defence {
-            combo_tables::install(base, combos, model, defence);
+        let mp_kh1 = s.style("mp") == crate::settings::Style::Kh1;
+        if mp_kh1 {
+            mp::install(base);
+        }
+        if combos || model || defence || mp_kh1 {
+            combo_tables::install(base, combos, model, defence, mp_kh1);
         }
     }
     1

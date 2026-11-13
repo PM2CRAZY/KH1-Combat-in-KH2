@@ -68,6 +68,29 @@ KH2's MP-up rewards (Checked (files), `00battle.bin` `bons`, character 1): five,
    Stop and Aero as new spells (new magic rows, commands, menu entries), Magnet and Reflect kept
    KH2's.
 
+## t60: KH1's pool on KH2's MP (step 1)
+
+`win/mp.rs` (logic in `kh1mp.rs`, tested), base Sora, `mp = kh1`:
+- **Pool:** after KH2's status build `0x1403C1D90`, Sora's max MP is KH1's bars × 10: KH1's start,
+  +1 at levels 12 / 24 / 36 / 48 / 60 (record `+0xF`), +1 per KH2 MP-up reward (record `+7`). His
+  MP shows the bars and the yellow gauge's share of the next one; the gauge itself is kept in the
+  status block's MP Charge time `+0x1BC` (KH1 has no charge; its length `+0x1C0` stays 0).
+- **Costs:** KH1's (Checked (files), attack data `+0x30`: Fire 30, Blizzard 30 units, Thunder 100,
+  Cure 100 = one bar) written into KH2's `cmd` rows (execute 2, arguments 0..3) after the table
+  loader (`cmd` at `0x142A161E8`, rows of 0x30, cost `+0x1C`; Checked (decomp) / (files)). Magnet
+  and Reflect keep their bytes (30, 10), read as KH1 units. 255 ("all": KH2's Limits) empties MP
+  and needs one bar.
+- **Paying:** the MP change `0x1403D3CF0`: a cost goes through KH1's check and payment (units
+  break a bar into `bars × 30` units); what he can't pay isn't paid and starts nothing; the
+  result is handed to KH2's own function as a change from his MP now, so KH2 never starts the MP
+  Charge for him. A gain is KH1's gauge units (orbs, MP Rage, items as units for now: step 3).
+- **Menu:** `0x1403D88E0` greys (5) a command KH1's check refuses (KH2's 2 meant "will start the
+  charge").
+- **Scripts' charge:** `0x1403D4A20` (a script's MP Charge, the other caller of the charge start)
+  empties his MP instead.
+- Assumptions: KH1's start is 2 bars (not yet read from KH1's new-game record); KH2's MP-up
+  rewards come in reward order. Hits don't refill yet (step 2). Not checked in game.
+
 ## Camera (the owner, 2026-11-13: "bring in KH1's Camera, and have the setting ... in the config")
 
 The Config page already has the Camera row (`camera = kh2 / kh1`, t40); it does nothing yet. KH1's

@@ -99,6 +99,7 @@ unsafe fn patch() {
 
 static COMBOS: AtomicBool = AtomicBool::new(false);
 static DEFENCE: AtomicBool = AtomicBool::new(false);
+static MP: AtomicBool = AtomicBool::new(false);
 
 /// KH1's guard arc on KH2's guard (`defence = kh1`). KH1's guard (attack data `0x4DA8`, `+0x64`)
 /// meets attacks within an arc cosine of -0.174, 100 degrees either side of his facing (the
@@ -142,12 +143,16 @@ unsafe extern "system" fn loader() {
     if DEFENCE.load(Ordering::Relaxed) {
         patch_guard_arc();
     }
+    if MP.load(Ordering::Relaxed) {
+        super::mp::patch_costs(BASE.load(Ordering::Relaxed));
+    }
 }
 
 /// Hooks KH2's table loader for what patches its tables: `combos = kh1` (above), `model = kh1`
-/// (`weapon_hold`) and `defence = kh1` (the guard arc).
-pub unsafe fn install(base: usize, combos: bool, model: bool, defence: bool) {
+/// (`weapon_hold`), `defence = kh1` (the guard arc) and `mp = kh1` (`mp::patch_costs`).
+pub unsafe fn install(base: usize, combos: bool, model: bool, defence: bool, mp: bool) {
     BASE.store(base, Ordering::Relaxed);
+    MP.store(mp, Ordering::Relaxed);
     COMBOS.store(combos, Ordering::Relaxed);
     DEFENCE.store(defence, Ordering::Relaxed);
     MODEL.store(model, Ordering::Relaxed);
