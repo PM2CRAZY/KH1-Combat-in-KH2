@@ -2,6 +2,7 @@
 
 mod airsteer;
 mod combo_tables;
+mod weapon_hold;
 mod config_menu;
 mod arc;
 mod build;
@@ -193,8 +194,9 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
             highjump::install(base);
             airsteer::install(base);
         }
-        if s.style("combos") == crate::settings::Style::Kh1 {
-            combo_tables::install(base);
+        let (combos, model) = (s.style("combos") == crate::settings::Style::Kh1, s.style("model") == crate::settings::Style::Kh1);
+        if combos || model {
+            combo_tables::install(base, combos, model);
         }
     }
     1

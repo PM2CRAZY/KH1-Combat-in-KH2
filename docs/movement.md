@@ -113,6 +113,33 @@ Assumption from their lengths and poses (Checked (files)) and the sister project
 (requests 0 / 1 / 2 → slots 0..1 / 2..4 / 5..7, the jump's requests 9..0xC → slots 12, 13, 10,
 11); KH1's 13 (the top of the jump) has no KH2 row. The Keyblade keeps KH2's motions for these.
 
+## t49: KH1's field and battle motions on KH2's field and battle rows
+
+The owner (t48 video and trace): "Sora uses his KH1 battle idle and KH1 battle run even when he
+doesn't have his keyblade out. Finishing a combo doesnt seamlessly transition into his idle". The
+t42 table had the variants backwards (and KH1's slots partly wrong):
+
+- **KH2's variants** (Assumption from OpenKH's `MotionSet.GetMotionSetIndex`; the t48 video agrees,
+  row 2 played in the field): KH2 plays the first non-DUMM row of a motion in the order .0 .1 .3 .2
+  in battle with the Keyblade out, .1 .0 .2 .3 in battle without, .2 .3 .1 .0 in the field without,
+  .3 .2 .0 .1 in the field with it. So .0 is the battle row, .2 the field one, .3 the field with the
+  Keyblade out.
+- **KH1's slots** (Checked (decomp): the request resolver `0x1402A01E0`): the idle (kind 4) is slot 0,
+  slot 1 in battle (actor `+0x374` bit 18); walk and run (kind 3) are slot +1 out of battle, +2 in
+  it, +0 only with a handle at `+0x14C` and flag `0x4000` clear (Assumption: not the player in
+  normal play). Checked (files): slots 4 and 7 crouch like the battle idle (mean height of the top
+  bone 44 / 39 against the field cycles' 58 / 43; test `kh1_cycle_stances`).
+
+| KH2 | rows (variant) | KH1 |
+|---|---|---|
+| 0 idle | 0 (battle), 2 (field) | 1 battle idle, 0 field idle |
+| 1 walk | 4 (battle), 6 (field), 7 (field, Keyblade out) | 4, 3, 3 |
+| 2 run | 8 (battle), 10 (field), 11 (field, Keyblade out) | 7, 6, 6 |
+
+The combo's end: KH2 goes from the finisher to the battle idle (row 0), which was KH1's field idle
+(standing tall) after KH1's crouched finisher; it is now KH1's battle idle, which KH1's own
+finishers end into. Not checked in game. KH1's +0 cycles (2, 5) are no longer used.
+
 ## t47: looping motions loop; KH2's motions read from their start
 
 KH2's motion header (`+0x80`: start, end, fps, return, in 30 Hz frames; Checked (files)): a

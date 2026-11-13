@@ -29,6 +29,9 @@ pub const KH2_SORA_MSET: &str = "obj/P_EX100.mset";
 pub const KH2_SORA_MDLX: &str = "obj/P_EX100.mdlx";
 /// KH2's Keyblade motion set (every Keyblade's; Checked (files): no other `W_EX010_*.mset`).
 pub const KH2_KEYBLADE_MSET: &str = "obj/W_EX010.mset";
+/// KH2's Kingdom Key: its skeleton (12 bones in one chain) stands for every Keyblade's, which
+/// all play `W_EX010.mset` (Checked (files): `W_EX010_10.mdlx` has the same chain).
+pub const KH2_KEYBLADE_MDLX: &str = "obj/W_EX010.mdlx";
 /// The keyblade's motion set: slot for slot beside Sora's (839 entries, the same motion ids;
 /// Checked (files)). KH2 plays the keyblade's motion for Sora's motion id, so every motion we add
 /// to Sora needs one here (without it the keyblade vanished during KH1's swings, and switching
@@ -193,17 +196,27 @@ pub const SWINGS: [(usize, usize); 9] = [(151, 98), (152, 99), (153, 100), (154,
 pub const GUARD: [(usize, usize); 1] = [(173, 110)];
 
 /// KH1's own idle, walk, run, jump, fall and landing in KH2's (`movement = kh1`). Motion set rows
-/// (KH2 id × 4 + variant; variant 0 the field one, 2 the battle one, 3 a third), KH1 motion.
-/// KH2 (the OG rewrite's ids, the rows Checked (files)): 0 idle (rows 0, 2), 1 walk (4, 6, 7),
-/// 2 run (8, 10, 11), 3 jump (14), 4 fall (18), 5 land (22). KH1 (lengths and poses Checked
-/// (files); which is which an Assumption from them and the sister project's request map, KH1
-/// requests 0 / 1 / 2 → slots 0..1 / 2..4 / 5..7, the jump's requests 4..7 → slots 8..11, the High
-/// Jump's 9..0xC → 12, 13, 10, 11): 0 the field idle (120 frames, standing tall), 1 the battle idle
-/// (170, the Keyblade stance), 2 / 3 / 4 the walks, 5 / 6 / 7 the runs, 8 the jump (26), 10 the
-/// fall (40, held), 11 the landing (28). The owner (t42): 12 is KH1's High Jump (it was on the
-/// jump): it goes on KH2's High Jump, motion 201, whose motion is its battle row 806 (201 × 4 + 2;
-/// rows 804 / 805 / 807 are DUMMs, Checked (files)). KH1's 9 / 13 (the jumps' tops) have no KH2 row.
-pub const MOVES: [(usize, usize); 12] = [(0, 0), (2, 1), (4, 2), (6, 3), (7, 4), (8, 5), (10, 6), (11, 7), (14, 8), (18, 10), (22, 11), (806, 12)];
+/// (KH2 id × 4 + variant), KH1 motion.
+///
+/// KH2's variants (OpenKH `MotionSet.GetMotionSetIndex`, Assumption from it; the t48 video agrees:
+/// row 2 plays in the field): KH2 tries, in order, .0 .1 .3 .2 in battle with the weapon out,
+/// .1 .0 .2 .3 in battle without, .2 .3 .1 .0 in the field without, .3 .2 .0 .1 in the field with
+/// it, and plays the first that isn't a DUMM. KH2 Sora's (Checked (files)): idle 0 (rows 0, 2),
+/// walk 1 (4, 6, 7), run 2 (8, 10, 11), jump 3 (14), fall 4 (18), land 5 (22): .0 his battle
+/// motion, .2 his field one, .3 the field with the Keyblade out.
+///
+/// KH1's (Checked (decomp): KH1's request resolver `0x1402A01E0`): the idle (request 0, kind 4)
+/// is slot 0, slot 1 in battle (the actor's `+0x374` bit 18); walk and run (kind 3) are slot +1
+/// out of battle and +2 in it, +0 only for an actor with a handle at `+0x14C` and without flag
+/// `0x4000` (Assumption: never the player in normal play). So: 0 the field idle (120 frames,
+/// standing), 1 the battle idle (170, the Keyblade stance), 3 / 6 the field walk and run, 4 / 7
+/// the battle ones (Checked (files): 4 and 7 crouch like the battle idle, `kh1_cycle_stances`).
+/// KH1's battle set goes on KH2's battle rows, its field set on both field rows. 8 the jump (26),
+/// 10 the fall (40, held), 11 the landing (28), one each in KH1, on KH2's one row each. The owner
+/// (t42): 12 is KH1's High Jump: it goes on KH2's High Jump, motion 201, whose motion is its row
+/// 806 (201 × 4 + 2; rows 804 / 805 / 807 are DUMMs, Checked (files)). KH1's 9 / 13 (the jumps'
+/// tops) have no KH2 row.
+pub const MOVES: [(usize, usize); 12] = [(0, 1), (2, 0), (4, 4), (6, 3), (7, 3), (8, 7), (10, 6), (11, 6), (14, 8), (18, 10), (22, 11), (806, 12)];
 
 static SLOTS: std::sync::RwLock<Option<Vec<(usize, usize)>>> = std::sync::RwLock::new(None);
 
@@ -357,7 +370,9 @@ pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &s
         let kh1 = Kh1Install::locate(root)?;
         let kh2 = Kh2Install::locate(root)?;
         let motions = kh1_data::mset::parse(&kh1.read(Source::Original, KH1_SORA_MSET)?)?;
-        files.push((blade.clone(), swing_triggers::build_keyblade(&kh2.read(KH2_KEYBLADE_MSET)?, &motions)?));
+        // With KH1's model, the Keyblade's motions too: KH1's own hold, in KH1's palm.
+        let hold = if kh1_model { Some((kh1_data::mdls::parse_skeleton(&kh1.read(Source::Original, KH1_SORA_MDLS)?)?, kh2_formats::anim::parse_skeleton(&kh2.read(KH2_KEYBLADE_MDLX)?)?)) } else { None };
+        files.push((blade.clone(), swing_triggers::build_keyblade(&kh2.read(KH2_KEYBLADE_MSET)?, &motions, hold.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())))?));
     }
     let built = if kh1_model {
         let (model, mset, textures, built) = build_kh1_model(root, kh1_swings)?;

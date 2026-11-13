@@ -136,7 +136,7 @@ turned by −3.165, back to front (the owner, t42 / t44: "guarding still flips s
   a time (`convert::write_motion_keep_turn`), so KH2's own guard still turns.
 The t43 Euler-seed change stays (it doesn't hurt), but it was not this.
 
-## t48: a Keyblade bone on KH1's grip
+## t48: a Keyblade bone on KH1's grip (gone in t49)
 
 The owner (t44): "the keyblade is not in his hands for any keyblade he has equipped". KH2 hangs the
 Keyblade from the hand bone in the skeleton data (Assumption: in t27 it followed our map 85 → KH1
@@ -146,3 +146,35 @@ the hand KH1's way and hold the Keyblade at KH1's grip bone (280). Now the model
 turn, `weapon_local`), placed in every motion from the grip; the hand map 85 → 293 (skeleton data
 and collision). So KH2's Keyblade motions, made for its hand, sit in KH1's grip. Assumption: the
 two binds hold their Keyblades alike.
+
+## t49: the Keyblade on KH1's palm, held KH1's way
+
+The owner (t48 video): "The keyblade is still not in his hands". t48's bone didn't help: KH2 hangs
+a weapon on the bones of its object's `sklt` row, not on the skeleton data's hand (and 85 was KH2's
+left hand). Checked (files): P_EX100 (objentry 84) has weapon joint 1, `sklt` row 1 = bones 178 /
+86, KH2 Sora's right and left palms; on KH1's skeleton those are other bones. Checked (decomp): the
+row is read from the object table (`0x1403B5C10`, objentry byte `+7`) and looked up in `sklt`
+(`0x1403EAAE0`, the table at `0x142AE5798`, rows of 8 bytes: id, right, left).
+
+Now, with `model = kh1`:
+- t48's bone is gone (the model is KH1's 293 bones again; the hand map 85 → 202 is back).
+- `kh2-hook` `weapon_hold`: after KH2's table loader (`0x1403F4C30`, which runs at boot right
+  after the object table is loaded, `0x14039CAF0`, Checked (decomp)) a `sklt` row of ours (the next
+  id, 28 on the owner's files) holds KH1's palms, 101 / 206 (`player_model::PALMS`; Checked (files):
+  KH1's grip bone 280, the Keyblade's root, is 101's child; 206 is the left palm). P_EX100's weapon
+  joint is set to it. The forms and the world outfits are other objects and keep row 1.
+- The Keyblade's motions (`W_EX010.mset`) in every row where Sora plays a KH1 motion are KH1's own
+  Keyblade bones in that palm (`swing_triggers::keyblade_motion`): KH2's Keyblade skeleton is KH1's
+  grip chain bone for bone (bone k = KH1's 280 + k, the same parents, Checked (files)), so its bone
+  k plays `palm⁻¹ × KH1 bone (280 + k)` at each of KH1's frames. Checked (files, test
+  `keyblade_on_kh1_hold`): the blade (bone 2, KH1's 282) within 0.11 degrees of KH1's in every KH1
+  slot. KH1 holds the blade still in the palm (bones 0..2 have no keys in any slot); what moves is
+  the keychain, kept within 0.7 degrees a link so the set stays smaller than KH2's (266,720 of
+  270,224 bytes). Channels at the Keyblade's bind are left out, as KH2's own motions do, so each
+  Keyblade keeps its own keychain lengths.
+- KH2's motions on KH1's model (everything not KH1's) keep KH2's Keyblade motions, now on KH1's palm
+  (KH2 held them on its own palm; the two palms' binds face within 3 degrees, the sister project's
+  `kh1-weapon-second.md` §11).
+
+Before (KH2's Keyblade motions against KH1's hold, test `keyblade_hold_vs_kh1`): 8 to 19 degrees
+off on average, up to 105 in KH2's third swing. Not checked in game.

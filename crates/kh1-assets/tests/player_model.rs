@@ -95,7 +95,7 @@ fn kh1_sora_as_kh2_model() {
     let out = player_model::build(&mdls, &mdlx).unwrap();
     let m = kh2_formats::mdlx::parse(&out).unwrap();
     let (meshes, textures) = kh1_data::mdls::parse_mesh(&mdls).unwrap();
-    assert_eq!(m.bones.len(), 294);
+    assert_eq!(m.bones.len(), 293);
     assert_eq!(m.textures.len(), textures.len());
     assert_eq!(m.triangle_count(), meshes.iter().map(|m| m.triangles.len()).sum::<usize>());
     if let Ok(dir) = std::env::var("KH1_MESH_OUT") {
@@ -334,7 +334,7 @@ fn kh1_windows_on_kh2_triggers() {
     let Ok(w) = std::fs::read(dir.join("W_EX010.mset")) else { return };
     let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
     kh1_assets::select_kh1_slots(true, true, true);
-    let out = kh1_assets::swing_triggers::build_keyblade(&w, &mset1).unwrap();
+    let out = kh1_assets::swing_triggers::build_keyblade(&w, &mset1, None).unwrap();
     eprintln!("W_EX010.mset {} -> {} bytes", w.len(), out.len());
     let spans = kh1_assets::swing_triggers::keyblade_spans(&w).unwrap();
     let p = std::fs::read(dir.join("P_EX100.mset")).unwrap();
@@ -493,5 +493,162 @@ fn kh2_key_time_ranges() {
         let i = kh2_formats::anim::Interpolated::parse(m.data).unwrap().unwrap();
         let ts: Vec<f32> = i.forward.iter().flat_map(|c| c.keys.iter().map(|k| k.time)).collect();
         eprintln!("row {row}: frame_count {} key times {:.1}..{:.1}", i.frame_count, ts.iter().cloned().fold(f32::MAX, f32::min), ts.iter().cloned().fold(f32::MIN, f32::max));
+    }
+}
+
+#[test]
+fn kh1_cycle_stances() {
+    let Some((mdls, _)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    for k in 0..8 {
+        let Some(m) = mset1.get(k).and_then(|m| m.as_ref()) else { continue };
+        let n = m.frames.max(1) as usize;
+        let mut top = 0.0f32;
+        let mut grip = Vec3::ZERO;
+        for f in 0..n {
+            let p = kh1_data::rig::pose(m, &kh1, f as f32);
+            let ps = pos(&p.bones);
+            let root = ps[0];
+            top += ps.iter().map(|q| q.y - root.y).fold(f32::MIN, f32::max) / n as f32;
+            grip += (ps[280] - ps[2]) / n as f32;
+        }
+        eprintln!("KH1 {k}: frames {n} mean top {top:.1} grip-hip {:?}", grip.to_array().map(|x| x.round()));
+    }
+}
+
+/// KH1's blade (282) in its palm (101) against KH2's Keyblade bone 2 in its attach bone, at the
+/// same frame of the same slot: how far apart KH2's weapon motion holds it.
+#[test]
+fn keyblade_hold_vs_kh1() {
+    let Some((mdls, _)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let wmdl = std::fs::read(dir.join("W_EX010.mdlx")).unwrap();
+    let wsk = kh2_formats::anim::parse_skeleton(&wmdl).unwrap();
+    let k1b = kh2_anim::Pose::bind(&kh1).bones;
+    let wb = kh2_anim::Pose::bind(&wsk).bones;
+    eprintln!("weapon bones {} ; KH1 280 parent {} 206? {:?}", wsk.len(), kh1[280].parent, (kh1[206].parent, kh1[101].parent));
+    for i in 0..wsk.len().min(12) {
+        let a = k1b[101].inverse() * k1b[280 + i];
+        let (_, qa, ta) = a.to_scale_rotation_translation();
+        let (_, qb, tb) = wb[i].to_scale_rotation_translation();
+        eprintln!("bind {i}: KH1 in palm {:?} t {:?} | KH2 {:?} t {:?} ang {:.1}", qa.to_array().map(|x| (x*100.0).round()/100.0), ta.to_array().map(|x| x.round()), qb.to_array().map(|x| (x*100.0).round()/100.0), tb.to_array().map(|x| x.round()), qa.angle_between(qb).to_degrees());
+    }
+    let wset = std::fs::read(dir.join("W_EX010.mset")).unwrap();
+    let bar = kh2_formats::bar::Bar::parse(&wset).unwrap();
+    for (row, k) in [(0usize, 1usize), (2, 0), (8, 7), (151 * 4, 98), (153 * 4, 100), (155 * 4, 101), (173 * 4, 110)] {
+        let Some(e) = bar.entries.get(row) else { continue };
+        if e.data.is_empty() { eprintln!("row {row}: empty"); continue; }
+        let inner = kh2_formats::bar::Bar::parse(e.data).unwrap();
+        let Some(m) = inner.entries.iter().find(|x| x.kind == kh2_formats::motion::BAR_TYPE_MOTION) else { continue };
+        let Ok((wp, _)) = kh1_assets::convert::kh2_round_trip(m.data, &wsk) else { eprintln!("row {row}: no eval"); continue };
+        let motion = mset1.get(k).and_then(|m| m.as_ref()).unwrap();
+        let n = (motion.frames as usize).min(wp.len());
+        let mut worst = 0.0f32;
+        let mut mean = 0.0f32;
+        for f in 0..n {
+            let p = kh1_data::rig::pose(motion, &kh1, f as f32).bones;
+            let (_, qa, _) = (p[101].inverse() * p[282]).to_scale_rotation_translation();
+            let (_, qb, _) = wp[f][2].to_scale_rotation_translation();
+            let d = qa.angle_between(qb).to_degrees();
+            worst = worst.max(d);
+            mean += d / n as f32;
+        }
+        eprintln!("row {row} ({} weapon frames) vs KH1 {k} ({}): blade off mean {mean:.1} worst {worst:.1} deg", wp.len(), motion.frames);
+    }
+}
+
+#[test]
+fn keyblade_parents() {
+    let Some((mdls, _)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    for f in ["W_EX010.mdlx", "W_EX010_10.mdlx"] {
+        let wsk = kh2_formats::anim::parse_skeleton(&std::fs::read(dir.join(f)).unwrap()).unwrap();
+        eprintln!("{f}: {:?}", wsk.iter().map(|b| b.parent).collect::<Vec<_>>());
+    }
+    eprintln!("KH1 280..292: {:?}", (280..293).map(|i| kh1[i].parent).collect::<Vec<_>>());
+    eprintln!("KH1 left palm 206 children: {:?}", kh1.iter().filter(|b| b.parent == 206).map(|b| b.index).collect::<Vec<_>>());
+    eprintln!("KH1 101 children: {:?}", kh1.iter().filter(|b| b.parent == 101).map(|b| b.index).collect::<Vec<_>>());
+}
+
+/// With KH1's model the Keyblade plays KH1's own hold: its blade (bone 2) in the palm as KH1's
+/// 282, every frame of every KH1 slot, and the set no longer than KH2's.
+#[test]
+fn keyblade_on_kh1_hold() {
+    let Some((mdls, _)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let Ok(w) = std::fs::read(dir.join("W_EX010.mset")) else { return };
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let wsk = kh2_formats::anim::parse_skeleton(&std::fs::read(dir.join("W_EX010.mdlx")).unwrap()).unwrap();
+    kh1_assets::select_kh1_slots(true, true, true);
+    let out = kh1_assets::swing_triggers::build_keyblade(&w, &mset1, Some((&kh1, &wsk))).unwrap();
+    eprintln!("W_EX010.mset {} -> {} bytes", w.len(), out.len());
+    let bar = kh2_formats::bar::Bar::parse(&out).unwrap();
+    for (row, k) in kh1_assets::kh1_slots() {
+        let Some(e) = bar.entries.get(row).filter(|e| !e.data.is_empty()) else { eprintln!("row {row}: no Keyblade motion"); continue };
+        let inner = kh2_formats::bar::Bar::parse(e.data).unwrap();
+        let m = inner.entries.iter().find(|x| x.kind == kh2_formats::motion::BAR_TYPE_MOTION).unwrap();
+        let (wp, _) = kh1_assets::convert::kh2_round_trip(m.data, &wsk).unwrap();
+        let motion = mset1[k].as_ref().unwrap();
+        let mut worst = (0.0f32, 0.0f32);
+        for f in 0..wp.len().min(motion.frames as usize) {
+            let p = kh1_data::rig::pose(motion, &kh1, f as f32).bones;
+            let want = p[101].inverse() * p[282];
+            let (_, qa, ta) = want.to_scale_rotation_translation();
+            let (_, qb, tb) = wp[f][2].to_scale_rotation_translation();
+            worst.0 = worst.0.max(qa.angle_between(qb).to_degrees());
+            worst.1 = worst.1.max((ta - tb).length());
+        }
+        eprintln!("row {row} <- KH1 {k}: {} frames (KH1 {}), blade off at most {:.2} deg {:.2} units", wp.len(), motion.frames, worst.0, worst.1);
+        assert!(worst.0 < 2.0 && worst.1 < 0.5, "row {row}: the blade is off KH1's");
+    }
+    assert!(out.len() <= w.len());
+}
+
+#[test]
+fn keyblade_hold_sizes() {
+    let Some((mdls, _)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let Ok(w) = std::fs::read(dir.join("W_EX010.mset")) else { return };
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let wsk = kh2_formats::anim::parse_skeleton(&std::fs::read(dir.join("W_EX010.mdlx")).unwrap()).unwrap();
+    kh1_assets::select_kh1_slots(true, true, true);
+    let bar = kh2_formats::bar::Bar::parse(&w).unwrap();
+    let (mut a, mut b) = (0, 0);
+    for (row, k) in kh1_assets::kh1_slots() {
+        let Some(e) = bar.entries.get(row).filter(|e| !e.data.is_empty()) else { continue };
+        let inner = kh2_formats::bar::Bar::parse(e.data).unwrap();
+        let m = inner.entries.iter().find(|x| x.kind == kh2_formats::motion::BAR_TYPE_MOTION).unwrap();
+        let out = kh1_assets::swing_triggers::keyblade_motion(m.data, mset1[k].as_ref().unwrap(), &kh1, &wsk).unwrap();
+        let t = kh2_formats::anim::Interpolated::parse(&out).unwrap().unwrap();
+        let mut per = vec![0usize; wsk.len()];
+        for c in t.forward.iter() { per[c.joint as usize] += c.keys.len(); }
+        eprintln!("row {row} <- KH1 {k} ({} f): {} -> {} bytes; keys per bone {:?}", mset1[k].as_ref().unwrap().frames, m.data.len(), out.len(), per);
+        a += m.data.len(); b += out.len();
+    }
+    eprintln!("total {a} -> {b}");
+}
+
+#[test]
+fn keyblade_template_channels() {
+    let Some(_) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let w = std::fs::read(dir.join("W_EX010.mset")).unwrap();
+    let bar = kh2_formats::bar::Bar::parse(&w).unwrap();
+    for row in [0usize, 604, 736] {
+        let inner = kh2_formats::bar::Bar::parse(bar.entries[row].data).unwrap();
+        let m = inner.entries.iter().find(|x| x.kind == kh2_formats::motion::BAR_TYPE_MOTION).unwrap();
+        let t = kh2_formats::anim::Interpolated::parse(m.data).unwrap().unwrap();
+        eprintln!("row {row}: bones {} joints {} ik {} initial {:?}\n  curves {:?}", t.bone_count, t.total_joints, t.ik_helpers.len(), t.initial_pose.iter().map(|x| (x.0, x.1)).collect::<Vec<_>>(), t.forward.iter().map(|c| (c.joint, c.channel, c.keys.len())).collect::<Vec<_>>());
+    }
+    for f in ["W_EX010.mdlx", "W_EX010_10.mdlx"] {
+        let wsk = kh2_formats::anim::parse_skeleton(&std::fs::read(dir.join(f)).unwrap()).unwrap();
+        eprintln!("{f}: {:?}", wsk.iter().map(|b| (b.translation.map(|x| (x * 10.0).round() / 10.0), b.rotation.map(|x| (x * 100.0).round() / 100.0))).collect::<Vec<_>>());
     }
 }

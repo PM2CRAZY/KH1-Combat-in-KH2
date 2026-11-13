@@ -21,7 +21,7 @@
 
 use super::hook;
 use super::log;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 const LOADER: usize = 0x3F_4C30;
 const ATKP: usize = 0x2AE_57B0;
@@ -97,14 +97,26 @@ unsafe fn patch() {
     log!("combos kh1: KH1's swing powers on ATKP (id, KH2's, KH1's): {changed:?}");
 }
 
+static COMBOS: AtomicBool = AtomicBool::new(false);
+static MODEL: AtomicBool = AtomicBool::new(false);
+
 unsafe extern "system" fn loader() {
     let o: unsafe extern "system" fn() = std::mem::transmute(O_LOADER.load(Ordering::Acquire));
     o();
-    patch();
-    patch_ptya();
+    if COMBOS.load(Ordering::Relaxed) {
+        patch();
+        patch_ptya();
+    }
+    if MODEL.load(Ordering::Relaxed) {
+        super::weapon_hold::patch(BASE.load(Ordering::Relaxed));
+    }
 }
 
-pub unsafe fn install(base: usize) {
+/// Hooks KH2's table loader for what patches its tables: `combos = kh1` (above) and `model = kh1`
+/// (`weapon_hold`).
+pub unsafe fn install(base: usize, combos: bool, model: bool) {
     BASE.store(base, Ordering::Relaxed);
+    COMBOS.store(combos, Ordering::Relaxed);
+    MODEL.store(model, Ordering::Relaxed);
     hook::install(base + LOADER, &[0x48, 0x89, 0x5C, 0x24, 0x08], loader as *const () as usize, &O_LOADER, "table loader 0x1403F4C30");
 }

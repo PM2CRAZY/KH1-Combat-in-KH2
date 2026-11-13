@@ -34,7 +34,7 @@ pub const BONE_MAP: [(i16, i16); 23] = [
     (170, 92),
     (79, 199), // forearm (elbow)
     (171, 94),
-    (85, WEAPON_BONE), // hand: the Keyblade's (KH2 holds it there)
+    (85, 202), // hand
     (177, 97),
     (11, 42), // thigh
     (40, 16),
@@ -49,52 +49,16 @@ pub const BONE_MAP: [(i16, i16); 23] = [
     (-1, -1),
 ];
 
-/// A bone of ours after KH1's 293: the Keyblade's, on KH1's grip bone (280) turned to KH2's
-/// hand (85) as the two binds hold them, so KH2's Keyblade motions (made for its hand) sit in
-/// KH1's grip. KH2 hangs the Keyblade from the skeleton data's hand bone (Assumption: it followed
-/// the hand map 85 → 202 in t27, when KH2's motions moved KH1's hand like KH2's; KH1's own motions
-/// hold the hand otherwise and the Keyblade left it, the owner, t44).
-pub const WEAPON_BONE: i16 = 293;
+/// KH1's right and left palms: KH2 hangs a weapon on the bones of its objentry's `sklt` row (KH2
+/// Sora's row 1: 178 / 86, his palms, Checked (files)). With KH1's model, P_EX100 gets a row of
+/// ours with these (`kh2-hook` `weapon_hold`), so the Keyblade hangs on KH1's palm, where KH1's
+/// own grip bone (280, the Keyblade's root) hangs (Checked (files): 280's parent is 101; 206 the
+/// left palm, the parent of the left fingers).
+pub const PALMS: [i16; 2] = [101, 206];
 
-/// KH1's skeleton with our weapon bone.
-pub fn model_bones(kh1: &[Bone], kh2: &[Bone]) -> Vec<Bone> {
-    let mut b = kh1.to_vec();
-    let grip = kh1_data::retarget::GRIP_BONE;
-    let local = weapon_local(kh1, kh2);
-    let (_, q, _) = local.to_scale_rotation_translation();
-    let (z, y, x) = q.to_euler(glam::EulerRot::ZYX);
-    // In the grip's sibling chain, last.
-    let me = b.len() as i16;
-    if b[grip].child < 0 {
-        b[grip].child = me;
-    } else {
-        let mut c = b[grip].child as usize;
-        while b[c].sibling >= 0 {
-            c = b[c].sibling as usize;
-        }
-        b[c].sibling = me;
-    }
-    b.push(Bone { index: me, sibling: -1, parent: grip as i16, child: -1, flags: 0, scale: [1.0; 3], length: 0.0, rotation: [x, y, z], translation: [0.0; 3] });
-    b
-}
-
-/// The weapon bone's local turn: KH1's grip's bind turn undone, KH2's hand's done.
-pub fn weapon_local(kh1: &[Bone], kh2: &[Bone]) -> glam::Mat4 {
-    let g = kh2_anim::Pose::bind(kh1).bones[kh1_data::retarget::GRIP_BONE];
-    let h = kh2_anim::Pose::bind(kh2).bones[85];
-    let (_, qg, _) = g.to_scale_rotation_translation();
-    let (_, qh, _) = h.to_scale_rotation_translation();
-    glam::Mat4::from_quat((qg.inverse() * qh).normalize())
-}
-
-/// A KH1 pose with the weapon bone placed.
-pub fn with_weapon(mut pose: Vec<glam::Mat4>, local: &glam::Mat4) -> Vec<glam::Mat4> {
-    let grip = pose[kh1_data::retarget::GRIP_BONE];
-    let (s, q, t) = grip.to_scale_rotation_translation();
-    let unscaled = glam::Mat4::from_scale_rotation_translation(glam::Vec3::ONE, q, t);
-    let _ = s;
-    pose.push(unscaled * *local);
-    pose
+/// KH1's skeleton as the model's.
+pub fn model_bones(kh1: &[Bone], _kh2: &[Bone]) -> Vec<Bone> {
+    kh1.to_vec()
 }
 
 pub fn kh1_bone(kh2: i16) -> Option<i16> {
@@ -209,10 +173,9 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
     use kh2_formats::motion::{BAR_TYPE_ANB, BAR_TYPE_MOTION};
     let mut swings = Vec::new();
     let mb = model_bones(kh1, kh2);
-    let wl = weapon_local(kh1, kh2);
     // Every motion's first Euler forms from KH1's battle idle (motion 1, frame 0).
     if let Some(idle) = kh1_motions.get(1).and_then(|m| m.as_ref()) {
-        crate::convert::set_own_seed(&mb, &with_weapon(kh1_data::rig::pose(idle, kh1, 0.0).bones, &wl));
+        crate::convert::set_own_seed(&mb, &kh1_data::rig::pose(idle, kh1, 0.0).bones);
     }
     let out = map_bar(kh2_mset, |row, kind, data| {
         if kind != BAR_TYPE_ANB || data.is_empty() {
@@ -237,7 +200,7 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
                 for f in 0..frames {
                     let p = kh1_data::rig::pose(&motion, kh1, f as f32);
                     let t = p.helpers.last().map(|x| x.w_axis.truncate()).unwrap_or(glam::Vec3::ZERO);
-                    poses.push(with_weapon(p.bones, &wl));
+                    poses.push(p.bones);
                     travel.push(t);
                 }
                 swings.push((k, row / 4, frames));
@@ -255,7 +218,7 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
                 .map(|(p, t)| {
                     let (off, on) = (glam::Mat4::from_translation(-*t), glam::Mat4::from_translation(*t));
                     let body: Vec<_> = p.iter().map(|m| off * *m).collect();
-                    with_weapon(r.pose(&body), &wl).into_iter().map(|m| on * m).collect::<Vec<_>>()
+                    r.pose(&body).into_iter().map(|m| on * m).collect::<Vec<_>>()
                 })
                 .collect();
             crate::convert::write_motion_keep_turn(m, &mb, &kh1_poses, &travel)

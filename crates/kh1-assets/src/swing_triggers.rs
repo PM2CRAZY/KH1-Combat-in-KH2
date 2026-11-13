@@ -118,16 +118,26 @@ pub fn anb_frames(anb: &[u8]) -> f32 {
     kh2_formats::motion::Anb::parse(anb).ok().and_then(|a| a.pose.map(|p| p.frame_count as f32)).unwrap_or(0.0)
 }
 
-/// KH2's `W_EX010.mset` with the swing slots' Keyblade triggers timed to KH1 (`keyblade`); the
-/// Keyblade's motions themselves stay KH2's. Never longer than KH2's own file (the room KH2 keeps
-/// for it: the t27–t33 crash).
-pub fn build_keyblade(w_ex010: &[u8], kh1_motions: &[Option<Motion>]) -> kh2_formats::Result<Vec<u8>> {
-    use kh2_formats::motion::{BAR_TYPE_ANB, BAR_TYPE_MOTION_TRIGGERS};
+/// The Keyblade's motion set for KH1's slots: in each row Sora plays a KH1 motion in, the
+/// Keyblade's hit windows and trail at KH1's times (`keyblade`). With `hold` (KH1's model: KH1's
+/// skeleton, the Keyblade's), also its motion: KH1's own Keyblade bones in its palm. KH2's
+/// Keyblade skeleton is KH1's grip chain bone for bone (its bone k is KH1's 280 + k, the same
+/// parents, Checked (files)), and KH2 hangs it on KH1's palm (`player_model::PALMS`), 280's parent,
+/// so the Keyblade's bones are KH1's 280.. in the palm's space at each frame of KH1's motion, and
+/// the blade (bone 2, KH1's 282) goes where KH1 holds it, swing by swing. Refuses a set longer
+/// than KH2's (the area heap; t34).
+pub fn build_keyblade(w_ex010: &[u8], kh1_motions: &[Option<Motion>], hold: Option<(&[kh2_formats::anim::Bone], &[kh2_formats::anim::Bone])>) -> kh2_formats::Result<Vec<u8>> {
+    use kh2_formats::motion::{BAR_TYPE_ANB, BAR_TYPE_MOTION, BAR_TYPE_MOTION_TRIGGERS};
     let out = crate::convert::map_bar(w_ex010, |row, kind, data| {
         let Some(k) = crate::kh1_motion_at(row).filter(|_| kind == BAR_TYPE_ANB && !data.is_empty()) else { return Ok(data.to_vec()) };
         let Some(m) = kh1_motions.get(k).and_then(|m| m.as_ref()) else { return Ok(data.to_vec()) };
         let len = anb_frames(data);
         crate::convert::map_bar(data, |_, kind, t| {
+            if kind == BAR_TYPE_MOTION && !t.is_empty() {
+                if let Some((kh1, blade)) = hold {
+                    return keyblade_motion(t, m, kh1, blade);
+                }
+            }
             if kind != BAR_TYPE_MOTION_TRIGGERS || t.is_empty() {
                 return Ok(t.to_vec());
             }
@@ -139,3 +149,33 @@ pub fn build_keyblade(w_ex010: &[u8], kh1_motions: &[Option<Motion>]) -> kh2_for
     }
     Ok(out)
 }
+
+/// KH1's grip bone (the Keyblade's root, the first of KH1's Keyblade bones).
+const KH1_GRIP: usize = 280;
+
+/// The Keyblade's motion for KH1 motion `m`: KH1's Keyblade bones (280 + k for its bone k) in
+/// their palm's space, a frame at a time, on the Keyblade's own motion `template`.
+pub fn keyblade_motion(template: &[u8], m: &Motion, kh1: &[kh2_formats::anim::Bone], blade: &[kh2_formats::anim::Bone]) -> kh2_formats::Result<Vec<u8>> {
+    let palm = kh1.get(KH1_GRIP).map(|b| b.parent).filter(|&p| p >= 0).ok_or_else(|| kh2_formats::Error::Format("KH1's grip bone has no parent".into()))? as usize;
+    if KH1_GRIP + blade.len() > kh1.len() {
+        return Err(kh2_formats::Error::Format("KH1's skeleton is shorter than the Keyblade's".into()));
+    }
+    let frames = m.frames.max(1) as usize;
+    let poses: Vec<Vec<glam::Mat4>> = (0..frames)
+        .map(|f| {
+            let p = kh1_data::rig::pose(m, kh1, f as f32).bones;
+            let inv = p[palm].inverse();
+            (0..blade.len()).map(|k| inv * p[KH1_GRIP + k]).collect()
+        })
+        .collect();
+    // The blade (bones 0..2, its mesh on bone 2 out to 78 units, Checked (files)) turned within
+    // what moves its tip `REACH_TOL`; the keychain's links (3 to 21 units) within 0.7 degrees, so
+    // the set stays within KH2's size (the keychain's sway is most of the keys).
+    let tol: Vec<f32> = (0..blade.len()).map(|k| crate::convert::reach_tolerance(if k <= 2 { BLADE_REACH } else { KEYCHAIN_REACH })).collect();
+    crate::convert::write_motion_tol(template, blade, &poses, &vec![glam::Vec3::ZERO; frames], &tol)
+}
+
+/// The Kingdom Key's blade from its grip (bone 2's mesh, Checked (files): out to 77.9) and the
+/// longest keychain link (21.1, the first).
+const BLADE_REACH: f32 = 80.0;
+const KEYCHAIN_REACH: f32 = 6.0;

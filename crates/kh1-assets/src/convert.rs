@@ -49,7 +49,7 @@ fn rotation_tolerances(bones: &[Bone]) -> Vec<f32> {
             p = bones[p as usize].parent;
         }
     }
-    reach.iter().map(|&r| if r > 1e-3 { (REACH_TOL / r).clamp(ROT_TOL / 2.0, ROT_TOL_MAX) } else { ROT_TOL_MAX }).collect()
+    reach.iter().map(|&r| reach_tolerance(r)).collect()
 }
 const BASE: usize = 0x90;
 
@@ -353,7 +353,19 @@ fn own_seed(bones: &[Bone]) -> Vec<Option<[f32; 3]>> {
 
 /// A KH2 motion (BAR type 9 data) for `poses` / `travel`, on `template` (a KH2 Sora motion).
 pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &[Vec3]) -> Result<Vec<u8>> {
-    write_motion_ex(template, kh2, poses, travel, false)
+    write_motion_ex(template, kh2, poses, travel, false, None)
+}
+
+/// As `write_motion`, with each bone's rotation tolerance given (radians), and the channels at
+/// the skeleton's bind left out, as KH2's own motions leave them (its Keyblade's keychain
+/// lengths, each Keyblade's own, Checked (files)).
+pub fn write_motion_tol(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &[Vec3], rot_tol: &[f32]) -> Result<Vec<u8>> {
+    write_motion_ex(template, kh2, poses, travel, false, Some(rot_tol))
+}
+
+/// The rotation tolerance that moves a point `reach` away by `REACH_TOL`, within KH2's bounds.
+pub fn reach_tolerance(reach: f32) -> f32 {
+    if reach > 1e-3 { (REACH_TOL / reach).clamp(ROT_TOL / 2.0, ROT_TOL_MAX) } else { ROT_TOL_MAX }
 }
 
 /// As `write_motion`, for a pose taken from `template` itself (a KH2 motion moved onto another
@@ -361,10 +373,10 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
 /// frame at a time. KH2's guard (173) turns Sora a whole turn that way (its root y goes 0 → −2π
 /// → 0, Checked (files)); our evaluator leaves it out of the poses.
 pub fn write_motion_keep_turn(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &[Vec3]) -> Result<Vec<u8>> {
-    write_motion_ex(template, kh2, poses, travel, true)
+    write_motion_ex(template, kh2, poses, travel, true, None)
 }
 
-fn write_motion_ex(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &[Vec3], keep_turn: bool) -> Result<Vec<u8>> {
+fn write_motion_ex(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &[Vec3], keep_turn: bool, given_tol: Option<&[f32]>) -> Result<Vec<u8>> {
     let h = BASE + 0x10;
     if i32_at(template, BASE)? != 0 {
         return Err(Error::Format("template is not an interpolated motion".into()));
@@ -386,7 +398,11 @@ fn write_motion_ex(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &
     // For a new skeleton, each bone's rotation tolerance is what moves the farthest joint it
     // carries by `REACH_TOL` (a finger may turn more than the hips for the same error on screen),
     // within `ROT_TOL / 2` and `ROT_TOL_MAX`.
-    let rot_tol: Vec<f32> = if own { rotation_tolerances(kh2) } else { vec![ROT_TOL; kh2.len()] };
+    let rot_tol: Vec<f32> = match given_tol {
+        Some(t) if t.len() == kh2.len() => t.to_vec(),
+        _ if own => rotation_tolerances(kh2),
+        _ => vec![ROT_TOL; kh2.len()],
+    };
     let mut initial: Vec<(i16, i16, f32)> = Vec::new();
     let mut forward: Vec<Curve> = Vec::new();
     for (b, chans) in loc.iter().enumerate() {
@@ -399,7 +415,7 @@ fn write_motion_ex(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &
                 // A channel left out plays the bone's bind value, as in KH2's own motions (A300
                 // sets 196 of its 2,052). For a new skeleton, those at their bind are left out.
                 let bind = kh2[b].scale.iter().chain(&kh2[b].rotation).chain(&kh2[b].translation).nth(c).copied().unwrap_or(0.0);
-                if !(own && (v[0] - bind).abs() <= 1e-5) {
+                if !((own || given_tol.is_some()) && (v[0] - bind).abs() <= 1e-5) {
                     initial.push((b as i16, c as i16, v[0]));
                 }
                 continue;
