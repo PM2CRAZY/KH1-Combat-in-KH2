@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 29 (testing branch: KH1 model: a smaller motion set)
+Owner: "entering the camp menu crashes the game again" (t27). Suspect: the converted motion set was 9.8 MB against KH2's own 2.6 MB, and the camp menu crashed before on Sora's motion file (t14). Assumption until the t28 crash report says where it faults.
+
+- `convert::write_motion`: Hermite keys fitted to the curve (`fit_hermite`: the samples' slope as each key's tangent, a key added where the curve misses a frame worst) in place of straight lines; a key's in and out tangent stored once; equal values and tangents shared.
+- For a new skeleton (KH1 Sora), channels at the bone's bind value are left out of the starting pose, as KH2's own motions do (A300 sets 196 of 2,052; the rest play the bind). Rotation tolerance 0.002 to 0.004 rad.
+- 79 motions: 9.8 MB to 3.9 MB. Read back, every joint within 0.91 units of the pose written. Checked (files).
+
 ### 2026-11-13: Stage 28 (testing branch: Crash report in the log)
 Owner: "entering the camp menu crashes the game again" (t27, model = kh1). No address to go on, so the log now names crashes.
 

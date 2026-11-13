@@ -9,7 +9,7 @@
 //!    (`kh1_data::inverse`), which places KH2's joints at KH2's own bind offsets.
 //! 4. Written as a KH2 interpolated motion on a template motion of KH2's own (its reserved block,
 //!    its IK helper table, joint table, bounding box and root block kept): an initial pose with
-//!    every bone's first-frame values, linear keys where a channel moves (reduced within a small
+//!    every bone's first-frame values, Hermite keys where a channel moves (fitted within a small
 //!    tolerance), the travel on helper 52, no constraints or expressions (the pose is baked).
 //!    Layout: `kh2_formats::anim` (OpenKH's docs), Checked (files) against KH2 Sora's motions.
 //!
@@ -26,7 +26,7 @@ use kh2_formats::{Error, Result};
 
 /// KH2 Sora's travel helper: his joint 52 past the 228 bones (Checked (files), A300).
 const TRAVEL_JOINT: i16 = 52;
-const ROT_TOL: f32 = 0.002;
+const ROT_TOL: f32 = 0.004;
 const POS_TOL: f32 = 0.05;
 const BASE: usize = 0x90;
 
@@ -209,38 +209,6 @@ fn locals(kh2: &[Bone], poses: &[Vec<Mat4>], seed: &[Option<[f32; 3]>]) -> Vec<V
     out
 }
 
-/// The kept frames of a channel: first, last, and those a line between kept neighbours misses by
-/// more than `tol` (Douglas–Peucker).
-fn reduce(v: &[f32], tol: f32) -> Vec<usize> {
-    fn rec(v: &[f32], a: usize, b: usize, tol: f32, keep: &mut Vec<usize>) {
-        if b <= a + 1 {
-            return;
-        }
-        let (mut worst, mut at) = (0.0f32, a);
-        for i in a + 1..b {
-            let line = v[a] + (v[b] - v[a]) * (i - a) as f32 / (b - a) as f32;
-            let e = (v[i] - line).abs();
-            if e > worst {
-                worst = e;
-                at = i;
-            }
-        }
-        if worst > tol {
-            rec(v, a, at, tol, keep);
-            keep.push(at);
-            rec(v, at, b, tol, keep);
-        }
-    }
-    let mut keep = vec![0];
-    if v.len() > 1 {
-        rec(v, 0, v.len() - 1, tol, &mut keep);
-        keep.push(v.len() - 1);
-    }
-    keep.sort_unstable();
-    keep.dedup();
-    keep
-}
-
 fn i32_at(b: &[u8], at: usize) -> Result<i32> {
     b.get(at..at + 4).map(|s| i32::from_le_bytes(s.try_into().unwrap())).ok_or_else(|| Error::Format(format!("motion: read past the end at {at:#x}")))
 }
@@ -268,7 +236,56 @@ fn template_angles(template: &[u8], kh2: &[Bone]) -> Vec<Option<[f32; 3]>> {
 struct Curve {
     joint: i16,
     channel: u8,
-    keys: Vec<(usize, f32)>,
+    /// (frame, value, tangent: value per frame, in and out alike).
+    keys: Vec<(usize, f32, f32)>,
+}
+
+/// Hermite keys for `v` (a value a frame) that stay within `tol` of every frame: KH2's own key
+/// kind, its curve between two keys `(2n³-3n²+1)a + (-2n³+3n²)b + (n³-2n²+n)·a_out·dt +
+/// (n³-n²)·b_in·dt` (`kh2_formats::anim::FCurve`). Each key's tangent is the samples' slope there
+/// (central difference). Starting from the two ends, the frame missed worst gets a key until
+/// none is off by more than `tol`. A smooth swing needs a few keys where straight lines between
+/// keys needed one every frame or two (the t27 motion set was 3.7 times KH2's size).
+fn fit_hermite(v: &[f32], tol: f32) -> Vec<(usize, f32, f32)> {
+    let n = v.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let slope = |i: usize| -> f32 {
+        match (i, n) {
+            (_, 1) => 0.0,
+            (0, _) => v[1] - v[0],
+            (i, n) if i == n - 1 => v[i] - v[i - 1],
+            (i, _) => (v[i + 1] - v[i - 1]) / 2.0,
+        }
+    };
+    let at = |a: usize, b: usize, t: usize| -> f32 {
+        let dt = (b - a) as f32;
+        let x = (t - a) as f32 / dt;
+        let (x2, x3) = (x * x, x * x * x);
+        (2.0 * x3 - 3.0 * x2 + 1.0) * v[a] + (-2.0 * x3 + 3.0 * x2) * v[b] + (x3 - 2.0 * x2 + x) * slope(a) * dt + (x3 - x2) * slope(b) * dt
+    };
+    let mut keys = vec![0];
+    if n > 1 {
+        keys.push(n - 1);
+    }
+    let mut seg = 0;
+    while seg + 1 < keys.len() {
+        let (a, b) = (keys[seg], keys[seg + 1]);
+        let mut worst = (0.0f32, 0);
+        for t in a + 1..b {
+            let e = (at(a, b, t) - v[t]).abs();
+            if e > worst.0 {
+                worst = (e, t);
+            }
+        }
+        if worst.0 > tol {
+            keys.insert(seg + 1, worst.1);
+        } else {
+            seg += 1;
+        }
+    }
+    keys.into_iter().map(|i| (i, v[i], slope(i))).collect()
 }
 
 /// A KH2 motion (BAR type 9 data) for `poses` / `travel`, on `template` (a KH2 Sora motion).
@@ -300,10 +317,15 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
             // A channel has either a starting value or a curve, never both (as in all of KH2's
             // own motions: KH2 holds a channel that has a starting value at it).
             if c < 3 || v.iter().all(|x| (x - v[0]).abs() <= tol) {
-                initial.push((b as i16, c as i16, v[0]));
+                // A channel left out plays the bone's bind value, as in KH2's own motions (A300
+                // sets 196 of its 2,052). For a new skeleton, those at their bind are left out.
+                let bind = kh2[b].scale.iter().chain(&kh2[b].rotation).chain(&kh2[b].translation).nth(c).copied().unwrap_or(0.0);
+                if !(own && (v[0] - bind).abs() <= 1e-5) {
+                    initial.push((b as i16, c as i16, v[0]));
+                }
                 continue;
             }
-            let keys = reduce(&v, tol).into_iter().map(|i| (i, v[i])).collect();
+            let keys = fit_hermite(&v, tol);
             forward.push(Curve { joint: b as i16, channel: c as u8, keys });
         }
     }
@@ -315,7 +337,7 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
             continue;
         }
         travel_ids[axis] = (forward.len() + inverse.len()) as i32;
-        let keys = reduce(&v, POS_TOL).into_iter().map(|i| (i, v[i])).collect();
+        let keys = fit_hermite(&v, POS_TOL);
         inverse.push(Curve { joint: TRAVEL_JOINT, channel: ch, keys });
     }
 
@@ -324,35 +346,33 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
     let mut values: Vec<f32> = Vec::new();
     let mut tangents: Vec<f32> = Vec::new();
     let mut keys: Vec<[u8; 8]> = Vec::new();
-    // Hermite keys (KH2's own kind, the only one its motions use) whose tangents are the slopes
-    // of the lines on either side, so the curve is exactly those lines. KH2's tangents are
-    // value per key-time unit (checked: A300's equal its keys' slopes).
-    let fcurve_bytes = |list: &[Curve], keys: &mut Vec<[u8; 8]>, values: &mut Vec<f32>, tangents: &mut Vec<f32>| -> Result<Vec<u8>> {
+    // Hermite keys (KH2's own kind, the only one its motions use). KH2's tangents are value per
+    // key-time unit (checked: A300's equal its keys' slopes). A key's in and out tangent are one
+    // entry; equal values and tangents are stored once (the tables are indexed by 16 bits).
+    let mut value_at: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+    let mut tangent_at: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+    let mut fcurve_bytes = |list: &[Curve], keys: &mut Vec<[u8; 8]>, values: &mut Vec<f32>, tangents: &mut Vec<f32>| -> Result<Vec<u8>> {
         let mut out = Vec::new();
         for c in list {
             if c.keys.len() > 255 {
                 return Err(Error::Format("a channel has more than 255 keys".into()));
             }
             let start = keys.len();
-            let slope = |i: usize| -> f32 {
-                let (a, b) = (c.keys[i], c.keys[i + 1]);
-                (b.1 - a.1) / (b.0 as f32 - a.0 as f32).max(1.0)
-            };
-            let n = c.keys.len();
-            for (i, &(t, v)) in c.keys.iter().enumerate() {
-                let tin = if i > 0 { slope(i - 1) } else if n > 1 { slope(0) } else { 0.0 };
-                let tout = if i + 1 < n { slope(i) } else { tin };
-                let vi = values.len();
-                values.push(v);
-                let li = tangents.len();
-                tangents.push(tin);
-                tangents.push(tout);
+            for &(t, v, tan) in &c.keys {
+                let vi = *value_at.entry(v.to_bits()).or_insert_with(|| {
+                    values.push(v);
+                    values.len() - 1
+                });
+                let li = *tangent_at.entry(tan.to_bits()).or_insert_with(|| {
+                    tangents.push(tan);
+                    tangents.len() - 1
+                });
                 let mut k = [0u8; 8];
                 let tt = ((t as u16) << 2) | 2;
                 k[0..2].copy_from_slice(&tt.to_le_bytes());
                 k[2..4].copy_from_slice(&(vi as i16).to_le_bytes());
                 k[4..6].copy_from_slice(&(li as i16).to_le_bytes());
-                k[6..8].copy_from_slice(&((li + 1) as i16).to_le_bytes());
+                k[6..8].copy_from_slice(&(li as i16).to_le_bytes());
                 keys.push(k);
             }
             out.extend_from_slice(&c.joint.to_le_bytes());
@@ -554,9 +574,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reduce_keeps_corners_and_drops_lines() {
-        let v = [0.0, 1.0, 2.0, 3.0, 2.0, 1.0, 1.0, 1.0];
-        assert_eq!(reduce(&v, 0.01), vec![0, 3, 5, 7]);
+    fn hermite_keys_stay_within_tolerance() {
+        let v: Vec<f32> = (0..90).map(|f| (f as f32 * 0.11).sin() * 2.0 + if f > 60 { 0.5 } else { 0.0 }).collect();
+        let k = fit_hermite(&v, 0.002);
+        assert!(k.len() < 45, "{} keys", k.len());
+        for f in 0..v.len() {
+            let i = k.partition_point(|x| x.0 <= f) - 1;
+            let got = if k[i].0 == f { k[i].1 } else {
+                let (a, b) = (k[i], k[i + 1]);
+                let dt = (b.0 - a.0) as f32;
+                let n = (f - a.0) as f32 / dt;
+                (2.0 * n * n * n - 3.0 * n * n + 1.0) * a.1 + (-2.0 * n * n * n + 3.0 * n * n) * b.1 + (n * n * n - 2.0 * n * n + n) * a.2 * dt + (n * n * n - n * n) * b.2 * dt
+            };
+            assert!((got - v[f]).abs() <= 0.002 + 1e-6, "frame {f}");
+        }
     }
 
     #[test]

@@ -183,3 +183,34 @@ fn kh2_bone_places() {
         eprintln!("KH2 bone {b} parent {} at {:?}", kh2[b].parent, p[b]);
     }
 }
+
+#[test]
+fn converted_size_by_channel() {
+    let Some((mdls, mdlx)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset2 = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
+    let (out, _) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1).unwrap();
+    let bar = kh2_formats::bar::Bar::parse(&out).unwrap();
+    let mut keys = [0usize; 9];
+    let mut curves = [0usize; 9];
+    let mut by_bone = std::collections::BTreeMap::<i16, usize>::new();
+    let mut seen = std::collections::HashSet::new();
+    for e in &bar.entries {
+        if e.kind != 17 || e.data.is_empty() || !seen.insert(e.data.as_ptr() as usize) { continue; }
+        let anb = kh2_formats::bar::Bar::parse(e.data).unwrap();
+        let m = anb.entries.iter().find(|x| x.kind == 9).unwrap();
+        let Ok(Some(i)) = kh2_formats::anim::Interpolated::parse(m.data) else { continue };
+        for c in &i.forward {
+            keys[c.channel as usize] += c.keys.len();
+            curves[c.channel as usize] += 1;
+            *by_bone.entry(c.joint).or_default() += c.keys.len();
+        }
+    }
+    eprintln!("keys by channel {keys:?}\ncurves by channel {curves:?}");
+    let mut v: Vec<_> = by_bone.into_iter().collect();
+    v.sort_by_key(|x| std::cmp::Reverse(x.1));
+    eprintln!("top bones {:?}", &v[..30]);
+}
