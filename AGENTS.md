@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 53 (testing branch: Phase 3: KH1's flinch motions on KH2's flinches)
+The owner: "lets finish phase 3". Fourth system: the hit reaction motions (defence = kh1).
+
+- `kh1_assets::REACTIONS`: KH1 slots 61..64 (ground flinch front / other part / behind / other part, 70 frames, "may be left" 46) and 67 / 68 (air flinch, 30) into KH2's reaction rows 42 / 46 / 50 / 54 / 58 / 62 (motions 10..15, `0x1403D2FE0`; the sister notes §5/§9, Checked (decomp) there; rows Checked (files)); KH2's triggers moved with them (free state 50 → 46).
+- `swing_triggers::keyblade_motion`: keychain tolerance 0.03 rad a link (t49 had shipped 0.02, its notes said 0.012), so `W_EX010.mset` with these rows stays under KH2's (268,400 of 270,224).
+- KH2 still picks the reaction, the push, the launches and the no-damage time: questions to the owner. Not checked in game. Docs: `docs/defence.md` (t53), `docs/kh1-player-model.md`.
+
 ### 2026-11-13: Stage 52 (testing branch: Phase 3: KH1's Square rule (guard standing or walking, roll running))
 The owner: "lets finish phase 3". Third system: when Square guards (defence = kh1).
 

@@ -169,8 +169,8 @@ Now, with `model = kh1`:
   k plays `palm⁻¹ × KH1 bone (280 + k)` at each of KH1's frames. Checked (files, test
   `keyblade_on_kh1_hold`): the blade (bone 2, KH1's 282) within 0.11 degrees of KH1's in every KH1
   slot. KH1 holds the blade still in the palm (bones 0..2 have no keys in any slot); what moves is
-  the keychain, kept within 0.7 degrees a link so the set stays smaller than KH2's (266,720 of
-  270,224 bytes). Channels at the Keyblade's bind are left out, as KH2's own motions do, so each
+  the keychain, kept within 1.7 degrees a link (t53; t49 shipped 1.15, not the 0.7 this note
+  said) so the set stays smaller than KH2's (268,400 of 270,224 bytes with t53's reactions). Channels at the Keyblade's bind are left out, as KH2's own motions do, so each
   Keyblade keeps its own keychain lengths.
 - KH2's motions on KH1's model (everything not KH1's) keep KH2's Keyblade motions, now on KH1's palm
   (KH2 held them on its own palm; the two palms' binds face within 3 degrees, the sister project's

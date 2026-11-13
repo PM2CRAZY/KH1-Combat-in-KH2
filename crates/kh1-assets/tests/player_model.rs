@@ -728,3 +728,22 @@ fn roll_triggers() {
     eprintln!("roll: ranges {:?} frames {:?}", out.ranges.iter().map(|r| (r.start, r.end, r.id)).collect::<Vec<_>>(), out.frames.iter().map(|f| (f.frame, f.id)).collect::<Vec<_>>());
     assert!(out.ranges.iter().any(|r| r.id == 2 && r.start == 30));
 }
+
+#[test]
+fn kh1_reaction_slots() {
+    let Some(_) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    for k in 61..72 {
+        let Some(m) = mset1.get(k).and_then(|m| m.as_ref()) else { eprintln!("KH1 {k}: none"); continue };
+        eprintln!("KH1 {k}: {} frames, events {:?}", m.frames, m.events.iter().filter(|e| e.kind == 0 || e.kind == 5).map(|e| (e.kind, e.keys.iter().map(|k| k.0).collect::<Vec<_>>())).collect::<Vec<_>>());
+    }
+    let p = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let b = kh2_formats::bar::Bar::parse(&p).unwrap();
+    for row in [42usize, 46, 50, 54, 58, 62, 66, 70, 74, 78] {
+        let e = &b.entries[row];
+        if e.data.is_empty() { continue; }
+        let t = kh2_formats::motion::Anb::parse(e.data).unwrap().triggers;
+        eprintln!("KH2 row {row} {}: len {} ranges {:?} frames {:?}", e.name, kh1_assets::swing_triggers::anb_frames(e.data), t.ranges.iter().map(|r| (r.start, r.end, r.id)).collect::<Vec<_>>(), t.frames.iter().map(|f| (f.frame, f.id)).collect::<Vec<_>>());
+    }
+}

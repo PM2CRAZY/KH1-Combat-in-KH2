@@ -56,6 +56,25 @@ project's `docs/kh1-roll-guard-native.md` (KH1 Steam addresses, re-checked here 
 - Still open: the guard's arc (KH1 ±100° around his facing, attack data `+0x64`); KH2's guard is
   the Keyblade's guard window (ATKP 161), whose reach is its collision shape, not an angle.
 
+## t53: KH1's flinch motions on KH2's flinches
+
+- KH2's reaction routine `0x1403D2FE0` plays motion 10 / 12 for a ground flinch from the front /
+  behind, 11 / 13 for the other hit part, 14 / 15 in the air (the sister project's
+  `kh1-hit-reactions-native.md` §5 / §9, Checked (decomp) there). Their motions are rows 42, 46,
+  50, 54, 58, 62 (id × 4 + 2, `A200`..`A205`; the other variants DUMMs; Checked (files)): 70 frames,
+  free state (range 2) from 50, Reaction Commands from 8; the air ones 36 frames.
+- KH1's flinch requests `0x48` front, `0x49`, `0x4A` behind, `0x4B`, air `0x4E` / `0x4F` are slots
+  61..64, 67, 68 (§9 there; here, Checked (files): 70 frames, "may be left" at 46; the air ones 30
+  frames). KH1 calls a hit "from the front" by the same test as KH2 (`dot(facing, push) < 0`).
+- `kh1_assets::REACTIONS` (`defence = kh1`): those six KH1 motions in those rows, either skeleton.
+  KH2's triggers move with them (free state 50 → KH1's 46, `free_anchor`).
+- Stay KH2's: which reaction a hit gives (KH2's ATKP reaction byte), the push, the launches (16 / 18
+  and their landings 17 / 19; KH1 knocks Sora down in place instead, slots 65 / 66), KH2's
+  no-damage time after a hit. Open questions to the owner (below).
+- The Keyblade's rows hold KH1's grip in these too (t49); its keychain tolerance went to 1.7
+  degrees a link to keep `W_EX010.mset` within KH2's size (268,400 of 270,224).
+- Not checked in game.
+
 ## Next
 
 1. Done in t51 (above).

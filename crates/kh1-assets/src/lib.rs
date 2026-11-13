@@ -204,6 +204,18 @@ pub const GUARD: [(usize, usize); 1] = [(173, 110)];
 /// 2 at 36, onto KH1's 30). Rows, not ids.
 pub const ROLL: [(usize, usize); 1] = [(838, 117)];
 
+/// KH1's hit reactions in KH2's (`defence = kh1`), rows ← KH1 motions. KH2's reaction routine
+/// `0x1403D2FE0` plays motion 10 / 12 for a ground flinch from the front / behind (11 / 13 the
+/// other hit part) and 14 / 15 in the air (the sister project's `kh1-hit-reactions-native.md` §5
+/// and §9, Checked (decomp) there); their motions are rows 42 / 46 / 50 / 54 / 58 / 62 (id × 4 + 2,
+/// the rest DUMMs, Checked (files)). KH1's flinch requests `0x48` front, `0x49` the other part,
+/// `0x4A` behind, `0x4B`, its air flinch `0x4E` / `0x4F` are slots 61..64, 67, 68 (§9, Checked
+/// (files) there; here: 70 frames each, "may be left" at 46; the air ones 30 frames). KH1 picks the
+/// front one by the same test as KH2 (`dot(facing, push) < 0`). KH2's free state (range 2 at 50)
+/// moves onto KH1's 46 (`swing_triggers::free_anchor`). KH2's launches (16 / 18, landing 17 / 19)
+/// stay KH2's: KH1 knocks Sora down in place there (slots 65 / 66), a different reaction.
+pub const REACTIONS: [(usize, usize); 6] = [(42, 61), (46, 62), (50, 63), (54, 64), (58, 67), (62, 68)];
+
 /// KH1's own idle, walk, run, jump, fall and landing in KH2's (`movement = kh1`). Motion set rows
 /// (KH2 id × 4 + variant), KH1 motion.
 ///
@@ -248,6 +260,7 @@ pub fn select_kh1_slots(swings: bool, guard: bool, moves: bool) {
     if guard {
         v.extend(GUARD.iter().map(|&(id, k)| (id * 4, k)));
         v.extend_from_slice(&ROLL);
+        v.extend_from_slice(&REACTIONS);
     }
     if moves {
         v.extend_from_slice(&MOVES);

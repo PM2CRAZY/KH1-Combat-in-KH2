@@ -190,13 +190,13 @@ pub fn keyblade_motion(template: &[u8], m: &Motion, kh1: &[kh2_formats::anim::Bo
         })
         .collect();
     // The blade (bones 0..2, its mesh on bone 2 out to 78 units, Checked (files)) turned within
-    // what moves its tip `REACH_TOL`; the keychain's links (3 to 21 units) within 0.7 degrees, so
+    // what moves its tip `REACH_TOL`; the keychain's links (3 to 21 units) within 1.7 degrees, so
     // the set stays within KH2's size (the keychain's sway is most of the keys).
     let tol: Vec<f32> = (0..blade.len()).map(|k| crate::convert::reach_tolerance(if k <= 2 { BLADE_REACH } else { KEYCHAIN_REACH })).collect();
     crate::convert::write_motion_tol(template, blade, &poses, &vec![glam::Vec3::ZERO; frames], &tol)
 }
 
-/// The Kingdom Key's blade from its grip (bone 2's mesh, Checked (files): out to 77.9) and the
-/// longest keychain link (21.1, the first).
+/// The Kingdom Key's blade from its grip (bone 2's mesh, Checked (files): out to 77.9), and the
+/// keychain's reach for its tolerance (0.03 radians, the most `convert::reach_tolerance` gives).
 const BLADE_REACH: f32 = 80.0;
-const KEYCHAIN_REACH: f32 = 6.0;
+const KEYCHAIN_REACH: f32 = 4.0;
