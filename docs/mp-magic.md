@@ -138,3 +138,18 @@ Now (base Sora, `mp = kh1`) it depends on where the gain comes from:
 Not done in step 3: KH2's MP Haste / Hastera / Hastega (abilities 0x19D / 0x1A5 / 0x1A6, KH2's
 charge speed `+0x20C`) have nothing to speed up without the MP Charge; KH1's MP Haste is +150 % gauge
 per hit (`0x1402BF330`, `btltbl` `+0x95`). Question to the owner. Not checked in game.
+
+## t67: KH2's MP Haste, Hastera and Hastega as KH1's MP Haste, stacked
+
+The owner (2026-11-13, answer): KH2's three "stack" as KH1's MP Haste.
+
+- KH1 (Checked (decomp) `0x1402BF330`): a hit's units = the attack's `+0x2C` × (1 + level
+  difference × 20 % + 150 % with MP Haste), at least 1, at most 250 % of `+0x2C`.
+- KH2 (Checked (decomp) `0x140401730`, `0x1404016B0`; Checked (files) `03system.bin` `sstm`): MP
+  Haste (0x19D), Hastera (0x1A5) and Hastega (0x1A6) add 0.25 / 0.5 / 0.75 (sstm `+0x120` / `+0x124`
+  / `+0x128`) to the charge rate, status `+0x20C` (1.0 bare). So they are 1 / 2 / 3 steps of 0.25.
+- `kh1mp::hit_units(base, steps)` (tested): each step another 150 %; KH1's 250 % cap rises 150 % a
+  step past the first, or a second step would add nothing (KH1's own cap stops at one MP Haste).
+  With one step it is KH1's exactly (3 → 7, finishers 6 → 15). The cap's rise is our reading of
+  "stack" (Assumption on the owner's meaning).
+- KH2's MP Rage per copy (sstm `+0x150`) is 75 (Checked (files)), so t66's copies count is exact.

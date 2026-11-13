@@ -1,3 +1,8 @@
+### 2026-11-13: Stage 67 (testing branch: Phase 4: KH2's MP Haste family as KH1's MP Haste, stacked)
+- **MP Haste, Hastera, Hastega as KH1's MP Haste, stacked.** The owner (answer): "They stack".
+  - KH1 `0x1402BF330`: hit units × (1 + 150 % with MP Haste), at least 1, at most 250 %. KH2: the three add 0.25 / 0.5 / 0.75 to status `+0x20C` (`0x140401730`, sstm `+0x120..+0x128`), read as 1 / 2 / 3 steps. Checked (decomp + files).
+  - `kh1mp::hit_units` (tested): 150 % a step, the cap 150 % higher a step past the first (Assumption on "stack"). One step is KH1's exactly. Not checked in game.
+
 ### 2026-11-13: Stage 66 (testing branch: Phase 4: KH1's orbs, MP Rage and KH2's MP gains)
 - **KH1's orbs, MP Rage and KH2's gains on KH1's MP.** The owner (2026-11-13): "finish phase 4". Step 3.
   - `win/mp.rs`: a gain's source picks its meaning: our hit hook KH1's units; KH2's prize pick-up `0x1403DCA50` (hooked; table `0x1405C7420` rows 5 / 6) KH1's orbs 2 / 15 units (KH1 `0x1402AC080`); KH2's damage-taken handlers `0x1403D5600` / `0x1403D5E50` (hooked) hold back KH2's MP Rage and give KH1's (HP lost × copies, KH1 `0x14029BBD0`; copies = status `+0x22C` / the rate per copy `*(0x142AE5760) + 0x150`); other gains (items, scripts) are KH2 MP at 10 a bar (`kh1mp::Mp::add_kh2`, tested). Checked (decomp + exe) for both games' numbers and fields.

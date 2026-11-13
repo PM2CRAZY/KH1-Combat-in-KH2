@@ -137,6 +137,18 @@ pub const KH1_SPELL_COSTS: [(i16, u8); 4] = [(0, 30), (1, 30), (2, 100), (3, 100
 pub const KH1_HIT_UNITS: i32 = 3;
 pub const KH1_FINISHER_UNITS: i32 = 6;
 
+/// KH1's MP from a hit (`0x1402BF330`): the attack's units × (1 + level difference × 20 %
+/// (`btltbl` `+0x94`), + 150 % with MP Haste (`+0x95`)), at least 1, at most 250 % (`+0x96`).
+/// Checked (decomp). KH2's enemies have no KH1 level: difference 0 (Assumption). `haste` is how
+/// many steps of KH2's MP Haste (1), Hastera (2) and Hastega (3) are equipped: they stack (the
+/// owner, 2026-11-13), each step another 150 % and KH1's cap 150 % higher.
+pub fn hit_units(base: i32, haste: i32) -> i32 {
+    let haste = haste.max(0);
+    let f = 1.0 + 1.5 * haste as f32;
+    let cap = base * (250 + 150 * (haste - 1).max(0)) / 100;
+    ((base as f32 * f) as i32).max(1).min(cap.max(1))
+}
+
 /// KH1's MP orbs (`0x1402AC080`, prize kinds 5 / 6 → the gauge add `0x1402A4AE0`): small 2 units,
 /// large 15. Checked (decomp).
 pub const KH1_ORB_SMALL: i32 = 2;
@@ -178,6 +190,18 @@ mod tests {
         assert!(m.can_pay(100) && !Mp { bars: 0, units: 29 }.can_pay(30));
         assert_eq!(m.pay(COST_ALL), Some(Mp { bars: 0, units: 0 }));
         assert_eq!(Mp { bars: 0, units: 20 }.pay(COST_ALL), None);
+    }
+
+    #[test]
+    fn haste_steps() {
+        assert_eq!(hit_units(3, 0), 3);
+        assert_eq!(hit_units(6, 0), 6);
+        // KH1's own MP Haste: 3 × 2.5 = 7 (its cap 7), finisher 15.
+        assert_eq!(hit_units(3, 1), 7);
+        assert_eq!(hit_units(6, 1), 15);
+        // Stacked: 3 × 4 = 12 under the cap of 400 %.
+        assert_eq!(hit_units(3, 2), 12);
+        assert_eq!(hit_units(3, 6), 30);
     }
 
     #[test]

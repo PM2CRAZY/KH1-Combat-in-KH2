@@ -75,6 +75,17 @@ unsafe extern "system" fn prize(a: usize, obj: usize, p: usize) {
     FROM.store(FROM_KH2, Ordering::Relaxed);
 }
 
+/// KH2's MP Haste / Hastera / Hastega as steps: they add the system numbers' `+0x120` / `+0x124`
+/// / `+0x128` (0.25 / 0.5 / 0.75, Checked (files) `03system.bin` `sstm`) to the charge rate
+/// `+0x20C` (the ability block at `+0x1D0`, `+0x3C`, 1.0 at its start: `0x1404016B0`,
+/// `0x140401730` abilities 0x19D / 0x1A5 / 0x1A6; Checked (decomp)), so 1 / 2 / 3 steps of 0.25.
+unsafe fn haste_steps(status: usize) -> i32 {
+    let sys = *((BASE.load(Ordering::Relaxed) + SYS) as *const usize);
+    let per = if sys == 0 { 0.0 } else { *((sys + 0x120) as *const f32) };
+    let rate = *((status + 0x20C) as *const f32);
+    if per <= 0.0 || rate <= 1.0 { 0 } else { ((rate - 1.0) / per).round() as i32 }
+}
+
 /// MP Rage's copies: the rate KH2 gave his status (`+0x22C`, the ability block at `+0x1D0`, `+0x5C`)
 /// over its rate per copy.
 unsafe fn rage_copies(status: usize) -> i32 {
@@ -155,17 +166,20 @@ unsafe extern "system" fn hit_record(attack: usize, atkp: usize, target: usize, 
         return rec;
     }
     let id = *((atkp + 2) as *const u16);
-    let units = if *((atkp + 5) as *const u8) == 1 {
+    let base_units = if *((atkp + 5) as *const u8) == 1 {
         0
     } else if FINISHERS.contains(&id) {
         kh1mp::KH1_FINISHER_UNITS
     } else {
         kh1mp::KH1_HIT_UNITS
     };
+    let status = *((owner + 0x5C0) as *const usize);
+    let haste = if status == 0 { 0 } else { haste_steps(status) };
+    let units = if base_units == 0 { 0 } else { kh1mp::hit_units(base_units, haste) };
     if units > 0 {
         add_units(owner, units);
         if !HIT_LOGGED.swap(true, Ordering::Relaxed) {
-            log!("mp kh1: KH1's MP from Sora's hits (first: ATKP {id}, {units} units)");
+            log!("mp kh1: KH1's MP from Sora's hits (first: ATKP {id}, {units} units, MP Haste steps {haste})");
         }
     }
     rec
