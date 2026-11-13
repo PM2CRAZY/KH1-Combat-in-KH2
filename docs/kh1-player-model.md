@@ -88,3 +88,23 @@ Sora): Sora's motions kept outside `P_EX100.mset` — the Reaction Commands' cap
 enemy and object motion sets (nested type 20 slots, tag `0010`), Limits and summons, world
 variants. And cutscenes (step 5). Open: where KH2 attaches the Keyblade (not the objentry
 `WeaponJoint` byte: Sora's is 1, Donald's 2, every Keyblade's 25, so it is an id, not a bone).
+
+## t34: the motion set fits KH2's room
+
+The Keyblade-switch crash (t27–t33) is the motion set's size: with KH2's model (`model = kh2`,
+motion set about KH2's own 2.6 MB) it does not crash; with KH1's (3.4 MB in t33) it does, and at
+9.8 MB (t27) the camp menu crashed. Checked (owner, t33 runs). Assumption: KH2 keeps Sora's files
+in an area heap sized by the area's script (`0x1403A2170` sets `0x142A0F7B0` = 0x280000 by
+default, Checked (decomp)), and a bigger file overruns into other objects' data (the overwritten
+collision list `0x140407DE0` read).
+
+So the converted set is now smaller than KH2's own: 2.39 MB (KH2's 2.61 MB; the KH1 model is
+260 KB against KH2's 437 KB):
+- Two IK helpers a motion (a root and the travel helper) instead of the template's 11–53 (KH2's
+  IK targets, unused without IK). This also fixes the travel curves pointing at helper 52 in
+  motions whose template has only 11 helpers.
+- Rotation tolerance per bone: what moves the farthest joint it carries by 0.12 units (0.002 to
+  0.03 rad).
+- Hermite keys: after fitting, keys their neighbours can do without are removed; tangents rounded
+  to 1/1024 a frame (the fit checks with the rounded ones), so most share one stored value.
+- Read back, every joint within 0.67 units of the pose written (`kh2_motions_on_kh1_skeleton`).

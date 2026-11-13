@@ -198,19 +198,23 @@ fn converted_size_by_channel() {
     let mut keys = [0usize; 9];
     let mut curves = [0usize; 9];
     let mut by_bone = std::collections::BTreeMap::<i16, usize>::new();
+    let (mut init, mut helpers, mut total) = (0, 0, 0);
     let mut seen = std::collections::HashSet::new();
     for e in &bar.entries {
         if e.kind != 17 || e.data.is_empty() || !seen.insert(e.data.as_ptr() as usize) { continue; }
         let anb = kh2_formats::bar::Bar::parse(e.data).unwrap();
         let m = anb.entries.iter().find(|x| x.kind == 9).unwrap();
         let Ok(Some(i)) = kh2_formats::anim::Interpolated::parse(m.data) else { continue };
+        init += i.initial_pose.len();
+        helpers += i.ik_helpers.len();
+        total += m.data.len();
         for c in &i.forward {
             keys[c.channel as usize] += c.keys.len();
             curves[c.channel as usize] += 1;
             *by_bone.entry(c.joint).or_default() += c.keys.len();
         }
     }
-    eprintln!("keys by channel {keys:?}\ncurves by channel {curves:?}");
+    eprintln!("keys by channel {keys:?}\ncurves by channel {curves:?}\ninitial {init} helpers {helpers} motion bytes {total} file {}", out.len());
     let mut v: Vec<_> = by_bone.into_iter().collect();
     v.sort_by_key(|x| std::cmp::Reverse(x.1));
     eprintln!("top bones {:?}", &v[..30]);
@@ -238,4 +242,33 @@ fn swing_triggers() {
             eprintln!("blade {id} {}: ranges {:?}", e.name, anb.triggers.ranges.iter().map(|r| (r.start, r.end, r.id, r.params.clone())).collect::<Vec<_>>());
         }
     }
+}
+
+#[test]
+fn keys_on_unweighted_bones() {
+    let Some((mdls, mdlx)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let (meshes, _) = kh1_data::mdls::parse_mesh(&mdls).unwrap();
+    let mut used = vec![false; kh1.len()];
+    for m in &meshes { for v in &m.vertices { used[v.joint as usize] = true; } }
+    for (_, b) in player_model::BONE_MAP { if b >= 0 { used[b as usize] = true; } }
+    // ancestors
+    for i in (0..kh1.len()).rev() { if used[i] { let mut p = kh1[i].parent; while p >= 0 { used[p as usize] = true; p = kh1[p as usize].parent; } } }
+    eprintln!("bones used {} of {}; unused {:?}", used.iter().filter(|x| **x).count(), kh1.len(), (0..kh1.len()).filter(|&i| !used[i]).collect::<Vec<_>>());
+    let mset2 = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
+    let (out, _) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true).unwrap();
+    let bar = kh2_formats::bar::Bar::parse(&out).unwrap();
+    let (mut on_used, mut on_unused) = (0, 0);
+    let mut seen = std::collections::HashSet::new();
+    for e in &bar.entries {
+        if e.kind != 17 || e.data.is_empty() || !seen.insert(e.data.as_ptr() as usize) { continue; }
+        let anb = kh2_formats::bar::Bar::parse(e.data).unwrap();
+        let Some(m) = anb.entries.iter().find(|x| x.kind == 9) else { continue };
+        let Ok(Some(i)) = kh2_formats::anim::Interpolated::parse(m.data) else { continue };
+        for c in &i.forward { if used.get(c.joint as usize).copied().unwrap_or(true) { on_used += c.keys.len() } else { on_unused += c.keys.len() } }
+    }
+    eprintln!("keys on used bones {on_used}, unused {on_unused}");
 }

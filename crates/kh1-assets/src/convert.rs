@@ -26,8 +26,31 @@ use kh2_formats::{Error, Result};
 
 /// KH2 Sora's travel helper: his joint 52 past the 228 bones (Checked (files), A300).
 const TRAVEL_JOINT: i16 = 52;
+/// The travel helper of a motion for a new skeleton (`write_motion`): its second helper.
+const OWN_TRAVEL_JOINT: i16 = 1;
 const ROT_TOL: f32 = 0.004;
 const POS_TOL: f32 = 0.05;
+/// How far (model units) a rotation's rounding may move the farthest joint a bone carries.
+const REACH_TOL: f32 = 0.12;
+const ROT_TOL_MAX: f32 = 0.03;
+/// The grid key tangents are rounded to (value per frame).
+const TANGENT_STEP: f32 = 1.0 / 1024.0;
+
+/// Per bone: `REACH_TOL` over the farthest bind distance from the bone to a joint below it.
+fn rotation_tolerances(bones: &[Bone]) -> Vec<f32> {
+    let bind = kh2_anim::Pose::bind(bones).bones;
+    let at: Vec<Vec3> = bind.iter().map(|m| m.w_axis.truncate()).collect();
+    let mut reach = vec![0.0f32; bones.len()];
+    for i in 0..bones.len() {
+        let mut p = bones[i].parent;
+        while p >= 0 && (p as usize) < i {
+            let d = (at[i] - at[p as usize]).length();
+            reach[p as usize] = reach[p as usize].max(d);
+            p = bones[p as usize].parent;
+        }
+    }
+    reach.iter().map(|&r| if r > 1e-3 { (REACH_TOL / r).clamp(ROT_TOL / 2.0, ROT_TOL_MAX) } else { ROT_TOL_MAX }).collect()
+}
 const BASE: usize = 0x90;
 
 /// KH1's torso lean (degrees, hips to neck from up) and what it becomes on KH2's body: KH1's
@@ -251,13 +274,16 @@ fn fit_hermite(v: &[f32], tol: f32) -> Vec<(usize, f32, f32)> {
     if n == 0 {
         return Vec::new();
     }
+    // Tangents on a grid of `TANGENT_STEP`: most are near 0 and then share one stored value
+    // (the curve is checked against the samples with the rounded tangents, so `tol` holds).
     let slope = |i: usize| -> f32 {
-        match (i, n) {
+        let s = match (i, n) {
             (_, 1) => 0.0,
             (0, _) => v[1] - v[0],
             (i, n) if i == n - 1 => v[i] - v[i - 1],
             (i, _) => (v[i + 1] - v[i - 1]) / 2.0,
-        }
+        };
+        (s / TANGENT_STEP).round() * TANGENT_STEP
     };
     let at = |a: usize, b: usize, t: usize| -> f32 {
         let dt = (b - a) as f32;
@@ -285,6 +311,17 @@ fn fit_hermite(v: &[f32], tol: f32) -> Vec<(usize, f32, f32)> {
             seg += 1;
         }
     }
+    // Then drop every key its neighbours can do without (the insertion keeps some a later one
+    // made needless).
+    let fits = |a: usize, b: usize| (a + 1..b).all(|t| (at(a, b, t) - v[t]).abs() <= tol);
+    let mut j = 1;
+    while j + 1 < keys.len() {
+        if fits(keys[j - 1], keys[j + 1]) {
+            keys.remove(j);
+        } else {
+            j += 1;
+        }
+    }
     keys.into_iter().map(|i| (i, v[i], slope(i))).collect()
 }
 
@@ -308,12 +345,16 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
     let frames = poses.len();
     let seed = if own { kh2.iter().map(|b| Some(b.rotation)).collect() } else { template_angles(template, kh2) };
     let loc = locals(kh2, poses, &seed);
+    // For a new skeleton, each bone's rotation tolerance is what moves the farthest joint it
+    // carries by `REACH_TOL` (a finger may turn more than the hips for the same error on screen),
+    // within `ROT_TOL / 2` and `ROT_TOL_MAX`.
+    let rot_tol: Vec<f32> = if own { rotation_tolerances(kh2) } else { vec![ROT_TOL; kh2.len()] };
     let mut initial: Vec<(i16, i16, f32)> = Vec::new();
     let mut forward: Vec<Curve> = Vec::new();
     for (b, chans) in loc.iter().enumerate() {
         for c in 0..9 {
             let v: Vec<f32> = chans.iter().map(|x| x[c]).collect();
-            let tol = if c < 3 { 1e-4 } else if c < 6 { ROT_TOL } else { POS_TOL };
+            let tol = if c < 3 { 1e-4 } else if c < 6 { rot_tol[b] } else { POS_TOL };
             // A channel has either a starting value or a curve, never both (as in all of KH2's
             // own motions: KH2 holds a channel that has a starting value at it).
             if c < 3 || v.iter().all(|x| (x - v[0]).abs() <= tol) {
@@ -338,7 +379,7 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
         }
         travel_ids[axis] = (forward.len() + inverse.len()) as i32;
         let keys = fit_hermite(&v, POS_TOL);
-        inverse.push(Curve { joint: TRAVEL_JOINT, channel: ch, keys });
+        inverse.push(Curve { joint: if own { OWN_TRAVEL_JOINT } else { TRAVEL_JOINT }, channel: ch, keys });
     }
 
     // Tables: times (one a frame), values, one zero tangent.
@@ -389,20 +430,25 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
     }
 
     // The template's pieces we keep.
-    let helper_count = total.saturating_sub(bone_count);
+    let helper_count = if own { 2 } else { total.saturating_sub(bone_count) };
     let ik = BASE + hdr(0x08)? as usize;
-    let mut ik_bytes = template.get(ik..ik + helper_count * 0x40).ok_or_else(|| Error::Format("template IK helpers".into()))?.to_vec();
-    if own {
-        // The template's helpers kept (the travel curves set helper TRAVEL_JOINT, which KH2
-        // reads past the bones), renumbered past the new skeleton's bones; a helper hung from a
-        // template bone hangs from the root (nothing reads their places: no IK, no constraints).
-        for (i, h) in ik_bytes.chunks_mut(0x40).enumerate() {
-            let parent = i32::from_le_bytes(h[4..8].try_into().unwrap());
-            let p = if parent >= bone_count as i32 { parent - bone_count as i32 + kh2.len() as i32 } else if parent < 0 { parent } else { 0 };
-            h[0..4].copy_from_slice(&((kh2.len() + i) as i32).to_le_bytes());
-            h[4..8].copy_from_slice(&p.to_le_bytes());
+    let ik_bytes = if own {
+        // Two helpers of our own, past the new skeleton's bones: a root (no parent) and the
+        // travel helper under it, which the travel curves set (`OWN_TRAVEL_JOINT`). KH2's own
+        // helpers (11 to 53 a motion, KH2 Sora's IK targets) aren't read: no IK, no constraints.
+        let mut b = Vec::new();
+        for (i, parent) in [(0i32, -1i32), (1, kh2.len() as i32)] {
+            for x in [kh2.len() as i32 + i, parent, 0, 0] {
+                b.extend_from_slice(&x.to_le_bytes());
+            }
+            for x in [1.0f32, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] {
+                b.extend_from_slice(&x.to_le_bytes());
+            }
         }
-    }
+        b
+    } else {
+        template.get(ik..ik + helper_count * 0x40).ok_or_else(|| Error::Format("template IK helpers".into()))?.to_vec()
+    };
     let jt = BASE + hdr(0x0C)? as usize;
     let mut joint_bytes = if own {
         (0..(kh2.len() + helper_count) as i16).flat_map(|i| [i.to_le_bytes(), [0, 0]].concat()).collect()

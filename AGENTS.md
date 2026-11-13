@@ -1,3 +1,11 @@
+### 2026-11-13: Stage 34 (testing branch: KH1 model: motion set under KH2's size)
+Owner: "bro the game is still crashing when switching keyblades lets fix this now", then with `model = kh2` (combos kh1): "no crash". So the motion set's size (3.4 MB with the KH1 model, KH2's 2.6 MB) is the cause. Assumption: an area heap (default `0x142A0F7B0` = 0x280000, Checked (decomp)) that a bigger file overruns.
+
+- `convert::write_motion`, new skeleton: two IK helpers (root, travel) instead of the template's 11-53; travel curves on helper 1. Fixes travel pointing at helper 52 in templates with fewer helpers.
+- Rotation tolerance per bone from the farthest joint it carries (0.12 units).
+- `fit_hermite`: a pass removing keys the neighbours make needless; tangents on a 1/1024 grid, so most share one value (the fit checks with the rounded tangents).
+- KH1 model motion set 3.43 MB to 2.39 MB (KH2's 2.61 MB); every joint within 0.67 units of the written pose. Checked (files).
+
 ### 2026-11-13: Stage 33 (testing branch: KH1 swings in KH2's own swing slots)
 Owner: "game crashed take the log" (t32): the Keyblade-switch crash. It does not happen with `combos = kh2` (owner, t31 build). The object with the overwritten collision list is at the same heap address each run (t31, t32 logs), so the cause is in the files we write for the combo, not the model.
 
