@@ -29,6 +29,32 @@ eye = target + d (cos p sin y, −sin p, cos p cos y); the stick (its §5.3); th
 steps with a 40-radius sphere sweep; R3 recenter (60 steps); the distance springing back 10 % a
 step after a pull-in. The lock-on camera: KH1's mode for a locked target (to read).
 
+### KH1's follow camera on Steam (Checked (decomp), the local KH1 Steam decomp; the sister
+project's `kh1-kh2-camera.md` mode table, Epic / Steam)
+
+The mode table `0x140506CE0` (16 bytes a mode: update, exit). Mode 1, follow, `0x1401E1920`;
+mode 3, lock-on, `0x1401E2650`; the camera task `0x1401E5D90`. Mode 1's globals on Steam: flags
+`0x142537E44` (bit 1 entering, bit 0 from mode 0, bit 2 restored), subject `0x142537E48`, eye
+`0x142537E60`, target `0x142537E70`, pitch `0x142537E80`, yaw `0x142537E84`, distance
+`0x142537E8C`, defaults pitch `0x142538060` / distance `0x14253806C`, target offset
+`0x142538070`, the recenter `0x142537EE0..0x142537EF8`. Its pieces, in order:
+1. entry: pitch, yaw (from the drawn eye / target, `0x14028C720`), distance; FOV 53°
+   (`0x14028CAF0(0x42540000)`); the placement `0x1401E4820 (yaw, eye, target)`;
+2. the target spring (no blend running): goal = subject matrix (`+0xD0`) × offset, or the
+   head-height point if a segment (`0x140193180`) is blocked; × 0.2 sideways, × 0.5 down / × 0.1 up,
+   halved at the high frame rate (step `0x14233FBDC` < 2);
+3. the stick `0x1401E7320`; the recenter (R3) `0x142537EEC` timer, its two kinds;
+4. auto (Auto camera, state ≠ 0x1B): swing behind `0x1401E6FF0`, wall avoid `0x1401E6C10`, pitch
+   assist `0x1401E6670`; eye = target + offset(yaw, pitch, distance) (rotate (0, 0, d) by X(pitch)
+   then Y(yaw)); re-placed when the distance grew past default + 300; else walked in ≤ 20 steps
+   with the 40-radius sweep `0x140196560` (a jump ≥ 1000 teleports); `0x1401E7780` (five segments
+   from his head) re-places when all are blocked; manual: the ray `0x140193790` to 60 past the eye;
+5. an automatic recenter `0x1401E62A0` when he stands close (< 40) at pitch < 60° (state-based
+   speed tests 1 / 7 / 0.1); R3 (`0x14298CA98 & 0x200`) recenter; Select (`& 0x8000`) first person
+   (mode 2, blend 30) unless `0x142867364 & 0x2000`;
+6. exit: distance + (default − distance) × 0.1, yaw from eye / target, the state camera switch
+   `0x1401E5480`.
+
 ## Plan (one system per version)
 
 1. **KH1's follow camera as KH2's mode 0 with `camera = kh1`:** KH2's own follow function runs
