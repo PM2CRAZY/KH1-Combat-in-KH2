@@ -10,6 +10,7 @@ mod crash;
 mod highjump;
 mod hook;
 mod prty;
+mod roll;
 mod sora;
 mod sys;
 mod trace;
@@ -193,6 +194,9 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
             prty::install(base);
             highjump::install(base);
             airsteer::install(base);
+        }
+        if s.style("defence") == crate::settings::Style::Kh1 {
+            roll::install(base);
         }
         let (combos, model) = (s.style("combos") == crate::settings::Style::Kh1, s.style("model") == crate::settings::Style::Kh1);
         if combos || model {

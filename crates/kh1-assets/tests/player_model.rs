@@ -679,3 +679,52 @@ fn dump_kh1_cycles() {
     s += "}}";
     std::fs::write(out, s).unwrap();
 }
+
+#[test]
+fn roll_rows() {
+    let Some(_) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    for f in ["P_EX100.mset", "W_EX010.mset"] {
+        let p = std::fs::read(dir.join(f)).unwrap();
+        let b = kh2_formats::bar::Bar::parse(&p).unwrap();
+        for row in [838usize] {
+            let e = &b.entries[row];
+            if e.data.is_empty() { eprintln!("{f} {row}: DUMM"); continue; }
+            let t = kh2_formats::motion::Anb::parse(e.data).unwrap().triggers;
+            let inner = kh2_formats::bar::Bar::parse(e.data).unwrap();
+            let m = inner.entries.iter().find(|x| x.kind == kh2_formats::motion::BAR_TYPE_MOTION).unwrap();
+            let info = kh2_formats::motion::MotionInfo::parse(m.data).unwrap();
+            eprintln!("{f} {row} {}: frames {}..{} fps {} ret {} len {}; ranges {:?} frames {:?}", e.name, info.frame_start, info.frame_end, info.fps, info.frame_return, kh1_assets::swing_triggers::anb_frames(e.data), t.ranges.iter().map(|r| (r.start, r.end, r.id, r.params.clone())).collect::<Vec<_>>(), t.frames.iter().map(|x| (x.frame, x.id, x.params.clone())).collect::<Vec<_>>());
+            if f == "P_EX100.mset" {
+                let n = info.frame_end as usize;
+                let a = info.root_at(2.0 * info.frame_start);
+                let z = info.root_at(2.0 * info.frame_end);
+                eprintln!("  root travel {:?} -> {:?} ({n})", a, z);
+            }
+        }
+    }
+    let m = mset1[117].as_ref().unwrap();
+    eprintln!("KH1 117: {} frames, events {:?}", m.frames, m.events.iter().map(|e| (e.kind, e.id, e.keys.clone())).collect::<Vec<_>>());
+    let mdls = std::fs::read(dir.join("xa_ex_0010.mdls")).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    for f in [0, 10, 20, 30, 37] {
+        let p = kh1_data::rig::pose(m, &kh1, f as f32);
+        eprintln!("  KH1 117 f{f} travel {:?}", p.helpers.last().map(|x| x.w_axis.truncate()));
+    }
+}
+
+/// KH2's roll triggers on KH1's roll (row 838 <- 117).
+#[test]
+fn roll_triggers() {
+    let Some(_) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let p = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let b = kh2_formats::bar::Bar::parse(&p).unwrap();
+    let a = b.entries[838].data;
+    let t = kh2_formats::motion::Anb::parse(a).unwrap().triggers;
+    let out = kh1_assets::swing_triggers::sora(&t, None, kh1_assets::swing_triggers::anb_frames(a), mset1[117].as_ref().unwrap());
+    eprintln!("roll: ranges {:?} frames {:?}", out.ranges.iter().map(|r| (r.start, r.end, r.id)).collect::<Vec<_>>(), out.frames.iter().map(|f| (f.frame, f.id)).collect::<Vec<_>>());
+    assert!(out.ranges.iter().any(|r| r.id == 2 && r.start == 30));
+}

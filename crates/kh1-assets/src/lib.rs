@@ -195,6 +195,15 @@ pub const SWINGS: [(usize, usize); 9] = [(151, 98), (152, 99), (153, 100), (154,
 /// Checked (files)). The Keyblade's guard window moves to KH1's frames like a swing's hit window.
 pub const GUARD: [(usize, usize); 1] = [(173, 110)];
 
+/// KH1's Dodge Roll in KH2's (`defence = kh1`): KH2's roll is motion 209 (`0x1403A81F0` requests
+/// `0xD1` for growth kind 4, Checked (decomp)), whose motion is row 838 (209 × 4 + 2, `A180`; rows
+/// 836 / 837 / 839 are DUMMs, Checked (files)) ← KH1 motion 117 (request `0xDC`, slot 117, kind 2,
+/// travel by its root: the sister project's `kh1-roll-guard-native.md` §5, Checked (files) there;
+/// here: 38 frames, 350 units forward by frame 30, "may be left" (event kind 0) at 30, Checked
+/// (files)). KH2's own triggers move with it (`swing_triggers::sora`: KH2's blend-to-idle, range
+/// 2 at 36, onto KH1's 30). Rows, not ids.
+pub const ROLL: [(usize, usize); 1] = [(838, 117)];
+
 /// KH1's own idle, walk, run, jump, fall and landing in KH2's (`movement = kh1`). Motion set rows
 /// (KH2 id × 4 + variant), KH1 motion.
 ///
@@ -238,6 +247,7 @@ pub fn select_kh1_slots(swings: bool, guard: bool, moves: bool) {
     }
     if guard {
         v.extend(GUARD.iter().map(|&(id, k)| (id * 4, k)));
+        v.extend_from_slice(&ROLL);
     }
     if moves {
         v.extend_from_slice(&MOVES);

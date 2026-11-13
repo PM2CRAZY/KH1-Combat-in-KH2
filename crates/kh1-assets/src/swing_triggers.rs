@@ -23,8 +23,26 @@ pub fn hit_span(t: &MotionTriggers) -> Option<(i16, i16)> {
     Some((hits.iter().map(|r| r.start).min()?, hits.iter().map(|r| r.end).max()?))
 }
 
+/// KH2's "blend to idle" range (OpenKH's trigger list: id 2, from when the motion may end).
+const BLEND_TO_IDLE: u8 = 2;
+/// KH1's "may be left" event (kind 0: from its time KH1 lets him act; the roll's at 30).
+const KH1_MAY_LEAVE: u16 = 0;
+
+/// For a motion without hit windows (the roll): KH2's blend-to-idle start and KH1's "may be
+/// left" time, the anchor the rest of KH2's triggers move by.
+fn free_anchor(kh2: &MotionTriggers, kh1: &Motion) -> Option<(f32, f32)> {
+    let a = kh2.ranges.iter().filter(|r| r.id == BLEND_TO_IDLE && r.start >= 0).map(|r| r.start).min()?;
+    let b = kh1.events.iter().filter(|e| e.kind == KH1_MAY_LEAVE).flat_map(|e| e.keys.iter().map(|k| k.0)).fold(f32::NAN, f32::min);
+    (!b.is_nan()).then_some((a as f32, b))
+}
+
 /// KH2 swing frame `f` on KH1's swing.
 fn warp(f: i16, kh2_hit: Option<(i16, i16)>, kh2_len: f32, kh1: &Motion) -> i16 {
+    warp_by(f, kh2_hit, None, kh2_len, kh1)
+}
+
+/// `warp`, with a motion's free anchor (`free_anchor`) when it has no hit windows.
+fn warp_by(f: i16, kh2_hit: Option<(i16, i16)>, free: Option<(f32, f32)>, kh2_len: f32, kh1: &Motion) -> i16 {
     if f < 0 {
         return f;
     }
@@ -34,6 +52,8 @@ fn warp(f: i16, kh2_hit: Option<(i16, i16)>, kh2_len: f32, kh1: &Motion) -> i16 
     if let (Some((a, b)), Some(first), Some(last)) = (kh2_hit, kh1_hit.first(), kh1_hit.last()) {
         pts.push((a as f32, first.0));
         pts.push((b as f32, last.1));
+    } else if let Some(p) = free.filter(|p| p.0 > 0.0 && p.0 < kh2_len && p.1 > 0.0 && p.1 < kh1_len) {
+        pts.push(p);
     }
     pts.push((kh2_len.max(1.0), kh1_len));
     pts.dedup_by(|x, y| x.0 <= y.0);
@@ -56,7 +76,8 @@ fn ranges_of(kh1: &Motion, kind: u16, id: u16) -> Vec<(i16, i16)> {
 /// Sora's triggers for KH1 swing `kh1` in a KH2 slot whose own are `kh2` (its motion `kh2_len`
 /// frames long, the Keyblade's hit windows `kh2_hit`).
 pub fn sora(kh2: &MotionTriggers, kh2_hit: Option<(i16, i16)>, kh2_len: f32, kh1: &Motion) -> MotionTriggers {
-    let w = |f: i16| warp(f, kh2_hit, kh2_len, kh1);
+    let free = if kh2_hit.is_none() { free_anchor(kh2, kh1) } else { None };
+    let w = |f: i16| warp_by(f, kh2_hit, free, kh2_len, kh1);
     let mut out = MotionTriggers::default();
     for r in &kh2.ranges {
         if r.id == range_id::ALLOW_COMBO {

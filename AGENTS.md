@@ -1,3 +1,11 @@
+### 2026-11-13: Stage 51 (testing branch: Phase 3: KH1's Dodge Roll in KH2's roll)
+The owner: "lets finish phase 3". Second system: the Dodge Roll (defence = kh1).
+
+- `kh1_assets::ROLL`: KH1 motion 117 (38 frames, 350 forward by 30, "may be left" at 30, Checked (files)) into KH2's roll row 838 (motion 209 = request 0xD1 in `0x1403A81F0`, Checked (decomp); `A180`, rows 836/837/839 DUMMs, Checked (files)), on either skeleton, with its travel.
+- `swing_triggers::sora`: a motion without hit windows moves KH2's triggers by its blend-to-idle (range 2, 36) onto KH1's "may be left" (30) (`free_anchor`): Quick Run check 10 → 8, fall check 34 → 28, RC from 7 (test `roll_triggers`).
+- `win/roll.rs`: KH2 loads the level's `dodge_roll_star_time` (fmab +0x40, 10/16/24/32) at `0x1403A848D` and stores it as `+0xD70` (60 Hz frames, `0x1403D4CC0` / `0x1403D68B0`, Checked (decomp)); the load now calls a stub that gives base Sora KH1's 12 (KH1 `0x1402C9E60`, the sister notes, Checked (decomp) there). Quick Run and the Drive Forms keep KH2's. Bytes checked.
+- Not checked in game. Docs: `docs/defence.md` (t51).
+
 ### 2026-11-13: Stage 50 (testing branch: The field run without the Keyblade is KH2's)
 The owner (t49): "sora still uses his keyblade out run when he doesnt have a keyblade out".
 
