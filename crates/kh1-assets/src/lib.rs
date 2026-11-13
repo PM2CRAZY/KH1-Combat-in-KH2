@@ -176,20 +176,10 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
     let tanb = Bar::parse(tslot.data)?;
     let tmotion = tanb.entries.iter().find(|e| e.kind == kh2_formats::motion::BAR_TYPE_MOTION).ok_or_else(|| Error::Format("template has no motion".into()))?;
     let ttrig = tanb.entries.iter().find(|e| e.kind == kh2_formats::motion::BAR_TYPE_MOTION_TRIGGERS).map(|e| e.data.to_vec()).unwrap_or_default();
-    let mut entries: Vec<(u16, i16, [u8; 4], Vec<u8>)> = bar
-        .entries
-        .iter()
-        .map(|e| {
-            let mut n = [0u8; 4];
-            for (i, c) in e.name.bytes().take(4).enumerate() {
-                n[i] = c;
-            }
-            (e.kind, e.duplicate, n, e.data.to_vec())
-        })
-        .collect();
-    let dummy = |entries: &mut Vec<(u16, i16, [u8; 4], Vec<u8>)>| entries.push((17, 0, *b"DUMM", Vec::new()));
-    while entries.len() < FIRST_KH2_MOTION * 4 {
-        dummy(&mut entries);
+    let mut extra: Vec<(u16, i16, [u8; 4], Option<Vec<u8>>)> = Vec::new();
+    let dumm = (0u16, 1i16, *b"DUMM", None);
+    while bar.entries.len() + extra.len() < FIRST_KH2_MOTION * 4 {
+        extra.push(dumm.clone());
     }
     let mut built = Built::default();
     for &k in &KH1_MOTIONS {
@@ -200,12 +190,12 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
         let anb = convert::write_bar(0, &[(kh2_formats::motion::BAR_TYPE_MOTION, 0, name, data), (kh2_formats::motion::BAR_TYPE_MOTION_TRIGGERS, 0, name, ttrig.clone())]);
         let id = kh2_motion_of(k).unwrap();
         built.motions.push((k, id, poses.len()));
-        entries.push((kh2_formats::motion::BAR_TYPE_ANB, 0, name, anb));
+        extra.push((kh2_formats::motion::BAR_TYPE_ANB, 0, name, Some(anb)));
         for _ in 0..3 {
-            dummy(&mut entries);
+            extra.push(dumm.clone());
         }
     }
-    let out = convert::write_bar(bar.motionset, &entries);
+    let out = convert::extend_bar(&mset2, &extra)?;
     built.bytes = out.len();
     Ok((out, built))
 }

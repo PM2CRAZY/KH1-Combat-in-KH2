@@ -83,7 +83,10 @@ fn locals(kh2: &[Bone], poses: &[Vec<Mat4>]) -> Vec<Vec<[f32; 9]>> {
             };
             let e = euler_near(lq.normalize(), prev[b]);
             prev[b] = Some(e);
-            out[b].push([bone.scale[0], bone.scale[1], bone.scale[2], e[0], e[1], e[2], lt.x, lt.y, lt.z]);
+            // Only the root moves: every other bone keeps KH2's own bind offset from its parent, so
+            // KH2's proportions hold (a KH1 joint position would stretch the mesh).
+            let t = if b == 0 { lt } else { Vec3::from(bone.translation) };
+            out[b].push([bone.scale[0], bone.scale[1], bone.scale[2], e[0], e[1], e[2], t.x, t.y, t.z]);
         }
     }
     out
@@ -211,10 +214,14 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
     let ik = BASE + hdr(0x08)? as usize;
     let ik_bytes = template.get(ik..ik + helper_count * 0x40).ok_or_else(|| Error::Format("template IK helpers".into()))?.to_vec();
     let jt = BASE + hdr(0x0C)? as usize;
-    let joint_bytes = template.get(jt..jt + total * 4).ok_or_else(|| Error::Format("template joints".into()))?.to_vec();
-    let ext_count = joint_bytes.chunks(4).filter(|j| j[2] & 0x80 != 0).count();
-    let ex = BASE + hdr(0x90)? as usize;
-    let ext_bytes = template.get(ex..ex + ext_count * 2).ok_or_else(|| Error::Format("template external effectors".into()))?.to_vec();
+    let mut joint_bytes = template.get(jt..jt + total * 4).ok_or_else(|| Error::Format("template joints".into()))?.to_vec();
+    // No IK chains, constraint flags or external effectors: our motion has no constraints or IK
+    // targets, so every joint is placed by its own curves (KH2 would otherwise pull the limbs to
+    // the template's IK helpers at rest, and read constraints we don't have).
+    for j in joint_bytes.chunks_mut(4) {
+        j[2] = 0;
+    }
+    let ext_bytes: Vec<u8> = Vec::new();
     let ro = hdr(0x1C)?;
     if ro <= 0 {
         return Err(Error::Format("template has no root block".into()));
@@ -282,6 +289,58 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
     set(&mut header, 0x90, o_ext);
     body[h..h + 0xA0].copy_from_slice(&header);
     Ok(body)
+}
+
+/// `original` (a BAR file) with `extra` entries added at the end. The original's data is kept
+/// byte for byte, only moved down by the longer entry table, so entries that share data (KH2 marks
+/// them `duplicate` and relocates the data once) still share it. An extra entry with `None` data
+/// is a `DUMM` slot pointing at `dummy_at` (an original entry's data, as KH2's own `DUMM`s do).
+pub fn extend_bar(original: &[u8], extra: &[(u16, i16, [u8; 4], Option<Vec<u8>>)]) -> Result<Vec<u8>> {
+    let n = i32_at(original, 4)?.max(0) as usize;
+    let table_end = 16 + n * 16;
+    if original.get(0..4) != Some(&b"BAR\x01"[..]) || original.len() < table_end {
+        return Err(Error::Format("not a BAR file".into()));
+    }
+    let shift = extra.len() * 16;
+    let mut out = original[..16].to_vec();
+    out[4..8].copy_from_slice(&((n + extra.len()) as i32).to_le_bytes());
+    let mut dumm_at = None;
+    for i in 0..n {
+        let e = &original[16 + i * 16..32 + i * 16];
+        let mut row = e.to_vec();
+        let off = i32_at(e, 8)? as usize + shift;
+        row[8..12].copy_from_slice(&(off as i32).to_le_bytes());
+        if &e[4..8] == b"DUMM" && dumm_at.is_none() {
+            dumm_at = Some((u16::from_le_bytes([e[0], e[1]]), off));
+        }
+        out.extend_from_slice(&row);
+    }
+    out.resize(table_end + shift, 0);
+    out.extend_from_slice(&original[table_end..]);
+    let (dumm_kind, dumm_off) = dumm_at.ok_or_else(|| Error::Format("the BAR has no DUMM slot to copy".into()))?;
+    for (i, (kind, dup, name, data)) in extra.iter().enumerate() {
+        let e = 16 + (n + i) * 16;
+        let (kind, dup, off, size) = match data {
+            None => (dumm_kind, 1i16, dumm_off, 0usize),
+            Some(d) => {
+                while out.len() % 16 != 0 {
+                    out.push(0);
+                }
+                let at = out.len();
+                out.extend_from_slice(d);
+                (*kind, *dup, at, d.len())
+            }
+        };
+        out[e..e + 2].copy_from_slice(&kind.to_le_bytes());
+        out[e + 2..e + 4].copy_from_slice(&dup.to_le_bytes());
+        out[e + 4..e + 8].copy_from_slice(name);
+        out[e + 8..e + 12].copy_from_slice(&(off as i32).to_le_bytes());
+        out[e + 12..e + 16].copy_from_slice(&(size as i32).to_le_bytes());
+    }
+    while out.len() % 16 != 0 {
+        out.push(0);
+    }
+    Ok(out)
 }
 
 /// A BAR file from entries (`kind`, `duplicate`, name, data).

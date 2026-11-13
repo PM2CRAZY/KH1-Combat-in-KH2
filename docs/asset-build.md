@@ -82,3 +82,28 @@ helpers with them. Not compared with KH1's own pose in game yet.
   entries), again only when the stamp differs; with `combos = kh2` it removes them. Assumptions:
   Panacea serves a loose file in the mod folder in place of the game's; `OnInit` runs before KH2
   loads Sora. Nothing plays motions 210..216 yet: Phase 2 step 2 (KH1's rows in `ptya`).
+
+## t14 fixes (camp-menu crash, stretched swings)
+
+- **KH2's `P_EX100.mset` shares data between entries.** 80 data blocks are pointed at by more
+  than one entry; those entries carry `duplicate = 1`, and every `DUMM` slot is `duplicate = 1`,
+  size 0, pointing at a shared offset. Checked (files: the player's `obj/P_EX100.mset`, 839
+  entries). t12–t13 rewrote the file with a private copy of the data for every entry but kept
+  the `duplicate = 1` marks, so KH2 never prepared those copies and later read an unprepared
+  offset as a pointer: the camp-menu crash (`0x1402FEB20`, `call [rax+0x30]` on an object the
+  motion lookup `0x1403E6230` handed back, read of `0x4EC7`). Checked (crash dump); that KH2
+  skips preparing `duplicate` entries is an Assumption that fits the dump.
+  From t14 the build keeps KH2's file byte for byte (only moved down by the longer entry table)
+  and appends our motions after it; our `DUMM` slots copy KH2's own. The file is now KH2's size
+  plus our seven motions (about 2.98 MB, was 3.39 MB).
+- **Joint-table flags.** A300's joint table marks four two-bone IK chains (joints 31–33, 77–79,
+  126–128, 143–145: flags `0x02/0x03`, `0x20`, `0x04/0x0C`) and `0x40` matrix-to-rotation joints.
+  Those chains reach for IK targets that A300 animates with its inverse curves; our motions carry
+  no such curves or constraints, so the targets stayed at rest and KH2 pulled arms and legs to
+  them. Checked (files). From t14 our motions clear every joint flag, so every bone is placed by
+  its own curve. Bone lengths of the converted poses match KH2's bind lengths within 0.5 (test
+  `kh2_bone_lengths_hold`).
+- Non-root bones keep KH2's own bind offsets (no translation curves); only the root moves.
+- The build runs every launch because OpenKH rebuilds `mod\kh2` each launch, which drops our
+  file (78–123 ms). Assumption. Note: an outfit mod that ships its own `obj/P_EX100.mset` is
+  overwritten by ours, which is built from KH2's original.
