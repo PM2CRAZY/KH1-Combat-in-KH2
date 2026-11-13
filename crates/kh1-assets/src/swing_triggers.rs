@@ -149,7 +149,9 @@ pub fn anb_frames(anb: &[u8]) -> f32 {
 /// than KH2's (the area heap; t34).
 pub fn build_keyblade(w_ex010: &[u8], kh1_motions: &[Option<Motion>], hold: Option<(&[kh2_formats::anim::Bone], &[kh2_formats::anim::Bone])>) -> kh2_formats::Result<Vec<u8>> {
     use kh2_formats::motion::{BAR_TYPE_ANB, BAR_TYPE_MOTION, BAR_TYPE_MOTION_TRIGGERS};
-    let out = crate::convert::map_bar(w_ex010, |row, kind, data| {
+    // The knock-down rows (`crate::KNOCKDOWN`) share their template's Keyblade motion (KH1 holds
+    // the blade still in the palm in both, t49), so the set doesn't grow.
+    let out = crate::convert::map_bar_shared(w_ex010, &crate::fills(), |row, kind, data| {
         let Some(k) = crate::kh1_motion_at(row).filter(|_| kind == BAR_TYPE_ANB && !data.is_empty()) else { return Ok(data.to_vec()) };
         let Some(m) = kh1_motions.get(k).and_then(|m| m.as_ref()) else { return Ok(data.to_vec()) };
         let len = anb_frames(data);

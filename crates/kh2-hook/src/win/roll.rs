@@ -81,7 +81,7 @@ unsafe fn install_square(base: usize) {
     };
     // mov rcx, rdi; sub rsp, 0x28; call [rip+5]; add rsp, 0x28; ret; dq square_guards
     let mut code: Vec<u8> = vec![0x48, 0x89, 0xF9, 0x48, 0x83, 0xEC, 0x28, 0xFF, 0x15, 0x05, 0x00, 0x00, 0x00, 0x48, 0x83, 0xC4, 0x28, 0xC3];
-    code.extend_from_slice(&(square_guards as usize as u64).to_le_bytes());
+    code.extend_from_slice(&(square_guards as *const () as usize as u64).to_le_bytes());
     std::ptr::copy_nonoverlapping(code.as_ptr(), stub as *mut u8, code.len());
     // call stub; test al, al; je 0x1403A83E4 (KH2's "not guarding" path); nop x3
     let mut new = [0x90u8; 12];
@@ -103,7 +103,7 @@ pub unsafe fn install(base: usize) {
     // movss xmm1, [rax+0x40]; mov rcx, rdi; sub rsp, 0x28; call [rip+8];
     // add rsp, 0x28; movaps xmm1, xmm0; ret; dq star_time
     let mut code: Vec<u8> = vec![0xF3, 0x0F, 0x10, 0x48, 0x40, 0x48, 0x89, 0xF9, 0x48, 0x83, 0xEC, 0x28, 0xFF, 0x15, 0x08, 0x00, 0x00, 0x00, 0x48, 0x83, 0xC4, 0x28, 0x0F, 0x28, 0xC8, 0xC3];
-    code.extend_from_slice(&(star_time as usize as u64).to_le_bytes());
+    code.extend_from_slice(&(star_time as *const () as usize as u64).to_le_bytes());
     std::ptr::copy_nonoverlapping(code.as_ptr(), stub as *mut u8, code.len());
     let mut call = [0u8; 5];
     call[0] = 0xE8;

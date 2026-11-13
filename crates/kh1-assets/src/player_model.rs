@@ -177,7 +177,7 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
     if let Some(idle) = kh1_motions.get(1).and_then(|m| m.as_ref()) {
         crate::convert::set_own_seed(&mb, &kh1_data::rig::pose(idle, kh1, 0.0).bones);
     }
-    let out = map_bar(kh2_mset, |row, kind, data| {
+    let out = crate::convert::map_bar_filled(kh2_mset, &crate::fills(), |row, kind, data| {
         if kind != BAR_TYPE_ANB || data.is_empty() {
             return Ok(data.to_vec());
         }

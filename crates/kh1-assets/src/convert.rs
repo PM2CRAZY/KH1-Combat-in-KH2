@@ -740,7 +740,24 @@ mod tests {
 
 /// `original` (a BAR file) with each entry's data passed through `f`, entries that shared data
 /// (the same offset: KH2's `duplicate` slots and `DUMM`s) still sharing the converted data.
-pub fn map_bar(original: &[u8], mut f: impl FnMut(usize, u16, &[u8]) -> Result<Vec<u8>>) -> Result<Vec<u8>> {
+pub fn map_bar(original: &[u8], f: impl FnMut(usize, u16, &[u8]) -> Result<Vec<u8>>) -> Result<Vec<u8>> {
+    map_bar_ex(original, &[], false, f)
+}
+
+/// As `map_bar`, and each empty row of `fills` (row, template row) gets an entry of its own: `f`
+/// run on the template row's data for that row, with the template's kind and name, not a
+/// duplicate (KH2 skips entries marked duplicate, Stage 14).
+pub fn map_bar_filled(original: &[u8], fills: &[(usize, usize)], f: impl FnMut(usize, u16, &[u8]) -> Result<Vec<u8>>) -> Result<Vec<u8>> {
+    map_bar_ex(original, fills, false, f)
+}
+
+/// As `map_bar_filled`, but each filled row shares its template row's (new) data, marked a
+/// duplicate as KH2's own shared entries are (its DUMMs all share one block): no bytes added.
+pub fn map_bar_shared(original: &[u8], fills: &[(usize, usize)], f: impl FnMut(usize, u16, &[u8]) -> Result<Vec<u8>>) -> Result<Vec<u8>> {
+    map_bar_ex(original, fills, true, f)
+}
+
+fn map_bar_ex(original: &[u8], fills: &[(usize, usize)], share: bool, mut f: impl FnMut(usize, u16, &[u8]) -> Result<Vec<u8>>) -> Result<Vec<u8>> {
     let n = i32_at(original, 4)?.max(0) as usize;
     let table_end = 16 + n * 16;
     if original.get(0..4) != Some(&b"BAR\x01"[..]) || original.len() < table_end {
@@ -762,14 +779,48 @@ pub fn map_bar(original: &[u8], mut f: impl FnMut(usize, u16, &[u8]) -> Result<V
         placed.insert(off, (out.len(), new.len()));
         out.extend_from_slice(&new);
     }
+    let mut filled: std::collections::HashMap<usize, (usize, usize, usize)> = std::collections::HashMap::new();
+    for &(row, t) in fills {
+        let (Some(r), Some(tr)) = (rows.get(row), rows.get(t)) else { continue };
+        if i32_at(r, 12)? > 0 {
+            continue;
+        }
+        let (off, size) = (i32_at(tr, 8)? as usize, i32_at(tr, 12)?.max(0) as usize);
+        if size == 0 {
+            continue;
+        }
+        if share {
+            if let Some(&(at, len)) = placed.get(&off) {
+                filled.insert(row, (at, len, t));
+            }
+            continue;
+        }
+        let data = original.get(off..off + size).ok_or_else(|| Error::Format(format!("BAR entry {t} out of bounds")))?;
+        let new = f(row, u16::from_le_bytes([tr[0], tr[1]]), data)?;
+        while out.len() % 16 != 0 {
+            out.push(0);
+        }
+        filled.insert(row, (out.len(), new.len(), t));
+        out.extend_from_slice(&new);
+    }
     let first = placed.values().map(|p| p.0).min().unwrap_or(table_end);
     for (i, r) in rows.iter().enumerate() {
+        let e = 16 + i * 16;
+        if let Some(&(at, len, t)) = filled.get(&i) {
+            let tr = 16 + t * 16;
+            let (kind, name) = (original[tr..tr + 2].to_vec(), original[tr + 4..tr + 8].to_vec());
+            out[e..e + 2].copy_from_slice(&kind);
+            out[e + 2..e + 4].copy_from_slice(&(share as u16).to_le_bytes());
+            out[e + 4..e + 8].copy_from_slice(&name);
+            out[e + 8..e + 12].copy_from_slice(&(at as i32).to_le_bytes());
+            out[e + 12..e + 16].copy_from_slice(&(len as i32).to_le_bytes());
+            continue;
+        }
         let (off, size) = (i32_at(r, 8)? as usize, i32_at(r, 12)?.max(0) as usize);
         let (at, len) = match placed.get(&off) {
             Some(&(at, len)) => (at, if size == 0 { 0 } else { len }),
             None => (first, 0),
         };
-        let e = 16 + i * 16;
         out[e + 8..e + 12].copy_from_slice(&(at as i32).to_le_bytes());
         out[e + 12..e + 16].copy_from_slice(&(len as i32).to_le_bytes());
     }

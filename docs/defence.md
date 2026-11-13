@@ -96,6 +96,33 @@ read by `0x1403CEAB0` / `0x1403CEA00`). Still to find: where the hit's damage is
 share) relative to this call, and a KH2 state to play the in-place knock-down in (KH2's flinch
 state, `0x1403D43B0`, with KH1's motion on a free row, is the candidate).
 
+## t54: KH1's reaction rule, push, knock-down and mercy on Sora
+
+The owner's three choices above, in KH2's own reaction routine (`win/reactions.rs`, base Sora,
+`defence = kh1`):
+- **The hit record** (Checked (decomp): `0x1403CE740` fills it, pool `0x142A24530`, 0x40 bytes):
+  `+0x18` bit 0 no effect, `+0x20` ATKP handle, `+0x26` reaction, `+0x28` the damage
+  (`0x1403C12F0`'s). The target's status at `+0x5C0`: `[0]` HP, `[1]` max HP.
+- **The rule** (KH1 `0x1402BF290`, Checked (decomp)): `(int)(damage / max HP × 100)` under 20 → a
+  flinch; else a knock-back. Only KH2's reaction groups 1..4 (push, flinch, flinch and push,
+  launch) are replaced; groups 5 and up (Magnet and KH2's specials) stay KH2's.
+- **Flinch:** KH2's group 3 (ground flinch and push, or the air flinch), the push KH1's: 750 ×
+  share, at most 150, through a hook on KH2's hit-back `0x1403CEAB0` for that hit only.
+- **Knock-down (ground):** KH2's group 2 (flinch, no push), then KH1's knock-down motion: KH1's
+  slots 65 / 66 (72 frames, in place) built into KH2 Sora's free motion ids 20 / 21 (rows 82 / 86,
+  each its own entry made on the front flinch row 42; Checked (files): ids 20..39 are DUMMs in
+  both sets), requested by KH2's own `0x1403C86A0` / `0x1403C8310` (as `0x1403D43B0` does for
+  10 / 12) on the same front / behind test. The Keyblade's rows 82 / 86 share row 42's motion
+  (marked duplicate, `convert::map_bar_shared`), so `W_EX010.mset` stays 268,400 bytes.
+  Assumption: KH2 treats motions 20 / 21 as damage motions as it does 10..13 (they're in its
+  10..39 range).
+- **Knock-back (air):** KH2's launch (group 4) with KH2's numbers and motions, for now.
+- **Mercy:** `+0xD70` (KH2's no-damage time, 60 Hz frames) at least 30 past when he may act:
+  flinch 46 + 30, air flinch 30 + 30, knock-down 58 + 30. Assumption: KH1's count starts at the
+  "may be left" time.
+- Not ported: KH1's push curve (KH2's 0.1 / × 0.9 kept); KH1's air knock-back (hop 20, 16
+  sideways, slots 69 / 70). Not checked in game.
+
 ## Next
 
 1. Done in t51 (above).

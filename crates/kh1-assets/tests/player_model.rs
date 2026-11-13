@@ -605,7 +605,9 @@ fn keyblade_on_kh1_hold() {
             worst.1 = worst.1.max((ta - tb).length());
         }
         eprintln!("row {row} <- KH1 {k}: {} frames (KH1 {}), blade off at most {:.2} deg {:.2} units", wp.len(), motion.frames, worst.0, worst.1);
-        assert!(worst.0 < 2.0 && worst.1 < 0.5, "row {row}: the blade is off KH1's");
+        // The knock-down rows share the front flinch's Keyblade motion (`map_bar_shared`).
+        let shared = kh1_assets::KNOCKDOWN.iter().any(|k| k.0 == row);
+        assert!(if shared { worst.0 < 3.0 && worst.1 < 3.0 } else { worst.0 < 2.0 && worst.1 < 0.5 }, "row {row}: the blade is off KH1's");
     }
     assert!(out.len() <= w.len());
 }

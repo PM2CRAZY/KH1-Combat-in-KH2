@@ -216,6 +216,23 @@ pub const ROLL: [(usize, usize); 1] = [(838, 117)];
 /// stay KH2's: KH1 knocks Sora down in place there (slots 65 / 66), a different reaction.
 pub const REACTIONS: [(usize, usize); 6] = [(42, 61), (46, 62), (50, 63), (54, 64), (58, 67), (62, 68)];
 
+/// KH1's knock-down in place (the owner, 2026-11-13: big hits knock Sora down where he stands, as
+/// KH1): KH1's ground knock-back requests `0x4C` front / `0x4D` behind are slots 65 / 66 (72
+/// frames, in place, "may be left" at 58; Checked (files)). KH2 has no such reaction, so they get
+/// motions of their own, KH2 Sora's free ids 20 / 21 (every row of both DUMMs in `P_EX100.mset` and
+/// `W_EX010.mset`, Checked (files); inside KH2's damage motions 10..39): rows 82 / 86, each made on
+/// KH2's front flinch (row 42, `A200`) as its template, its triggers moved onto KH1's (free state
+/// 50 → 58). `kh2-hook`'s `reactions` plays them. (row, template row, KH1 motion).
+pub const KNOCKDOWN: [(usize, usize, usize); 2] = [(82, 42, 65), (86, 42, 66)];
+
+/// The motion id KH2 plays for KH1's knock-down from the front / from behind (`KNOCKDOWN`).
+pub const KNOCKDOWN_IDS: [u16; 2] = [20, 21];
+
+/// The empty rows the build fills (row, template row): `KNOCKDOWN`'s, when chosen.
+pub fn fills() -> Vec<(usize, usize)> {
+    KNOCKDOWN.iter().filter(|k| kh1_motion_at(k.0).is_some()).map(|k| (k.0, k.1)).collect()
+}
+
 /// KH1's own idle, walk, run, jump, fall and landing in KH2's (`movement = kh1`). Motion set rows
 /// (KH2 id × 4 + variant), KH1 motion.
 ///
@@ -261,6 +278,7 @@ pub fn select_kh1_slots(swings: bool, guard: bool, moves: bool) {
         v.extend(GUARD.iter().map(|&(id, k)| (id * 4, k)));
         v.extend_from_slice(&ROLL);
         v.extend_from_slice(&REACTIONS);
+        v.extend(KNOCKDOWN.iter().map(|k| (k.0, k.2)));
     }
     if moves {
         v.extend_from_slice(&MOVES);
@@ -303,7 +321,7 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
     let mset2 = kh2.read(KH2_SORA_MSET)?;
     let spans = swing_triggers::keyblade_spans(&kh2.read(KH2_KEYBLADE_MSET)?)?;
     let mut built = Built::default();
-    let out = convert::map_bar(&mset2, |row, kind, data| {
+    let out = convert::map_bar_filled(&mset2, &fills(), |row, kind, data| {
         let Some(k) = kh1_motion_at(row).filter(|_| kind == BAR_TYPE_ANB && !data.is_empty()) else { return Ok(data.to_vec()) };
         let m = motions.get(k).cloned().flatten().ok_or_else(|| Error::NotFound(format!("KH1 motion {k}")))?;
         let len = swing_triggers::anb_frames(data);

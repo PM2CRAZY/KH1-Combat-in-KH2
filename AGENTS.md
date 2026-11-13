@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 54 (testing branch: Phase 3: KH1's reaction rule, push, knock-down and mercy on Sora)
+The owner (2026-11-13, answers): KH1's rule for what reaction a hit gives, KH1's knock-down for big hits, KH1's 30 frames after.
+
+- `win/reactions.rs` (defence = kh1, base Sora): hooks KH2's reaction routine `0x1403D2FE0` (prologue checked). Hit record (Checked (decomp), `0x1403CE740`): +0x26 reaction, +0x28 damage; status +0x5C0 [1] max HP. For KH2 groups 1..4 (`0x1403CE980`): share under 20 % (KH1 `0x1402BF290`) → KH2's flinch and push with KH1's distance (750 × share, at most 150; hook on the hit-back `0x1403CEAB0` for that hit); else on the ground KH2's flinch without push then KH1's knock-down (motion 20 / 21 through `0x1403C86A0` / `0x1403C8310`, front / behind as `0x1403D43B0`); in the air KH2's launch. Then `+0xD70` at least KH1's 30 past the "may be left" (46 / 30 / 58).
+- `kh1_assets::KNOCKDOWN`: KH1 slots 65 / 66 (72 frames, in place) into KH2 Sora's free ids 20 / 21 (rows 82 / 86, DUMMs in both sets, Checked (files)), new entries on the front flinch as template (`convert::map_bar_filled`); the Keyblade's rows share row 42's motion (`map_bar_shared`, duplicate-marked), `W_EX010.mset` 268,400.
+- Assumptions: motions 20 / 21 act as KH2 damage motions; KH1's 30 counts from "may be left". Not ported: KH1's push curve, KH1's air knock-back. Not checked in game. Docs: `docs/defence.md` (t54).
+
 ### 2026-11-13: Stage 53 (testing branch: Phase 3: KH1's flinch motions on KH2's flinches)
 The owner: "lets finish phase 3". Fourth system: the hit reaction motions (defence = kh1).
 
