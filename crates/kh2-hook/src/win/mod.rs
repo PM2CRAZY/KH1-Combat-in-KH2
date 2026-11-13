@@ -4,6 +4,7 @@ mod airsteer;
 mod arc;
 mod build;
 mod combos;
+mod crash;
 mod highjump;
 mod hook;
 mod prty;
@@ -25,6 +26,17 @@ static LOG: Mutex<Option<std::fs::File>> = Mutex::new(None);
 static IN_KH2: AtomicBool = AtomicBool::new(false);
 
 /// Writes a line to `kh2-kh1.log` next to the game.
+/// As `log_line`, but gives up if the log is busy (for the crash handler, which may run while
+/// this thread holds it).
+pub fn log_line_try(line: &str) {
+    if let Ok(mut g) = LOG.try_lock() {
+        if let Some(f) = g.as_mut() {
+            let _ = writeln!(f, "{line}");
+            let _ = f.flush();
+        }
+    }
+}
+
 pub fn log_line(line: &str) {
     if let Ok(mut g) = LOG.lock() {
         if let Some(f) = g.as_mut() {
@@ -162,6 +174,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         log!("kh2-kh1 {} loaded (build {}) in {exe}", crate::VERSION, env!("KH2_KH1_BUILD"));
         std::panic::set_hook(Box::new(|info| log!("PANIC in kh2-kh1: {info}")));
         let base = GetModuleHandleA(std::ptr::null()) as usize;
+        crash::install(base);
         sora::set_base(base);
         let b = build::detect(base);
         log!("KH2 at {base:#x}, link stamp {:#010x}: {b:?} build", build::stamp(base));

@@ -1,3 +1,8 @@
+### 2026-11-13: Stage 28 (testing branch: Crash report in the log)
+Owner: "entering the camp menu crashes the game again" (t27, model = kh1). No address to go on, so the log now names crashes.
+
+- `win/crash.rs`: a vectored exception handler that, on an access violation, illegal instruction, divide by zero or stack overflow, logs the code, the faulting address (as a Steam exe address), what was read or written, eight registers, and the first 16 exe return addresses on the stack. First 3 faults only; it only reads and logs, then KH2's own handling continues. Nothing per frame.
+
 ### 2026-11-13: Stage 27 (testing branch: KH1 player model: model, motions and the Config row)
 Owner: "Lets see if we can have KH1 sora's player model be placed in KH2", then "B" (KH1's own 293-bone skeleton, every KH2 motion converted onto it, a Config row).
 
