@@ -200,9 +200,9 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
             roll::install(base);
             reactions::install(base);
         }
-        let (combos, model) = (s.style("combos") == crate::settings::Style::Kh1, s.style("model") == crate::settings::Style::Kh1);
-        if combos || model {
-            combo_tables::install(base, combos, model);
+        let (combos, model, defence) = (s.style("combos") == crate::settings::Style::Kh1, s.style("model") == crate::settings::Style::Kh1, s.style("defence") == crate::settings::Style::Kh1);
+        if combos || model || defence {
+            combo_tables::install(base, combos, model, defence);
         }
     }
     1

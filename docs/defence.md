@@ -75,6 +75,17 @@ project's `docs/kh1-roll-guard-native.md` (KH1 Steam addresses, re-checked here 
   degrees a link to keep `W_EX010.mset` within KH2's size (268,400 of 270,224).
 - Not checked in game.
 
+## t57: KH1's guard arc
+
+KH1's guard (attack row `0x3D`, data `0x4DA8`) meets attacks within an arc cosine of -0.174:
+100 degrees either side of his facing (the sister project's `kh1-roll-guard-native.md` §3.3,
+Checked (files) there). KH2's guard window (ATKP 161, Sora's guard, t41) meets an attack when
+`dot(its push, his facing) < -cos(reflect range)`, the range in degrees at ATKP `+0x22`, turned
+by `+0x23` × 2 degrees (`0x1403D1F40`, Checked (decomp)); 161's range is 120, its turn 0 (Checked
+(files)). `win/combo_tables.rs` (`defence = kh1`): after KH2's table loader, 161's range is 100.
+The repel's guard (ATKP 162, range 180, motion 42) is KH2's own and unchanged. Assumption: only
+Sora's guard uses ATKP 161. Not checked in game.
+
 ## The owner's choices for the rest of the hit reactions (2026-11-13)
 
 Asked after t53; all three answered with KH1's:

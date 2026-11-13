@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 57 (testing branch: Phase 3: KH1's guard arc)
+The owner: "finish phase 3". The guard's arc (defence = kh1).
+
+- KH1's guard meets attacks within 100 degrees either side of his facing (attack data 0x4DA8 +0x64 = cos 100°, the sister notes, Checked (files) there). KH2's guard window ATKP 161 clashes when dot(push, facing) < -cos(+0x22 degrees) (`0x1403D1F40`, Checked (decomp)); 161's range is 120 (Checked (files)).
+- `win/combo_tables.rs`: the table-loader hook also runs with defence = kh1 and sets ATKP 161's range to 100 (`install(base, combos, model, defence)`).
+- Assumption: only Sora's guard uses 161. Not checked in game. Docs: `docs/defence.md` (t57).
+
 ### 2026-11-13: Stage 56 (testing branch: The jump plays once; KH1's top, then its fall)
 The owner (t55, trace): "when jumping without high jump equipped, sora does the jump animation a second time mid air". Trace: motion 3 for 27 frames of the rise, then 4 at the top.
 

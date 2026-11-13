@@ -98,6 +98,35 @@ unsafe fn patch() {
 }
 
 static COMBOS: AtomicBool = AtomicBool::new(false);
+static DEFENCE: AtomicBool = AtomicBool::new(false);
+
+/// KH1's guard arc on KH2's guard (`defence = kh1`). KH1's guard (attack data `0x4DA8`, `+0x64`)
+/// meets attacks within an arc cosine of -0.174, 100 degrees either side of his facing (the
+/// sister project's `kh1-roll-guard-native.md` §3.3, Checked (files) there). KH2's guard window
+/// (ATKP 161, the one t41 times to KH1's guard) meets attacks by its reflect range `+0x22` in
+/// degrees either side of the owner's facing: `0x1403D1F40` clashes when `dot(the other's
+/// push, facing) < -cos(range)` (Checked (decomp)); 161's is 120 (Checked (files)). So 161's
+/// range becomes 100. Assumption: nothing but Sora's guard uses ATKP 161.
+const GUARD_ATKP: u16 = 161;
+const KH1_GUARD_ARC: u8 = 100;
+
+unsafe fn patch_guard_arc() {
+    let t = *((BASE.load(Ordering::Relaxed) + ATKP) as *const usize);
+    if t == 0 {
+        return;
+    }
+    let n = (*((t + 4) as *const i32)).clamp(0, 0x10000) as usize;
+    let mut changed = Vec::new();
+    for i in 0..n {
+        let r = t + 8 + i * ROW;
+        if *((r + 2) as *const u16) == GUARD_ATKP {
+            let at = (r + 0x22) as *mut u8;
+            changed.push(*at);
+            *at = KH1_GUARD_ARC;
+        }
+    }
+    log!("defence kh1: KH1's guard arc {KH1_GUARD_ARC} degrees on ATKP {GUARD_ATKP} (KH2's {changed:?})");
+}
 static MODEL: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "system" fn loader() {
@@ -110,13 +139,17 @@ unsafe extern "system" fn loader() {
     if MODEL.load(Ordering::Relaxed) {
         super::weapon_hold::patch(BASE.load(Ordering::Relaxed));
     }
+    if DEFENCE.load(Ordering::Relaxed) {
+        patch_guard_arc();
+    }
 }
 
-/// Hooks KH2's table loader for what patches its tables: `combos = kh1` (above) and `model = kh1`
-/// (`weapon_hold`).
-pub unsafe fn install(base: usize, combos: bool, model: bool) {
+/// Hooks KH2's table loader for what patches its tables: `combos = kh1` (above), `model = kh1`
+/// (`weapon_hold`) and `defence = kh1` (the guard arc).
+pub unsafe fn install(base: usize, combos: bool, model: bool, defence: bool) {
     BASE.store(base, Ordering::Relaxed);
     COMBOS.store(combos, Ordering::Relaxed);
+    DEFENCE.store(defence, Ordering::Relaxed);
     MODEL.store(model, Ordering::Relaxed);
     hook::install(base + LOADER, &[0x48, 0x89, 0x5C, 0x24, 0x08], loader as *const () as usize, &O_LOADER, "table loader 0x1403F4C30");
 }
