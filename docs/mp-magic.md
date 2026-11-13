@@ -331,3 +331,40 @@ KH1-in-ReCom's disassembler, Checked (files):
   elements; `kh2-hook` gives ATKP 248's base rows `effect_on_hit` 3 with Fire's (t70).
 - Sounds: KH2's Blizzard's stand in (120 cast, 121 each shard, 122 hit, 124 / 125 wall / clash).
 - Not yet: KH1's damage (KH2's shard rows' powers), KH1's sounds.
+
+## t74: KH1's Thunder inside KH2's own Thunder (`magic = kh1`, step 5.4)
+
+`magic/THUNDER_1..3.mag` built as Fire's and Blizzard's (KH2's script for the Drive Forms). From the
+owner's `xm_thunder01..03.mag` (the same in all three), read with KH1-in-ReCom's disassembler,
+Checked (files); KH1-in-ReCom's `recom-m7-magic.md` §7.6 (Checked (files + decomp) there):
+
+- **Cast:** KH1's effect 0 on the Keyblade; **KH1's tint** (`sys 52` → `0x1402BC190`: a scene colour
+  1 → 0.5 over 20 frames) as one of KH2's lights: `trap_light_create(1)` (copies the scene's,
+  `0x1403F6F80`), `trap_light_set_color(light, 0x40, 0x40, 0x40, 20)` (`0x1404309C0` → `0x1403F76E0`: a
+  0 → 1 blend over the frames to that colour; 0x80 = 1, KH2's default), `trap_light_fadeout(light,
+  20)` (`0x140430A20` → `0x1403F76A0`). Checked (decomp). Back over 20 frames 40 after the release, or
+  at once when the cast is cut before it. Assumption: KH2's light colours the scene as KH1's tint does
+  (to see in game).
+- **Release** (frame 30): KH1's flash (effect 3) at the Keyblade's tip; the strike thread; the tint's
+  thread.
+- **The area:** a cylinder radius 600, ±500, round the target's part if it lives, else Sora. The
+  marker (effect 1) on the floor under the centre (a ray of 500, `trap_bg_ground_pos`), plus, without
+  a target, 2 m along the camera's level forward (`trap_camera_at` − `trap_camera_eye`, KH1's sys1 6 /
+  5).
+- **The list:** every enemy, nearest first from the target (else Sora), up to 30 (KH1's selection
+  sort over `sys 65`). Built with KH2's own target searcher (table 6: `trap_target_searcher_init`
+  `0x14053DCE0` → `0x14053FB60`, `trap_target_seracher_search` `0x14053DD20` → `0x14053FB80`: every
+  battle target's parts by distance, the nearest not in its history, then added; range `+0x14`
+  opened, as KH1 lists every enemy; Checked (decomp)), one entry per enemy. Assumption (small): KH2
+  measures to the nearest part, KH1 to the enemy's position.
+- **The strikes:** down the list, an enemy still in the cylinder is struck straight on (KH1 `sys 160`,
+  no collision) with KH2's `trap_attack_strike(attack, object record, 0, 0)` (`0x1404328E0`, the
+  record's object read at `+4`, as Cure's call; Checked (decomp)) on ATKP 250 (KH2's Thunder burst
+  row by the sub), KH1's bolt (effect 2) where it struck, then 8 frames; one outside is passed at
+  once; the first strike on the release frame. Assumption: "in the cylinder" by the struck part's
+  centre (KH1 tests the enemy's hurt bodies against it, `0x1402B6AF0`): an enemy at the very edge may
+  differ.
+- `kh2-hook`: ATKP 250's base rows take `effect_on_hit` 3 (no group-3 element in Thunder's file, so
+  KH2's own spark doesn't play over KH1's bolt).
+- Sounds: KH2's Thunder's stand in (126 cast, 127 bolt).
+- Not yet: KH1's damage; KH1's hit stop (`sys 186(2)`).

@@ -175,11 +175,13 @@ unsafe fn patch_guard_arc() {
 /// own elements for the Drive Forms and add KH1's, whose hit elements are tagged hit-effect group
 /// 3 (`spells::HIT_GROUP`). KH2 finds a hit's effect by its ATKP row's `effect_on_hit`
 /// (`+0x0B`) among the elements' tags (the sister's `kh2-effects.md`, Checked there), so base
-/// Sora's spell rows take group 3: ATKP 502 (Fire) and 248 (Blizzard's shard), the rows of subs
+/// Sora's spell rows take group 3: ATKP 502 (Fire), 248 (Blizzard's shard) and 250 (Thunder's burst), the rows of subs
 /// 0..5 (`+1`: the level and finisher, sub = level × 2 − 2 (+1); the Drive Forms' are 10 and up,
 /// Checked (files): `00battle.bin`), those with a hit effect (`effect_on_hit` ≠ 0; 0 is a row with
 /// none).
-const SPELL_ROWS: [(u16, u8); 2] = [(502, 3), (248, 3)];
+/// Thunder's burst (250) too: KH1's Thunder plays its own bolt where it strikes, and group 3 has
+/// no element in its file, so KH2's spark doesn't play on base Sora's strikes.
+const SPELL_ROWS: [(u16, u8); 3] = [(502, 3), (248, 3), (250, 3)];
 
 unsafe fn patch_spells() {
     let t = *((BASE.load(Ordering::Relaxed) + ATKP) as *const usize);

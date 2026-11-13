@@ -1,3 +1,14 @@
+### 2026-11-13: Stage 74 (testing branch: Phase 4: KH1's Thunder inside KH2's own Thunder)
+The owner: "perfect finish phase 4 now".
+
+- magic/THUNDER_1..3.mag built like Fire's and Blizzard's: KH2's own file and script for the Drive Forms, KH1's Thunder for base Sora. From xm_thunder01..03.mag (all the same, KH1-in-ReCom's disassembler, Checked (files)).
+- Cast: KH1's effect 0; KH1's tint (sys 52, scene colour to 0.5 over 20) as a KH2 light: trap_light_create(1) / trap_light_set_color(0x40 x3, 20) / trap_light_fadeout(20) (0x1403F6F80, 0x1404309C0 -> 0x1403F76E0, 0x140430A20 -> 0x1403F76A0, Checked (decomp)); back 40 frames after the release, or at once on a cut cast. Assumption: KH2's light tints like KH1's.
+- Release (30): flash (effect 3) at the tip; marker (effect 1) on the floor under the centre (+ 2 m along the camera without a target: trap_camera_at/eye).
+- List: every enemy nearest first from the target (else Sora), up to 30, with KH2's target searcher (table 6 at 0x140787E80: init 0x14053FB60, search 0x14053FB80, Checked (decomp)).
+- Strikes: each enemy still in the 600 / +-500 cylinder struck straight on with trap_attack_strike (0x1404328E0, Checked (decomp)) on ATKP 250, KH1's bolt (effect 2) there, 8 frames apart. Assumption: the in-area test by the part centre (KH1 tests hurt bodies).
+- kh2-hook: ATKP 250 base rows effect_on_hit 3 (no KH2 spark over KH1's bolt).
+- Not yet: KH1's damage, hit stop, KH1's sounds.
+
 ### 2026-11-13: Stage 73 (testing branch: Phase 4: KH1's Blizzard inside KH2's own Blizzard)
 The owner: "perfect finish phase 4 now".
 

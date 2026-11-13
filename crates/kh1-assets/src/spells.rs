@@ -135,19 +135,23 @@ pub fn mag(name: &[u8; 4], pax: &[u8], bdx: &[u8]) -> Vec<u8> {
 /// KH2's `magic/<SPELL>_n.mag` is level n (its MAGC rows; the Drive Forms cast the same files,
 /// the sister's `drive-model.md`); KH1's `xm_<spell>0n.mag` likewise (Checked (files): the scripts
 /// differ only in the level's numbers, Blizzard's shard speed 20 / 30 / 40).
-pub const SPELLS: [(&str, &str, Kind, usize); 6] = [
+pub const SPELLS: [(&str, &str, Kind, usize); 9] = [
     ("xm_fire01.mag", "magic/FIRE_1.mag", Kind::Fire, 0),
     ("xm_fire02.mag", "magic/FIRE_2.mag", Kind::Fire, 1),
     ("xm_fire03.mag", "magic/FIRE_3.mag", Kind::Fire, 2),
     ("xm_blizzard01.mag", "magic/BLIZZARD_1.mag", Kind::Blizzard, 0),
     ("xm_blizzard02.mag", "magic/BLIZZARD_2.mag", Kind::Blizzard, 1),
     ("xm_blizzard03.mag", "magic/BLIZZARD_3.mag", Kind::Blizzard, 2),
+    ("xm_thunder01.mag", "magic/THUNDER_1.mag", Kind::Thunder, 0),
+    ("xm_thunder02.mag", "magic/THUNDER_2.mag", Kind::Thunder, 1),
+    ("xm_thunder03.mag", "magic/THUNDER_3.mag", Kind::Thunder, 2),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Fire,
     Blizzard,
+    Thunder,
 }
 
 /// KH2's own spell file (`kh2`, `magic/<SPELL>_n.mag`) with KH1's spell added (`kh1`, the matching
@@ -178,6 +182,9 @@ pub const POINT: i32 = 104;
 /// Blizzard's other shard (KH1's effect 5: the four cone shards off the level, Checked (files):
 /// `xm_blizzard01.mag`'s spawner picks 1 for shards 0 and 3 and the straight one, else 5).
 pub const SHOT_B: i32 = 105;
+/// Thunder's area marker (KH1's effect 1) and its bolt on each enemy it strikes (effect 2).
+pub const MARK: i32 = 102;
+pub const BOLT: i32 = 103;
 
 /// KH1's Fire (`xm_fire0n.mag`'s script; read with KH1-in-ReCom's disassembler, Checked (files)).
 pub mod fire {
@@ -223,6 +230,26 @@ pub mod blizzard {
     }
 }
 
+/// KH1's Thunder (`xm_thunder0n.mag`, the same in all three files, Checked (files); KH1-in-ReCom's
+/// `recom-m7-magic.md` §7.6).
+pub mod thunder {
+    /// The area: a cylinder of this radius and half height round the target (else Sora).
+    pub const RADIUS: f32 = 600.0;
+    pub const HALF_HEIGHT: f32 = 500.0;
+    /// Frames between strikes; the tint's frames (down at the cast, back 40 after the release).
+    pub const BETWEEN: f32 = 8.0;
+    pub const TINT: f32 = 20.0;
+    pub const TINT_HOLD: f32 = 40.0;
+    /// KH1's tint: the colour × 0.5. KH2's light colour 0x80 is 1 (its default, `0x1403F6F80`).
+    pub const TINT_COLOUR: i32 = 0x40;
+    /// The marker 2 m ahead along the camera without a target.
+    pub const AHEAD: f32 = 200.0;
+    /// Enemies listed at most (KH1's 30 slots).
+    pub const MAX: i32 = 30;
+    /// KH2's Thunder burst (ATKP 250, its rows by the sub; Checked (files): `THUNDER_1.mag`).
+    pub const ATKP: i32 = 250;
+}
+
 /// Our elements, KH1's effect numbers moved up by `kh1` (`merge_pax`). KH1's sounds aren't in
 /// KH2's banks yet: the matching KH2 spell's own stand in (Assumption on what they are: KH2's
 /// PAX). Hit elements in `HIT_GROUP`: KH1's body hit (its set's `0x81` mask), its wall hit (`0x102`;
@@ -251,6 +278,14 @@ pub fn elements(kind: Kind, kh1: u16) -> Vec<Element> {
             el(106, 3, 0, 0, g | 0x102, 124),
             el(107, 3, 0, 0, g | 0x10, 125),
         ],
+        // KH1 Thunder: 0 the cast, 3 the release point, 1 the area marker, 2 the bolt on each
+        // enemy (played by the script, as KH1's; no hit element: KH2's spark doesn't play).
+        Kind::Thunder => vec![
+            el(CAST, 0, 0x4003, 0x2A1, 0, 126),
+            el(POINT, 3, 0, 0, 0, -1),
+            el(MARK, 1, 0, 0, 0, -1),
+            el(BOLT, 2, 0, 0, 0, 127),
+        ],
     }
 }
 
@@ -267,6 +302,8 @@ const W_POINT: u16 = 48;
 const W_FACING: u16 = 64;
 const W_ZERO: u16 = 80;
 const W_ATK0: u16 = 96;
+const W_LIGHT: u16 = 100;
+const W_RELEASED: u16 = 104;
 const WORK: u32 = 112;
 
 // A shot's block (`memory_alloc`): a copy of the caster's record, its place, target, effect id,
@@ -320,17 +357,18 @@ pub fn onto(kind: Kind, level: usize, kh2: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn code(kind: Kind, level: usize, a: &mut Asm) {
-    cast_code(a);
+    cast_code(a, kind == Kind::Thunder);
     match kind {
         Kind::Fire => fire_code(a),
         Kind::Blizzard => blizzard_code(level.min(2), a),
+        Kind::Thunder => thunder_code(a),
     }
 }
 
 /// Trigger 20, the cast (every KH1 spell): the game pushes the caster, the resources, the sub and
 /// `magi`. KH1's cast effect on the Keyblade, held while the cast motion plays (KH2's own spells
 /// do: a cast cut short does nothing more).
-fn cast_code(a: &mut Asm) {
+fn cast_code(a: &mut Asm, tint: bool) {
     use Mode::*;
     a.label("cast").pop(Sp, 0).pop(Sp, 4).pop(Sp, 8).pop(Sp, 12);
     a.push_v(Sp, 12).memcpy(Wp, 16, W_CASTER);
@@ -338,15 +376,32 @@ fn cast_code(a: &mut Asm) {
     a.push_v(Sp, 4).pop(Wp, W_SUB);
     a.push_v(Sp, 0).pop(Wp, W_MAGI);
     a.push_v(Wp, W_RES).push_i(CAST).push_a(Wp, W_CASTER).push_i(1).push_i(0).sys("trap_pax_start_bind").pop(Wp, W_CAST_FX);
+    if tint {
+        // KH1 Thunder's tint (`sys 52`, `0x1402BC190`: a scene colour taken to 0.5 over 20 frames)
+        // as one of KH2's lights (`trap_light_create(1)` copies the scene's, `0x1403F6F80`;
+        // `trap_light_set_color(light, r, g, b, frames)` blends to it, `0x1404309C0` →
+        // `0x1403F76E0`; Checked (decomp)). Assumption: KH2's light colours what KH1's did.
+        a.push_i(0).pop(Wp, W_RELEASED);
+        a.push_i(1).sys("trap_light_create").pop(Wp, W_LIGHT);
+        let c = thunder::TINT_COLOUR;
+        a.push_v(Wp, W_LIGHT).push_i(c).push_i(c).push_i(c).push_f(thunder::TINT).sys("trap_light_set_color");
+    }
     a.push_a(Wp, W_CASTER).push_dpop(4).sys("trap_sysobj_motion_id").pop(Wp, W_MOTION);
     a.label("cast_wait").push_a(Wp, W_CASTER).push_dpop(4).sys("trap_sysobj_motion_id").push_v(Wp, W_MOTION).bin("sub").un("seqz").beqz("cast_end").halt().b("cast_wait");
-    a.label("cast_end").ret();
+    a.label("cast_end");
+    if tint {
+        // A cast cut off before its release: the tint back now (KH1 `0xC48`, over 20 frames).
+        a.push_v(Wp, W_RELEASED).bnez("cast_ret");
+        a.push_v(Wp, W_LIGHT).push_f(thunder::TINT).sys("trap_light_fadeout");
+        a.label("cast_ret");
+    }
+    a.ret();
 }
 
 /// The release's common part: the point on the Keyblade (`bone`) into `W_POINT`, Sora's facing
 /// into `W_FACING`, KH1's flash (`POINT`) there turned by `turn` from his facing (KH1: Fire 0,
 /// Blizzard π).
-fn release_point(a: &mut Asm, bone: i32, turn: f32) {
+fn release_point(a: &mut Asm, bone: i32, turn: Option<f32>) {
     use Mode::*;
     a.label("release");
     for (o, v) in [(0, 0.0f32), (4, 0.0), (8, 0.0), (12, 1.0)] {
@@ -358,17 +413,25 @@ fn release_point(a: &mut Asm, bone: i32, turn: f32) {
     a.push_a(Wp, W_CASTER).sys("trap_obj_dir").memcpy(Wp, 16, W_FACING);
     a.push_v(Wp, W_RES).push_i(POINT).push_i(1).push_i(0).sys("trap_pax_start").pop(Sp, 4);
     a.push_v(Sp, 4).push_a(Wp, W_POINT).sys("trap_effect_set_pos");
-    if turn == 0.0 {
-        a.push_v(Sp, 4).push_a(Wp, W_FACING).sys("trap_effect_set_dir");
-    } else {
-        a.push_v(Sp, 4).push_a(Wp, W_FACING).push_f(turn).sys("trap_vector_roty").sys("trap_effect_set_dir");
+    match turn {
+        None => {}
+        Some(t) if t == 0.0 => {
+            a.push_v(Sp, 4).push_a(Wp, W_FACING).sys("trap_effect_set_dir");
+        }
+        Some(t) => {
+            a.push_v(Sp, 4).push_a(Wp, W_FACING).push_f(t).sys("trap_vector_roty").sys("trap_effect_set_dir");
+        }
     }
 }
 
 /// A new shot's block into `sp+0`, with the caster's record.
 fn new_block(a: &mut Asm) {
+    new_block_of(a, BLOCK);
+}
+
+fn new_block_of(a: &mut Asm, size: i32) {
     use Mode::*;
-    a.push_i(BLOCK).sys("trap_memory_alloc").pop(Sp, 0);
+    a.push_i(size).sys("trap_memory_alloc").pop(Sp, 0);
     a.push_a(Wp, W_CASTER).memcpy(SpD, 16, B_CASTER);
 }
 
@@ -376,7 +439,7 @@ fn fire_code(a: &mut Asm) {
     use Mode::*;
     // Trigger 21, the cast event (KH1's release): from the Keyblade's middle, along his facing
     // (KH1 faces the target at the cast); the flash there; the ball's block and thread.
-    release_point(a, MIDDLE, 0.0);
+    release_point(a, MIDDLE, Some(0.0));
     new_block(a);
     a.push_v(Sp, 0).push_i(B_TARGET as i32).bin("add").push_v(Sp, 0).sys("trap_btlobj_target").sys("trap_target_dup").store();
     a.push_a(Wp, W_POINT).memcpy(SpD, 16, B_POS);
@@ -429,7 +492,7 @@ fn blizzard_code(level: usize, a: &mut Asm) {
     // from his facing; one attack for the cast, copied for each shard (`trap_attack_dup`: the same
     // id and group, so an enemy one shard hit is not hit by the others: KH1's shared hit bit,
     // Checked (decomp: trap table 2 entry 31, `0x1404324D0` → `0x1404372E0`)); seven shards.
-    release_point(a, TIP, std::f32::consts::PI);
+    release_point(a, TIP, Some(std::f32::consts::PI));
     a.push_a(Wp, W_CASTER).push_i(blizzard::ATKP).push_i(-1).push_v(Wp, W_SUB).sys("trap_attack_new").pop(Wp, W_ATK0);
     for (i, (off, dir, fx)) in blizzard::shards().into_iter().enumerate() {
         new_block(a);
@@ -494,6 +557,131 @@ fn blizzard_code(level: usize, a: &mut Asm) {
     // `0x140394DE0` setting the effect's first flag byte).
     a.label("shard_end").push_v(SpD, B_FX).sys("trap_effect_loop_end");
     a.push_v(SpD, B_ATK).sys("trap_attack_free");
+    a.push_v(Sp, 0).sys("trap_memory_free");
+    a.ret();
+}
+
+// Thunder's block: the shot block's fields (B_POS the area's centre, B_DIR the marker's offset,
+// B_FX the marker), then the list origin, a target record, a stand-in object record, counters,
+// KH2's target searcher (`0x1C + 8 × 64`) and the list (30 target records).
+const T_ORIGIN: u16 = 112;
+const T_REC: u16 = 128;
+const T_FAKE: u16 = 144;
+const T_N: u16 = 160;
+const T_I: u16 = 164;
+const T_J: u16 = 168;
+const T_TRIES: u16 = 172;
+const T_SEARCH: u16 = 176;
+const T_HISTORY: i32 = 64;
+const T_LIST: u16 = 720;
+const T_BLOCK: i32 = 1216;
+
+fn thunder_code(a: &mut Asm) {
+    use Mode::*;
+    // Trigger 21 (KH1's release, frame 30): the flash (effect 3) at the Keyblade's tip; the strike
+    // thread; the tint back 40 frames on (its own thread).
+    release_point(a, TIP, None);
+    a.push_i(1).pop(Wp, W_RELEASED);
+    new_block_of(a, T_BLOCK);
+    a.push_v(Sp, 0).push_i(B_TARGET as i32).bin("add").push_v(Sp, 0).sys("trap_btlobj_target").sys("trap_target_dup").store();
+    for k in 0..4u16 {
+        a.push_i(0).pop(SpD, T_FAKE + 4 * k);
+        a.push_f(0.0).pop(SpD, B_DIR + 4 * k);
+    }
+    // Without a target the marker sits 2 m ahead along the camera's level forward (KH1 `0x552`:
+    // look point − eye, y 0, normalised, × 200; `trap_camera_eye` / `_at` are KH1's sys1 5 / 6).
+    a.push_v(SpD, B_TARGET).sys("trap_target_is_exist").bnez("th_aimed");
+    a.sys("trap_camera_at").memcpy(SpD, 16, B_DIR);
+    a.push_a(SpD, B_DIR).sys("trap_camera_eye").sys("trap_vector_sub").memcpy(SpD, 16, B_DIR);
+    a.push_f(0.0).pop(SpD, B_DIR + 4).push_f(0.0).pop(SpD, B_DIR + 12);
+    a.push_a(SpD, B_DIR).sys("trap_vector_normalize").push_f(thunder::AHEAD).sys("trap_vector_mul").memcpy(SpD, 16, B_DIR);
+    a.label("th_aimed");
+    a.push_v(Sp, 0).push_i(B_THREAD as i32).bin("add").push_pc("strikes").push_v(Sp, 0).sys("trap_magic_start_thread").store();
+    a.push_pc("tint").push_i(0).sys("trap_magic_start_thread").drop();
+    a.ret();
+
+    a.label("tint").pop(Sp, 0);
+    a.push_f(thunder::TINT_HOLD).pop(Sp, 4);
+    a.label("tint_wait").halt().push_v(Sp, 4).sys("trap_frametime").bin("sub.s").pop(Sp, 4);
+    a.push_v(Sp, 4).un("sgtz.s").bnez("tint_wait");
+    a.push_v(Wp, W_LIGHT).push_f(thunder::TINT).sys("trap_light_fadeout");
+    a.ret();
+
+    // The strike thread (KH1 `0x17E`): the centre on the target if it lives, else Sora; the marker
+    // on the floor under it (a ray of 500) plus the offset; every enemy listed nearest first from
+    // the target (else Sora); down the list, each one in the cylinder struck (8 frames apart).
+    a.label("strikes").pop(Sp, 0);
+    a.push_v(SpD, B_TARGET).sys("trap_target_is_exist").beqz("th_alone");
+    a.push_v(SpD, B_TARGET).sys("trap_target_pos").memcpy(SpD, 16, B_POS).b("th_centred");
+    a.label("th_alone").push_v(Sp, 0).sys("trap_obj_pos").memcpy(SpD, 16, B_POS);
+    a.label("th_centred").push_a(SpD, B_POS).memcpy(SpD, 16, T_ORIGIN);
+    a.push_a(SpD, B_POS).push_a(SpD, B_SCRATCH).push_f(thunder::HALF_HEIGHT).sys("trap_bg_ground_pos").bnez("th_floor");
+    a.push_v(SpD, B_SCRATCH + 4).push_f(thunder::HALF_HEIGHT).bin("add.s").pop(SpD, B_SCRATCH + 4);
+    a.label("th_floor").push_a(SpD, B_SCRATCH).push_a(SpD, B_DIR).sys("trap_vector_add").memcpy(SpD, 16, B_SCRATCH);
+    a.push_v(Wp, W_RES).push_i(MARK).push_i(1).push_i(0).sys("trap_pax_start").pop(SpD, B_FX);
+    a.push_v(SpD, B_FX).push_a(SpD, B_SCRATCH).sys("trap_effect_set_pos");
+    a.push_a(Wp, W_CASTER).push_i(thunder::ATKP).push_i(-1).push_v(Wp, W_SUB).sys("trap_attack_new").pop(SpD, B_ATK);
+    a.push_v(SpD, B_ATK).push_v(Wp, W_RES).sys("trap_attack_set_pax");
+    a.push_v(SpD, B_ATK).push_a(SpD, B_POS).sys("trap_attack_set_pos");
+    // The list: KH2's target searcher (table 6: `trap_target_searcher_init(searcher, history)`,
+    // `0x14053DCE0` → `0x14053FB60`; `trap_target_seracher_search(searcher, out, from, dir,
+    // nearest, level, skip the history)`, `0x14053DD20` → `0x14053FB80`: every battle target's
+    // parts, by distance from `from` within the searcher's range `+0x14`, the nearest not in its
+    // history, then added to it; Checked (decomp)). Its range opened (KH1 lists every enemy);
+    // one entry per enemy (a part of one already listed is passed).
+    a.push_a(SpD, T_SEARCH).push_i(T_HISTORY).sys("trap_target_searcher_init");
+    a.push_f(1.0e9).pop(SpD, T_SEARCH + 0x14);
+    a.push_i(0).pop(SpD, T_N).push_i(0).pop(SpD, T_TRIES);
+    a.label("th_collect");
+    a.push_v(SpD, T_N).push_i(thunder::MAX).bin("sub").un("sltz").beqz("th_listed");
+    a.push_v(SpD, T_TRIES).push_i(T_HISTORY).bin("sub").un("sltz").beqz("th_listed");
+    a.push_v(SpD, T_TRIES).push_i(1).bin("add").pop(SpD, T_TRIES);
+    a.push_a(SpD, T_SEARCH).push_a(SpD, T_REC).push_a(SpD, T_ORIGIN).push_a(SpD, T_ORIGIN).push_i(1).push_i(0).push_i(1).sys("trap_target_seracher_search");
+    a.push_a(SpD, T_REC).sys("trap_target_is_exist").beqz("th_listed");
+    a.push_i(0).pop(SpD, T_J);
+    a.label("th_dedupe");
+    a.push_v(SpD, T_J).push_v(SpD, T_N).bin("sub").un("sltz").beqz("th_add");
+    a.push_v(Sp, 0).push_i(T_LIST as i32).bin("add").push_v(SpD, T_J).push_i(16).bin("mul").bin("add").push_dpop(0);
+    a.push_v(SpD, T_REC).bin("sub").un("seqz").bnez("th_collect");
+    a.push_v(SpD, T_J).push_i(1).bin("add").pop(SpD, T_J).b("th_dedupe");
+    a.label("th_add");
+    for k in 0..4u16 {
+        a.push_v(Sp, 0).push_i(T_LIST as i32 + 4 * k as i32).bin("add").push_v(SpD, T_N).push_i(16).bin("mul").bin("add");
+        a.push_v(SpD, T_REC + 4 * k).store();
+    }
+    a.push_v(SpD, T_N).push_i(1).bin("add").pop(SpD, T_N).b("th_collect");
+    a.label("th_listed");
+    a.push_i(0).pop(SpD, T_I);
+    a.label("th_next");
+    a.push_v(SpD, T_I).push_v(SpD, T_N).bin("sub").un("sltz").beqz("th_done");
+    a.push_v(Sp, 0).push_i(T_LIST as i32).bin("add").push_v(SpD, T_I).push_i(16).bin("mul").bin("add").pop(Sp, 4);
+    for k in 0..4u16 {
+        a.push_v(Sp, 4).push_dpop(4 * k).pop(SpD, T_REC + 4 * k);
+    }
+    a.push_v(SpD, T_I).push_i(1).bin("add").pop(SpD, T_I);
+    a.push_a(SpD, T_REC).sys("trap_target_is_exist").beqz("th_next");
+    // In the cylinder (KH1 `sys 90`, its bodies against it: here the struck part's centre,
+    // Assumption).
+    a.push_a(SpD, T_REC).sys("trap_target_pos").memcpy(SpD, 16, B_SCRATCH);
+    for (k, at) in [(0u16, 8u16), (8, 12), (4, 16)] {
+        a.push_v(SpD, B_SCRATCH + k).push_v(SpD, B_POS + k).bin("sub.s").pop(Sp, at);
+    }
+    a.push_v(Sp, 8).push_v(Sp, 8).bin("mul.s").push_v(Sp, 12).push_v(Sp, 12).bin("mul.s").bin("add.s");
+    a.push_f(thunder::RADIUS * thunder::RADIUS).bin("sub.s").un("sgtz.s").bnez("th_next");
+    a.push_v(Sp, 16).un("abs.s").push_f(thunder::HALF_HEIGHT).bin("sub.s").un("sgtz.s").bnez("th_next");
+    // Struck straight on (KH1 `sys 160`; KH2's `trap_attack_strike(attack, object record, 0, 0)`,
+    // table 2 entry 17, `0x1404328E0`: reads the record's object at `+4`, as Cure's call; Checked
+    // (decomp)), KH1's bolt where it struck.
+    a.push_v(SpD, T_REC).pop(SpD, T_FAKE + 4);
+    a.push_v(SpD, B_ATK).push_a(SpD, T_FAKE).push_i(0).push_i(0).sys("trap_attack_strike");
+    a.push_v(Wp, W_RES).push_i(BOLT).push_i(1).push_i(0).sys("trap_pax_start").push_a(SpD, B_SCRATCH).sys("trap_effect_set_pos");
+    a.push_f(thunder::BETWEEN).pop(Sp, 20);
+    a.label("th_wait").halt().push_v(Sp, 20).sys("trap_frametime").bin("sub.s").pop(Sp, 20);
+    a.push_v(Sp, 20).un("sgtz.s").bnez("th_wait");
+    a.b("th_next");
+    a.label("th_done");
+    a.push_v(SpD, B_ATK).sys("trap_attack_free");
+    a.push_v(SpD, B_TARGET).sys("trap_target_free");
     a.push_v(Sp, 0).sys("trap_memory_free");
     a.ret();
 }
@@ -597,6 +785,16 @@ mod tests {
         pub(super) freed: usize,
         threads: Vec<CtxId>,
         slot: u32,
+        slot2: u32,
+        /// The frame the cast motion ends.
+        pub(super) motion_end: usize,
+        /// Battle targets: (object handle, position, alive).
+        pub(super) enemies: Vec<(i32, [f32; 3], bool)>,
+        /// The searcher's history, by its address.
+        history: HashMap<u32, Vec<i32>>,
+        /// (frame, object) of each strike.
+        pub(super) strikes: Vec<(usize, i32)>,
+        pub(super) light: Vec<(usize, &'static str, f32)>,
     }
 
     impl World {
@@ -619,6 +817,12 @@ mod tests {
                 freed: 0,
                 threads: vec![],
                 slot: 0,
+                slot2: 0,
+                motion_end: 28,
+                enemies: vec![],
+                history: HashMap::new(),
+                strikes: vec![],
+                light: vec![],
             }
         }
 
@@ -680,7 +884,7 @@ mod tests {
                     self.attacks.insert(h, vec![]);
                     args[0] = Cell::int(h)
                 }
-                "trap_sysobj_motion_id" => args[0] = Cell::int(if self.frame < 28 { 56 } else { 0 }),
+                "trap_sysobj_motion_id" => args[0] = Cell::int(if self.frame < self.motion_end { 56 } else { 0 }),
                 "trap_obj_apply_bone_matrix" => {
                     let z = match args[1].i() {
                         0x4003 => 30.0,
@@ -716,10 +920,70 @@ mod tests {
                 "trap_effect_is_alive" => args[0] = Cell::int(self.fx_alive.get(&args[0].i()).copied().unwrap_or(false) as i32),
                 "trap_attack_is_hit_bg" | "trap_attack_is_reflect" => args[0] = Cell::int(0),
                 "trap_attack_is_hit" => args[0] = Cell::int(self.hit_at.is_some_and(|h| self.frame >= h) as i32),
-                "trap_target_is_exist" => args[0] = Cell::int(self.target_alive as i32),
+                // The battle target's record is 7; anything else is a record in script memory (its
+                // object at +0).
+                "trap_target_is_exist" => {
+                    let alive = if args[0].i() == 7 {
+                        self.target_alive
+                    } else {
+                        let o = vm.mem.u32(args[0].v).unwrap() as i32;
+                        self.enemies.iter().any(|e| e.0 == o && e.2)
+                    };
+                    args[0] = Cell::int(alive as i32)
+                }
                 "trap_target_pos" => {
-                    let t = self.target;
+                    let t = if args[0].i() == 7 {
+                        self.target
+                    } else {
+                        let o = vm.mem.u32(args[0].v).unwrap() as i32;
+                        self.enemies.iter().find(|e| e.0 == o).unwrap().1
+                    };
                     args[0] = self.ret_vec(vm, [t[0], t[1], t[2], 1.0])
+                }
+                "trap_obj_pos" => args[0] = self.ret_vec(vm, [0.0, 0.0, 0.0, 1.0]),
+                "trap_camera_at" => args[0] = self.ret_vec(vm, [0.0, -100.0, 300.0, 1.0]),
+                "trap_camera_eye" => {
+                    if self.slot2 == 0 {
+                        self.slot2 = vm.mem.alloc(16);
+                    }
+                    vm.mem.set_vec4(self.slot2, [0.0, -200.0, -300.0, 1.0]).unwrap();
+                    args[0] = Cell::addr(self.slot2)
+                }
+                "trap_vector_normalize" => {
+                    let p = v(vm, args[0]);
+                    let l = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
+                    args[0] = self.ret_vec(vm, [p[0] / l, p[1] / l, p[2] / l, p[3]])
+                }
+                "trap_vector_mul" => {
+                    let (p, k) = (v(vm, args[0]), args[1].f());
+                    args[0] = self.ret_vec(vm, [p[0] * k, p[1] * k, p[2] * k, p[3]])
+                }
+                "trap_light_create" => {
+                    self.light.push((self.frame, "create", args[0].i() as f32));
+                    args[0] = Cell::int(77)
+                }
+                "trap_light_set_color" => self.light.push((self.frame, "colour", args[4].f())),
+                "trap_light_fadeout" => self.light.push((self.frame, "fadeout", args[1].f())),
+                "trap_target_searcher_init" => {
+                    self.history.insert(args[0].v, vec![]);
+                }
+                "trap_target_seracher_search" => {
+                    // The nearest live target not in the history, from args[2]; none: record 0.
+                    let (from, near) = (v(vm, args[2]), args[4].i() != 0);
+                    assert!(near && args[6].i() != 0);
+                    let seen = self.history.get(&args[0].v).cloned().unwrap_or_default();
+                    let d = |p: [f32; 3]| ((p[0] - from[0]).powi(2) + (p[1] - from[1]).powi(2) + (p[2] - from[2]).powi(2)).sqrt();
+                    let best = self.enemies.iter().filter(|e| e.2 && !seen.contains(&e.0)).min_by(|a, b| d(a.1).partial_cmp(&d(b.1)).unwrap()).map(|e| e.0);
+                    let rec = args[1].v;
+                    vm.mem.set_u32(rec, best.unwrap_or(0) as u32).unwrap();
+                    vm.mem.set_u32(rec + 4, 0).unwrap();
+                    if let Some(o) = best {
+                        self.history.get_mut(&args[0].v).unwrap().push(o);
+                    }
+                }
+                "trap_attack_strike" => {
+                    let o = vm.mem.u32(args[1].v + 4).unwrap() as i32;
+                    self.strikes.push((self.frame, o));
                 }
                 "trap_vector_sub" => {
                     let (a, b) = (v(vm, args[0]), v(vm, args[1]));
@@ -766,9 +1030,13 @@ mod tests {
 
     /// Casts `script` (sub `sub`) at frame 0, releases at 28 (KH1's release, t69), runs 120 frames.
     pub(super) fn cast_in(script: &[u8], sub: i32, target: Option<[f32; 3]>, hit_at: Option<usize>) -> World {
+        cast_with(script, sub, World::new(target, hit_at))
+    }
+
+    pub(super) fn cast_with(script: &[u8], sub: i32, w: World) -> World {
         let prog = kh2_bdx::Program::parse(script).unwrap();
         let mut vm = Vm::new(prog);
-        let mut w = World::new(target, hit_at);
+        let mut w = w;
         let caster = vm.mem.alloc(16);
         let cast = vm.spawn(None);
         vm.trigger(cast, 20, &[Cell::addr(caster), Cell::int(3), Cell::int(sub), Cell::addr(0)]).unwrap();
@@ -874,6 +1142,43 @@ mod tests {
     }
 
     #[test]
+    fn kh1_thunder_strikes_as_kh1s() {
+        // Enemies round the target at (0, 0, 400): four inside the cylinder at various distances,
+        // one too far out, one too high, one dead.
+        let mut w = World::new(Some([0.0, 0.0, 400.0]), None);
+        w.enemies = vec![
+            (11, [300.0, 0.0, 400.0], true),
+            (12, [0.0, 0.0, 400.0], true),
+            (13, [0.0, 0.0, 1100.0], true),
+            (14, [0.0, -700.0, 400.0], true),
+            (15, [-100.0, 0.0, 400.0], true),
+            (16, [50.0, 0.0, 400.0], false),
+            (17, [0.0, 0.0, 100.0], true),
+        ];
+        w.motion_end = 68;
+        let w = cast_with(&script(Kind::Thunder, 0), 4, w);
+        // Nearest first from the target, every 8 frames from the release; out of the area passed.
+        assert_eq!(w.strikes, vec![(28, 12), (36, 15), (44, 11), (52, 17)], "{:?}", w.strikes);
+        // The tint: made at the cast, down over 20; back over 20, 40 frames after the release.
+        assert_eq!(w.light, vec![(0, "create", 1.0), (0, "colour", 20.0), (28 + 40, "fadeout", 20.0)]);
+        assert!(w.started.contains(&(POINT, [0.0, -100.0, 30.0])), "{:?}", w.started);
+        assert_eq!(w.started.iter().filter(|s| s.0 == BOLT).count(), 4);
+        // The marker on the floor under the target (y 0 here).
+        assert!(w.started.iter().any(|s| s.0 == MARK && s.1 == [0.0, 0.0, 400.0]), "{:?}", w.started);
+        // No target: the area round Sora, the marker 2 m ahead along the camera.
+        let mut w = World::new(None, None);
+        w.enemies = vec![(21, [0.0, 0.0, 100.0], true)];
+        let w = cast_with(&script(Kind::Thunder, 0), 0, w);
+        assert_eq!(w.strikes, vec![(28, 21)]);
+        assert!(w.started.iter().any(|s| s.0 == MARK && (s.1[2] - 200.0).abs() < 1e-3 && s.1[0].abs() < 1e-3), "{:?}", w.started);
+        // A cast cut off before the release: the tint back at once, no strikes.
+        let mut w = World::new(None, None);
+        w.motion_end = 10;
+        let w = cast_with(&script(Kind::Thunder, 0), 0, w);
+        assert_eq!(w.light[2].0..w.light[2].0 + 1, 10..11);
+    }
+
+    #[test]
     fn blizzard_cone_is_kh1s() {
         let s = blizzard::shards();
         for (off, dir, _) in &s[..6] {
@@ -888,7 +1193,7 @@ mod tests {
     fn script_avoids_the_games_30_fps_patches() {
         // KH2 replaces some float pushes at fixed code positions (`kh2_bdx::vm::pc_patch`); none of
         // ours may sit there.
-        for kind in [Kind::Fire, Kind::Blizzard] {
+        for kind in [Kind::Fire, Kind::Blizzard, Kind::Thunder] {
             for level in 0..3 {
                 let p = kh2_bdx::Program::parse(&script(kind, level)).unwrap();
                 let mut pc = (12 + 8 * (p.triggers.len() as u32 + 1)) / 2;
