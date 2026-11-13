@@ -652,3 +652,30 @@ fn keyblade_template_channels() {
         eprintln!("{f}: {:?}", wsk.iter().map(|b| (b.translation.map(|x| (x * 10.0).round() / 10.0), b.rotation.map(|x| (x * 100.0).round() / 100.0))).collect::<Vec<_>>());
     }
 }
+
+#[test]
+fn dump_kh1_cycles() {
+    let Some((mdls, _)) = files() else { return };
+    let Ok(out) = std::env::var("KH1_DUMP_OUT") else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let mut s = String::from("{\"parents\":[");
+    s += &kh1.iter().map(|b| b.parent.to_string()).collect::<Vec<_>>().join(",");
+    s += "],\"motions\":{";
+    let mut first = true;
+    for k in [0usize, 1, 2, 3, 4, 5, 6, 7] {
+        let m = mset1[k].as_ref().unwrap();
+        if !first { s += ","; }
+        first = false;
+        s += &format!("\"{k}\":[");
+        let fr: Vec<String> = [0, m.frames as usize / 4, m.frames as usize / 2].iter().map(|&f| {
+            let p = kh1_data::rig::pose(m, &kh1, f as f32).bones;
+            format!("[{}]", p.iter().map(|x| { let t = x.w_axis; let tip = *x * glam::Vec4::new(-60.0, 0.0, 0.0, 1.0); format!("[{:.1},{:.1},{:.1},{:.1},{:.1},{:.1}]", t.x, t.y, t.z, tip.x, tip.y, tip.z) }).collect::<Vec<_>>().join(","))
+        }).collect();
+        s += &fr.join(",");
+        s += "]";
+    }
+    s += "}}";
+    std::fs::write(out, s).unwrap();
+}

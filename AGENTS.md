@@ -1,3 +1,9 @@
+### 2026-11-13: Stage 50 (testing branch: The field run without the Keyblade is KH2's)
+The owner (t49): "sora still uses his keyblade out run when he doesnt have a keyblade out".
+
+- `kh1_assets::MOVES`: row 10 (run, field, Keyblade away) no longer takes KH1's 6; it stays KH2's own run (on KH1's body with model = kh1). KH1 has no run without the Keyblade (all three of its run slots hold it, Checked (files); KH1 never puts it away). Rows 8 / 11 stay KH1's 7 / 6; walk and idle unchanged.
+- Docs: `docs/movement.md` (t50). Not checked in game.
+
 ### 2026-11-13: Stage 49 (testing branch: KH1's palm holds the Keyblade; KH1's field and battle cycles on the right rows)
 The owner (t48 video and trace): "Sora uses his KH1 battle idle and KH1 battle run even when he doesn't have his keyblade out. Finishing a combo doesnt seamlessly transition into his idle. The keyblade is still not in his hands".
 

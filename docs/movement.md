@@ -140,6 +140,15 @@ The combo's end: KH2 goes from the finisher to the battle idle (row 0), which wa
 (standing tall) after KH1's crouched finisher; it is now KH1's battle idle, which KH1's own
 finishers end into. Not checked in game. KH1's +0 cycles (2, 5) are no longer used.
 
+## t50: the field run without the Keyblade is KH2's
+
+The owner (t49): "sora still uses his keyblade out run when he doesnt have a keyblade out".
+KH1 has no run without the Keyblade: KH1's Sora never puts it away, and all three of its run
+slots (5, 6, 7) hold it (Checked (files)). So row 10 (run, field, Keyblade away) is no longer
+KH1's 6: it stays KH2's own run (on KH1's body with `model = kh1`). Rows 8 (battle) and 11 (field,
+Keyblade out) stay KH1's 7 and 6. The walk (row 6) and the field idle (row 2) stay KH1's (the
+owner: "Everything else seems to work well").
+
 ## t47: looping motions loop; KH2's motions read from their start
 
 KH2's motion header (`+0x80`: start, end, fps, return, in 30 Hz frames; Checked (files)): a

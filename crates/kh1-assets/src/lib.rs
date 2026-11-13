@@ -211,12 +211,15 @@ pub const GUARD: [(usize, usize); 1] = [(173, 110)];
 /// `0x4000` (Assumption: never the player in normal play). So: 0 the field idle (120 frames,
 /// standing), 1 the battle idle (170, the Keyblade stance), 3 / 6 the field walk and run, 4 / 7
 /// the battle ones (Checked (files): 4 and 7 crouch like the battle idle, `kh1_cycle_stances`).
-/// KH1's battle set goes on KH2's battle rows, its field set on both field rows. 8 the jump (26),
+/// KH1's battle set goes on KH2's battle rows, its field set on the field rows, but for the run in
+/// the field without the Keyblade (row 10): KH1 has no run without it (every KH1 cycle holds the
+/// Keyblade; KH1 never puts it away), and its field run there read as a Keyblade-out run (the owner,
+/// t49), so that row stays KH2's own run. 8 the jump (26),
 /// 10 the fall (40, held), 11 the landing (28), one each in KH1, on KH2's one row each. The owner
 /// (t42): 12 is KH1's High Jump: it goes on KH2's High Jump, motion 201, whose motion is its row
 /// 806 (201 × 4 + 2; rows 804 / 805 / 807 are DUMMs, Checked (files)). KH1's 9 / 13 (the jumps'
 /// tops) have no KH2 row.
-pub const MOVES: [(usize, usize); 12] = [(0, 1), (2, 0), (4, 4), (6, 3), (7, 3), (8, 7), (10, 6), (11, 6), (14, 8), (18, 10), (22, 11), (806, 12)];
+pub const MOVES: [(usize, usize); 11] = [(0, 1), (2, 0), (4, 4), (6, 3), (7, 3), (8, 7), (11, 6), (14, 8), (18, 10), (22, 11), (806, 12)];
 
 static SLOTS: std::sync::RwLock<Option<Vec<(usize, usize)>>> = std::sync::RwLock::new(None);
 
