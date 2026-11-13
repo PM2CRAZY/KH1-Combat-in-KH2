@@ -153,9 +153,11 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
     for (b, chans) in loc.iter().enumerate() {
         for c in 0..9 {
             let v: Vec<f32> = chans.iter().map(|x| x[c]).collect();
-            initial.push((b as i16, c as i16, v[0]));
             let tol = if c < 3 { 1e-4 } else if c < 6 { ROT_TOL } else { POS_TOL };
+            // A channel has either a starting value or a curve, never both (as in all of KH2's
+            // own motions: KH2 holds a channel that has a starting value at it).
             if c < 3 || v.iter().all(|x| (x - v[0]).abs() <= tol) {
+                initial.push((b as i16, c as i16, v[0]));
                 continue;
             }
             let keys = reduce(&v, tol).into_iter().map(|i| (i, v[i])).collect();
@@ -177,23 +179,37 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
     // Tables: times (one a frame), values, one zero tangent.
     let times: Vec<f32> = (0..frames.max(1)).map(|f| f as f32).collect();
     let mut values: Vec<f32> = Vec::new();
+    let mut tangents: Vec<f32> = Vec::new();
     let mut keys: Vec<[u8; 8]> = Vec::new();
-    let fcurve_bytes = |list: &[Curve], keys: &mut Vec<[u8; 8]>, values: &mut Vec<f32>| -> Result<Vec<u8>> {
+    // Hermite keys (KH2's own kind, the only one its motions use) whose tangents are the slopes
+    // of the lines on either side, so the curve is exactly those lines. KH2's tangents are
+    // value per key-time unit (checked: A300's equal its keys' slopes).
+    let fcurve_bytes = |list: &[Curve], keys: &mut Vec<[u8; 8]>, values: &mut Vec<f32>, tangents: &mut Vec<f32>| -> Result<Vec<u8>> {
         let mut out = Vec::new();
         for c in list {
             if c.keys.len() > 255 {
                 return Err(Error::Format("a channel has more than 255 keys".into()));
             }
             let start = keys.len();
-            for &(t, v) in &c.keys {
+            let slope = |i: usize| -> f32 {
+                let (a, b) = (c.keys[i], c.keys[i + 1]);
+                (b.1 - a.1) / (b.0 as f32 - a.0 as f32).max(1.0)
+            };
+            let n = c.keys.len();
+            for (i, &(t, v)) in c.keys.iter().enumerate() {
+                let tin = if i > 0 { slope(i - 1) } else if n > 1 { slope(0) } else { 0.0 };
+                let tout = if i + 1 < n { slope(i) } else { tin };
                 let vi = values.len();
                 values.push(v);
+                let li = tangents.len();
+                tangents.push(tin);
+                tangents.push(tout);
                 let mut k = [0u8; 8];
-                let tt = ((t as u16) << 2) | 1;
+                let tt = ((t as u16) << 2) | 2;
                 k[0..2].copy_from_slice(&tt.to_le_bytes());
                 k[2..4].copy_from_slice(&(vi as i16).to_le_bytes());
-                k[4..6].copy_from_slice(&0i16.to_le_bytes());
-                k[6..8].copy_from_slice(&0i16.to_le_bytes());
+                k[4..6].copy_from_slice(&(li as i16).to_le_bytes());
+                k[6..8].copy_from_slice(&((li + 1) as i16).to_le_bytes());
                 keys.push(k);
             }
             out.extend_from_slice(&c.joint.to_le_bytes());
@@ -203,9 +219,9 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
         }
         Ok(out)
     };
-    let fwd_bytes = fcurve_bytes(&forward, &mut keys, &mut values)?;
-    let inv_bytes = fcurve_bytes(&inverse, &mut keys, &mut values)?;
-    if values.len() > i16::MAX as usize || keys.len() > i16::MAX as usize {
+    let fwd_bytes = fcurve_bytes(&forward, &mut keys, &mut values, &mut tangents)?;
+    let inv_bytes = fcurve_bytes(&inverse, &mut keys, &mut values, &mut tangents)?;
+    if values.len() > i16::MAX as usize || keys.len() > i16::MAX as usize || tangents.len() > i16::MAX as usize {
         return Err(Error::Format(format!("{} values / {} keys: more than KH2's 16-bit indices hold", values.len(), keys.len())));
     }
 
@@ -253,7 +269,7 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
     let o_keys = place(&keys.concat(), &mut body);
     let o_times = place(&times.iter().flat_map(|t| t.to_le_bytes()).collect::<Vec<_>>(), &mut body);
     let o_vals = place(&values.iter().flat_map(|t| t.to_le_bytes()).collect::<Vec<_>>(), &mut body);
-    let o_tans = place(&0f32.to_le_bytes(), &mut body);
+    let o_tans = place(&tangents.iter().flat_map(|t| t.to_le_bytes()).collect::<Vec<_>>(), &mut body);
     let o_ik = place(&ik_bytes, &mut body);
     let o_joints = place(&joint_bytes, &mut body);
     let o_root = place(&root, &mut body);

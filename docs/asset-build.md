@@ -112,3 +112,13 @@ helpers with them. Not compared with KH1's own pose in game yet.
   the keys use, plus one. Checked (files). t12–t14 kept A300's 27 while our motions use 48–80
   times; KH2 searching only the first 27 is the likely cause of the stretching that t14 didn't
   fix (Assumption until the owner checks in game). Our own evaluator never read the field.
+- **t16: starting values and curves never share a channel; Hermite keys.** In A300 the starting
+  pose (196 entries) and the curves (161) never name the same bone channel, and every key is
+  Hermite (type 2; 1,145 keys). Checked (files). t12–t15 gave every channel a starting value and
+  added curves on top; the owner's video shows Sora holding one bent-over pose through every
+  KH1 swing while only his position moves, which fits KH2 holding a channel at its starting
+  value (Assumption: KH2's behaviour inferred from the video). From t16 a channel gets either a
+  starting value (it never moves) or a curve. Keys are Hermite, with tangents equal to the slopes
+  of the lines on each side, so the curve is exactly those lines: KH2's own tangents are value per
+  key-time unit (Checked: in A300 the tangent over the slope between neighbours has median 1.0000
+  over 716 keys).

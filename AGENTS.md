@@ -1,3 +1,10 @@
+### 2026-11-12: Stage 16 (testing branch: KH1 swings: curves KH2 actually plays)
+Owner (t15): "he's stretching the same exact way. also the game crashed". The t14 video shows Sora holding one bent-over pose through every KH1 swing while only his position moves.
+
+- A channel now gets either a starting value or a curve, never both. KH2's own motions never give one channel both (A300: 196 starting values, 161 curves, no overlap; checked, files). Holding the starting value is the likely cause of the frozen, bent pose (Assumption from the video).
+- Keys are Hermite (type 2), as all 1,145 of A300's are, with tangents equal to the slopes either side, so the curve is exactly our lines. KH2's tangents are value per key-time unit (checked: A300's tangents over its slopes, median 1.0000, 716 keys).
+- Not checked: in game. The crash left an empty CrashDump.dmp, so no address yet.
+
 ### 2026-11-12: Stage 15 (testing branch: KH1 swings: the key-time count)
 Owner (video, t14): "he's still stretching like crazy".
 
