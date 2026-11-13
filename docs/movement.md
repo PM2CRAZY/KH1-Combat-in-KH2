@@ -140,6 +140,29 @@ The combo's end: KH2 goes from the finisher to the battle idle (row 0), which wa
 (standing tall) after KH1's crouched finisher; it is now KH1's battle idle, which KH1's own
 finishers end into. Not checked in game. KH1's +0 cycles (2, 5) are no longer used.
 
+## t55: KH1's field run back; KH1's blend into the fall and the idle
+
+The owner (t54): "Now sora is using his KH2 out of battle run, it should be the KH1 out of battle
+run. When sora gets hit in air ... it doesnt seamlessly transition back into his falling
+animation. also, when landing, sora doesn't transition from landing to his idle seamlessly".
+
+- Row 10 (run, field, Keyblade away) is KH1's 6 again (t50 undone).
+- KH2 switches motions without a blend where its own meet end to start (Checked (files), test
+  `transition_gaps`, mean joint distance: its landing's end to its field idle 0.6, its air
+  flinch's end to its fall 1.9), and blends from "blend to idle" ranges (its flinch's end to its
+  battle idle is 27.7 apart). KH1 blends every queued motion in over 8 frames (`0x14029FA30(..,
+  8.0)`), and its motions don't meet: its landing's end to its idles 15.7 / 21.5, its air flinches'
+  to its fall 16.2 / 13.8.
+- So KH1's blend is baked onto those ends (`convert::append_blend`, `kh1_assets::TAILS`): 8 more
+  frames from the last pose to the next motion's first (each bone's local turn slerped, offset and
+  scale lerped, the travel held): the landing (row 22) into KH1's field idle; the air flinches (58
+  / 62) into KH1's fall. KH2's landing has one row, so a battle one of ours (row 20, .0, KH2 plays
+  it first in battle with the Keyblade out) ends in KH1's battle idle (`LANDING_BATTLE`, made on row
+  22; its Keyblade row shares 22's). Checked (files, test `built_tails_meet`): each now ends 0.00
+  from the next start. `P_EX100.mset` 2,571,696 bytes (KH2's 2,611,760).
+- Assumption: KH2 plays the landing to its end when nothing is pressed (the pop was at its end).
+  Not checked in game.
+
 ## t50: the field run without the Keyblade is KH2's
 
 The owner (t49): "sora still uses his keyblade out run when he doesnt have a keyblade out".

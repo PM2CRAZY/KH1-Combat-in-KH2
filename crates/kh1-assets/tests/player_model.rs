@@ -742,10 +742,61 @@ fn kh1_reaction_slots() {
     }
     let p = std::fs::read(dir.join("P_EX100.mset")).unwrap();
     let b = kh2_formats::bar::Bar::parse(&p).unwrap();
-    for row in [42usize, 46, 50, 54, 58, 62, 66, 70, 74, 78] {
+    for row in [42usize, 46, 50, 54, 58, 62, 66, 70, 74, 78, 22, 18, 14, 8, 10, 11] {
         let e = &b.entries[row];
         if e.data.is_empty() { continue; }
         let t = kh2_formats::motion::Anb::parse(e.data).unwrap().triggers;
         eprintln!("KH2 row {row} {}: len {} ranges {:?} frames {:?}", e.name, kh1_assets::swing_triggers::anb_frames(e.data), t.ranges.iter().map(|r| (r.start, r.end, r.id)).collect::<Vec<_>>(), t.frames.iter().map(|f| (f.frame, f.id)).collect::<Vec<_>>());
     }
+}
+
+/// How far the pose jumps between the end of one motion and the start of the next (mean joint
+/// distance, root-relative), for KH2's own and KH1's.
+#[test]
+fn transition_gaps() {
+    let Some((mdls, mdlx)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
+    let rel = |p: &[glam::Mat4]| -> Vec<Vec3> { let r = p[0].w_axis.truncate(); p.iter().map(|m| m.w_axis.truncate() - r).collect() };
+    let gap = |a: &[Vec3], b: &[Vec3]| a.iter().zip(b).map(|(x, y)| (*x - *y).length()).sum::<f32>() / a.len() as f32;
+    let k1 = |k: usize, f: f32| rel(&kh1_data::rig::pose(mset1[k].as_ref().unwrap(), &kh1, f).bones);
+    for (a, b) in [(11usize, 0usize), (11, 1), (67, 10), (68, 10), (61, 1), (65, 1), (101, 1), (117, 1), (117, 0), (8, 10), (12, 10)] {
+        let n = mset1[a].as_ref().unwrap().frames as f32 - 1.0;
+        eprintln!("KH1 {a} end -> {b} start: {:.1}", gap(&k1(a, n), &k1(b, 0.0)));
+    }
+    let p = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let bar = kh2_formats::bar::Bar::parse(&p).unwrap();
+    let m2 = |row: usize| { let inner = kh2_formats::bar::Bar::parse(bar.entries[row].data).unwrap(); let m = inner.entries.iter().find(|x| x.kind == kh2_formats::motion::BAR_TYPE_MOTION).unwrap().data.to_vec(); kh1_assets::convert::kh2_round_trip(&m, &kh2).unwrap().0 };
+    for (a, b) in [(22usize, 0usize), (22, 2), (58, 18), (62, 18), (42, 0), (838, 0), (14, 18)] {
+        let (pa, pb) = (m2(a), m2(b));
+        eprintln!("KH2 row {a} end -> row {b} start: {:.1}", gap(&rel(pa.last().unwrap()), &rel(&pb[0])));
+    }
+}
+
+/// The built set (KH1's model): KH1's landing and air flinch now end on the next motion's start.
+#[test]
+fn built_tails_meet() {
+    let Some((mdls, mdlx)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset2 = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
+    kh1_assets::select_kh1_slots(true, true, true);
+    let (out, _) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true, &Default::default()).unwrap();
+    let mb = player_model::model_bones(&kh1, &kh2);
+    let bar = kh2_formats::bar::Bar::parse(&out).unwrap();
+    let m2 = |row: usize| { let inner = kh2_formats::bar::Bar::parse(bar.entries[row].data).unwrap(); let m = inner.entries.iter().find(|x| x.kind == kh2_formats::motion::BAR_TYPE_MOTION).unwrap().data.to_vec(); kh1_assets::convert::kh2_round_trip(&m, &mb).unwrap().0 };
+    let rel = |p: &[glam::Mat4]| -> Vec<Vec3> { let r = p[0].w_axis.truncate(); p.iter().map(|m| m.w_axis.truncate() - r).collect() };
+    let gap = |a: &[Vec3], b: &[Vec3]| a.iter().zip(b).map(|(x, y)| (*x - *y).length()).sum::<f32>() / a.len() as f32;
+    for (a, b) in [(22usize, 2usize), (20, 0), (58, 18), (62, 18)] {
+        let (pa, pb) = (m2(a), m2(b));
+        let g = gap(&rel(pa.last().unwrap()), &rel(&pb[0]));
+        eprintln!("built row {a} ({} frames) end -> row {b} start: {g:.2}", pa.len());
+        assert!(g < 2.0);
+    }
+    assert!(out.len() < mset2.len());
+    eprintln!("set {} bytes; row 20 {}", out.len(), bar.entries[20].name);
 }

@@ -135,6 +135,42 @@ fn soften_lean(kh2: &[Bone], pose: &mut [Mat4]) {
 }
 
 /// KH2 model-space matrices for every frame of a KH1 motion, and its travel per frame.
+/// KH1's blend into the motion after this one, baked onto its end: `frames` more frames going from
+/// the last pose to `next` (the next motion's first pose, `next_travel` its travel), each bone's
+/// local turn slerped and its offset and scale lerped, the travel held. KH1 blends every queued
+/// motion in (`0x14029FA30(.., 8.0)`, 8 frames, the sister project's `kh1-hit-reactions-native.md`
+/// §4, Checked (decomp) there); KH2 switches without one where its own motions meet end to start
+/// (Checked (files), test `transition_gaps`: its landing into its field idle 0.6 apart, its air
+/// flinch into its fall 1.9; KH1's 15.7 and 16.2), so there the blend is in the data.
+pub fn append_blend(poses: &mut Vec<Vec<Mat4>>, travel: &mut Vec<Vec3>, next: &[Mat4], next_travel: Vec3, bones: &[Bone], frames: usize) {
+    let (Some(last), Some(&t_end)) = (poses.last().cloned(), travel.last()) else { return };
+    if next.len() != last.len() || last.len() != bones.len() {
+        return;
+    }
+    // The next pose where he stands at the end (its travel moved onto the held one).
+    let shift = Mat4::from_translation(t_end - next_travel);
+    let next: Vec<Mat4> = next.iter().map(|m| shift * *m).collect();
+    let local = |w: &[Mat4], i: usize| -> (Vec3, Quat, Vec3) {
+        let p = bones[i].parent;
+        let m = if p >= 0 && (p as usize) < i { w[p as usize].inverse() * w[i] } else { w[i] };
+        m.to_scale_rotation_translation()
+    };
+    let la: Vec<_> = (0..bones.len()).map(|i| local(&last, i)).collect();
+    let lb: Vec<_> = (0..bones.len()).map(|i| local(&next, i)).collect();
+    for k in 1..=frames {
+        let t = k as f32 / frames as f32;
+        let mut w: Vec<Mat4> = Vec::with_capacity(bones.len());
+        for i in 0..bones.len() {
+            let ((sa, ra, ta), (sb, rb, tb)) = (la[i], lb[i]);
+            let m = Mat4::from_scale_rotation_translation(sa.lerp(sb, t), ra.slerp(rb, t), ta.lerp(tb, t));
+            let p = bones[i].parent;
+            w.push(if p >= 0 && (p as usize) < i { w[p as usize] * m } else { m });
+        }
+        poses.push(w);
+        travel.push(t_end);
+    }
+}
+
 pub fn kh2_poses(motion: &Motion, kh1: &[Bone], kh2: &[Bone]) -> (Vec<Vec<Mat4>>, Vec<Vec3>) {
     let r = Retarget::new(kh1, kh2);
     let mut inv = Inverse::new(kh1, kh2, &r, |i| i < GRIP_BONE && r.follows_one_part(i));

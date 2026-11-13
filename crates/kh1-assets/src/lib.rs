@@ -228,9 +228,26 @@ pub const KNOCKDOWN: [(usize, usize, usize); 2] = [(82, 42, 65), (86, 42, 66)];
 /// The motion id KH2 plays for KH1's knock-down from the front / from behind (`KNOCKDOWN`).
 pub const KNOCKDOWN_IDS: [u16; 2] = [20, 21];
 
+/// Rows whose KH1 motion ends in KH1's 8-frame blend into the motion KH2 plays after it
+/// (`convert::append_blend`; the owner, t54: the air hit doesn't flow into the fall, the landing
+/// into the idle). (row, the next KH1 motion). KH2's landing has one row (22, its field one); a
+/// battle row of ours (20, `LANDING_BATTLE`) ends in the battle idle instead.
+pub const TAILS: [(usize, usize); 4] = [(22, 0), (20, 1), (58, 10), (62, 10)];
+/// KH1's blend length (`0x14029FA30(.., 8.0)`).
+pub const KH1_BLEND: usize = 8;
+
+/// KH1's landing on KH2's landing's battle variant (row 20 = 5 × 4 + 0; KH2 plays .0 first in
+/// battle with the Keyblade out, `MOVES`' notes), made on the field row 22 as its template.
+pub const LANDING_BATTLE: (usize, usize, usize) = (20, 22, 11);
+
+/// The next motion's tail for `row`, if any.
+pub fn tail_at(row: usize) -> Option<usize> {
+    TAILS.iter().find(|t| t.0 == row).map(|t| t.1)
+}
+
 /// The empty rows the build fills (row, template row): `KNOCKDOWN`'s, when chosen.
 pub fn fills() -> Vec<(usize, usize)> {
-    KNOCKDOWN.iter().filter(|k| kh1_motion_at(k.0).is_some()).map(|k| (k.0, k.1)).collect()
+    KNOCKDOWN.iter().chain(std::iter::once(&LANDING_BATTLE)).filter(|k| kh1_motion_at(k.0).is_some()).map(|k| (k.0, k.1)).collect()
 }
 
 /// KH1's own idle, walk, run, jump, fall and landing in KH2's (`movement = kh1`). Motion set rows
@@ -249,15 +266,13 @@ pub fn fills() -> Vec<(usize, usize)> {
 /// `0x4000` (Assumption: never the player in normal play). So: 0 the field idle (120 frames,
 /// standing), 1 the battle idle (170, the Keyblade stance), 3 / 6 the field walk and run, 4 / 7
 /// the battle ones (Checked (files): 4 and 7 crouch like the battle idle, `kh1_cycle_stances`).
-/// KH1's battle set goes on KH2's battle rows, its field set on the field rows, but for the run in
-/// the field without the Keyblade (row 10): KH1 has no run without it (every KH1 cycle holds the
-/// Keyblade; KH1 never puts it away), and its field run there read as a Keyblade-out run (the owner,
-/// t49), so that row stays KH2's own run. 8 the jump (26),
+/// KH1's battle set goes on KH2's battle rows, its field set on the field rows (t50 kept KH2's run
+/// on row 10; the owner, t54: "it should be the KH1 out of battle run"). 8 the jump (26),
 /// 10 the fall (40, held), 11 the landing (28), one each in KH1, on KH2's one row each. The owner
 /// (t42): 12 is KH1's High Jump: it goes on KH2's High Jump, motion 201, whose motion is its row
 /// 806 (201 × 4 + 2; rows 804 / 805 / 807 are DUMMs, Checked (files)). KH1's 9 / 13 (the jumps'
 /// tops) have no KH2 row.
-pub const MOVES: [(usize, usize); 11] = [(0, 1), (2, 0), (4, 4), (6, 3), (7, 3), (8, 7), (11, 6), (14, 8), (18, 10), (22, 11), (806, 12)];
+pub const MOVES: [(usize, usize); 12] = [(0, 1), (2, 0), (4, 4), (6, 3), (7, 3), (8, 7), (10, 6), (11, 6), (14, 8), (18, 10), (22, 11), (806, 12)];
 
 static SLOTS: std::sync::RwLock<Option<Vec<(usize, usize)>>> = std::sync::RwLock::new(None);
 
@@ -282,6 +297,7 @@ pub fn select_kh1_slots(swings: bool, guard: bool, moves: bool) {
     }
     if moves {
         v.extend_from_slice(&MOVES);
+        v.push((LANDING_BATTLE.0, LANDING_BATTLE.2));
     }
     if let Ok(mut s) = SLOTS.write() {
         *s = Some(v);
@@ -338,7 +354,15 @@ pub fn build_mset(root: impl AsRef<Path>) -> Result<(Vec<u8>, Built)> {
             } else if ROUND_TRIP_FIRST_SWING && k == KH1_MOTIONS[0] {
                 convert::kh2_round_trip(own, &kh2_bones)?
             } else {
-                convert::kh2_poses(&m, &kh1_bones, &kh2_bones)
+                let (mut poses, mut travel) = convert::kh2_poses(&m, &kh1_bones, &kh2_bones);
+                // KH1's blend into the next motion, where KH2 doesn't blend (`TAILS`).
+                if let Some(next) = tail_at(row).and_then(|n| motions.get(n).and_then(|x| x.as_ref())) {
+                    let (np, nt) = convert::kh2_poses(next, &kh1_bones, &kh2_bones);
+                    if let (Some(p0), Some(&t0)) = (np.first(), nt.first()) {
+                        convert::append_blend(&mut poses, &mut travel, p0, t0, &kh2_bones, KH1_BLEND);
+                    }
+                }
+                (poses, travel)
             };
             built.motions.push((k, row / 4, poses.len()));
             convert::write_motion(own, &kh2_bones, &poses, &travel)

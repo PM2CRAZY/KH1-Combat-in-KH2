@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 55 (testing branch: KH1's field run back; KH1's blend into the fall and the idle)
+The owner (t54): "Now sora is using his KH2 out of battle run, it should be the KH1 out of battle run. When sora gets hit in air ... it doesnt seamlessly transition back into his falling animation. also, when landing, sora doesn't transition from landing to his idle seamlessly".
+
+- `MOVES`: row 10 ← KH1 6 again (t50 undone).
+- KH2 switches without a blend where its motions meet end to start (Checked (files), `transition_gaps`: landing → field idle 0.6, air flinch → fall 1.9); KH1 blends 8 frames (`0x14029FA30(.., 8.0)`) and its ends don't meet (15.7 / 16.2). `convert::append_blend` bakes KH1's 8-frame blend onto those ends (`kh1_assets::TAILS`): landing row 22 → KH1 field idle, air flinches 58 / 62 → KH1 fall, and a battle landing row of ours (20 = 5 × 4 + 0, `LANDING_BATTLE`, made on 22; Keyblade row shared) → KH1 battle idle. Each now ends 0.00 from the next start (`built_tails_meet`). P_EX100.mset 2,571,696 (KH2's 2,611,760).
+- Assumption: KH2 plays the landing to its end when idle. Not checked in game. Docs: `docs/movement.md` (t55).
+
 ### 2026-11-13: Stage 54 (testing branch: Phase 3: KH1's reaction rule, push, knock-down and mercy on Sora)
 The owner (2026-11-13, answers): KH1's rule for what reaction a hit gives, KH1's knock-down for big hits, KH1's 30 frames after.
 
