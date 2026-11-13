@@ -1,3 +1,8 @@
+### 2026-11-13: Stage 31 (testing branch: Keyblade-switch crash: log the item id)
+Owner: "still crashes, pull the log yourself never ask me again". t30's log: the fault came as a stack overflow inside the crash report, so the id was lost. The collision lists of `P_EX100.mdlx` and nine Keyblade models (`W_EX010`, `_10` … `_60`, `_A0`, `_U0`) have no entries of types 5 or 14, and no motion set entry holds a collision list. Checked (files). So the list `0x140407DE0` walks (object `+0xAB8`) is set at run time.
+
+- `win/itemcheck.rs`: hooks `0x140407DE0` (prologue `40 55 41 56 48 81 EC C8 00 00 00`, Checked (exe)). Before the original runs it walks the same entries and logs any item id the item table lacks: the object, whether it is Sora, the entry's bytes, `+0xCF0`, `+0x9F0` and the object's vtable. Once per case. Temporary diagnostic; runs on attack frames only. The crash itself is unchanged.
+
 ### 2026-11-13: Stage 30 (testing branch: Crash report: the faulting function's stack words)
 Owner: "you can open the camp menu, switching keyblades crashes the game". t29's report: a read of 0x2 at 0x1403B68E0 (in 0x1403B68B0, which looks an item id up in the item table by bsearch and reads the row without checking it was found), called from 0x140407EBC (in 0x140407DE0, which walks Sora's collision entries of types 5 and 14 while an attack is on and looks up each one's item: entry +2 for type 5, else Sora +0xCF0). Checked (decomp). Same place as the keyblade-switch crash before the KH1 model. The id itself isn't in the report.
 
