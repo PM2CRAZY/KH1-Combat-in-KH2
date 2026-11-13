@@ -178,3 +178,37 @@ Now, with `model = kh1`:
 
 Before (KH2's Keyblade motions against KH1's hold, test `keyblade_hold_vs_kh1`): 8 to 19 degrees
 off on average, up to 105 in KH2's third swing. Not checked in game.
+
+## Blends of our converted motions (research, 2026-11-13)
+
+The owner: "when KH1 sora does KH2 glide in THIS mod, his body contorts"; the sister mod's KH1 Sora
+plays KH2's animations without it; also wanted: KH2 Sora's model on KH1's animations without the
+stretching.
+
+- The pose transfer is the sister's: `kh1_data::retarget` is byte-identical to the sister's
+  (testing, t1094), and so is `kh2-anim` (KH2's evaluator). The difference is who plays and blends
+  the result: in the sister mod KH1's engine plays its baked KH1 motions (tier B, or tier A drawn
+  each frame), here KH2's engine plays and blends the KH2 motions we write.
+- Measured offline (the owner's files, a diagnostic test kept out of the repo): for two motions
+  KH2 blends between, the halfway pose made by mixing each bone's Euler numbers against the true
+  halfway pose (each bone's turn slerped), worst joint over all frames:
+
+  | Pair | KH2's own motions, KH2's bones | Ours, KH1's bones |
+  |---|---|---|
+  | idle 0 ↔ run 8 | 35 | 184 |
+  | fall 18 ↔ jump 14 | 49 | 74 |
+  | glide 822 ↔ 826 (205 ↔ 206) | 33 | 68 |
+  | glide 826 ↔ 834 (206 ↔ 208) | 7 | 62 |
+  | glide 826 ↔ 830 (206 ↔ 207) | 9 | 38 |
+
+  KH2's glide changes between 205 / 206 / 207 / 208 with a blend of 16 frames every time the stick
+  crosses its bank threshold (the sister's `kh1-glide-native.md`, Checked (decomp) there), so a
+  glide is mostly blends. Bones near Euler gimbal (|Y| > 80°) are about as many on both skeletons
+  (17–20 vs 11–31 a frame), so it is not that.
+- Assumption to check next in KH2's decomp: KH2 blends two motions by mixing the Euler numbers its
+  evaluator gives (t43 assumed so). If so, the fix is in the numbers we write, not the poses: each
+  bone's Euler numbers chosen the same way in every motion for the same turn (one reference per
+  bone across the set, not only the first frame's seed), so two motions at nearby poses carry
+  nearby numbers.
+- KH2's model on KH1's animations (`kh1_data::inverse`, ours, changed from the sister's at t23)
+  goes through the same KH2 blends; the same check applies to its rows.

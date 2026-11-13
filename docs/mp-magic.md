@@ -153,3 +153,50 @@ The owner (2026-11-13, answer): KH2's three "stack" as KH1's MP Haste.
   With one step it is KH1's exactly (3 → 7, finishers 6 → 15). The cap's rise is our reading of
   "stack" (Assumption on the owner's meaning).
 - KH2's MP Rage per copy (sstm `+0x150`) is 75 (Checked (files)), so t66's copies count is exact.
+
+## KH1's spells in KH2: findings and plan (2026-11-13)
+
+The owner's answers (2026-11-13): spells with **KH1's effects and sounds** (ported into KH2's own
+effect engine), KH1's behaviour; MP Haste family stacked (t67).
+
+### Finding: KH2's effect engine already speaks KH1's effect programs
+
+- KH1 keeps every effect as a DPX set of PPP programs (`.mdls` section 1, `.wpn` section 0,
+  `.mag` section 1; set header u32 `0x82`, PPP blob header `0x96`; KH1-in-ReCom's
+  `recom-m13-kh1-fx.md`, Checked (decomp + files) there).
+- KH2's spell file (`magic/FIRE_1.mag`, a BAR: `fire` PAX, type 18, and `fire` BDX, type 3,
+  twice) holds a PAX whose DPX part is the same layout: a set header `0x82` at PAX `+0x4A0` and a
+  PPP blob `0x96` at `+0x620` (Checked (files): the owner's `FIRE_1.mag`).
+- The PPP op tables: KH1's exe names 235 ops, KH2's 242; **KH2's first 235 are KH1's, in the same
+  order** (Checked (exe): both Steam exes' op name strings), with the same 7 additions Re:CoM has.
+- So KH1's spell effect programs can go into KH2's own spell PAX as they are, played by KH2's
+  own effect engine (native: no player of ours). Still to check: KH2's PAX element table (which
+  element plays which DPX effect, its bone, flags and sound: OpenKH `Pax.cs`, the sister's
+  `kh2-formats/src/pax.rs`), KH1's program sounds (`+0xFC`) against KH2's element sounds, KH1's
+  attach codes (`0x8003`, `0x18001`, `0x30`) against KH2's bones / anchors, the 30 Hz tick in both,
+  and KH1's HD textures for these sets (tagged by offset in the `.mag`).
+
+### What a KH1 spell needs in KH2 (one spell per version, Fire first)
+
+1. **The cast:** KH1's cast motions (slots 54 / 57 ground, 79 / 82 air; Blizzard 55 / 80, Thunder
+   and Cure 56 / 81) on KH2's MAGC cast rows (Fire 56 / 58, Blizzard 59 / 61, Thunder 62 / 64, Cure
+   65 / 67), with KH2's magic-cast trigger at KH1's release (Fire: the wind-up's end, 28 frames;
+   KH1-in-ReCom `recom-m7-magic.md`, decoded from `xm_fire01.mag`, Checked (files) there).
+2. **The script:** KH2 runs a spell from its BDX script (trigger 20 at the cast, 21 at the
+   release; the sister's `magic-model.md`). KH1's spell is its `.bd` script in KH1's own script
+   machine, a different bytecode (`fire01.bd`: KH1's section 0; Checked (files)). Native: a KH2
+   BDX script of ours, written by the build step, doing what KH1's does with KH2's own traps
+   (Fire: from the Keyblade's middle, 40 a frame, 30 frames, ≤ 3° a frame toward the target,
+   re-picks within 500, radius 50, one hit; KH1-in-ReCom's decoding). Needs: a BDX writer (the
+   sister's `kh2-bdx` reads and runs BDX; the traps are documented in its `kh2-magic`).
+3. **The effects:** KH1's `xm_fire01.mag` section 1 (its DPX set) as the PAX's DPX, with PAX
+   elements for KH1's ids (Fire: 0 on the casting bone, 1 the ball, 2 / 3 the hit sparks, 4 at a
+   point).
+4. **The numbers:** KH1's damage (Fire 20 / 28 / 36 + max MP, KH1's curve) on the spell's ATKP rows
+   (the owner chose KH2's formula with KH1's powers for the swings: the same for spells unless he
+   says otherwise), KH1's MP at the release (t60's cost already KH1's).
+5. Then Blizzard, Thunder, Cure; then Gravity, Stop, Aero as new KH2 spells (new MAGC and `cmd`
+   rows, menu entries, `magic/` files of ours); Magnet and Reflect stay KH2's.
+
+KH1's spell files are in the owner's `local/re/kh1mag/` (`xm_*.mag`, all 19), KH2's in
+`local/re/` (`FIRE_1.mag` … `REFLECT_3.mag`).
