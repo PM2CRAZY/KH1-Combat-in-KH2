@@ -1,3 +1,9 @@
+### 2026-11-13: Stage 38 (testing branch: KH1 air swing hop and speed)
+Phase 2 (owner: "Finish Phase 2"). KH1's air swings hop by their row's height (20, finisher 40) under KH1's gravity and move at a constant 4 (finisher 12) toward the aim (KH1 `0x1402A68F0`, `0x1402AF960`, Checked (decomp); heights from `btltbl.bin`, Checked (files)).
+
+- `win/combo_tables.rs` (was `atkp.rs`): after the table loader, Sora's `ptya` air rows 9 / 10 get height 20 and speed 4, rows 7 / 8 height 40 and speed 12 (jump = min = max, speed min = max). Assumption: KH2's row heights are arc heights (the OG rewrite). Not covered: KH1's 8 on the first air hit.
+- Combo length checked against both decomps: KH2's rule and count are KH1's (3 + Combo Plus, the count 1 on the first press); no change.
+
 ### 2026-11-13: Stage 37 (testing branch: KH1 swing power on ATKP)
 Owner's choice (Phase 2 damage): KH2's formula, each KH1 swing the nearest KH2 power, KH1's reactions.
 

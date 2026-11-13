@@ -1,7 +1,7 @@
 //! Windows (64-bit) side: the KH2 check, the log, and the way in (Panacea's `OnInit`).
 
 mod airsteer;
-mod atkp;
+mod combo_tables;
 mod arc;
 mod build;
 mod crash;
@@ -190,7 +190,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
             airsteer::install(base);
         }
         if s.style("combos") == crate::settings::Style::Kh1 {
-            atkp::install(base);
+            combo_tables::install(base);
         }
     }
     1

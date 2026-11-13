@@ -120,3 +120,24 @@ KH1's damage curve. So the swing ATKP rows (patched in KH2's loaded table `0x142
 table loader `0x1403F4C30`, Checked (decomp)): 126, 127, 128, 131, 132 → 100 (KH2: 100, 65, 65,
 100, 100), 129, 130, 133, 134 → 200 (KH2: 200, 150, 200, 150). Reactions already match (3 / 7);
 KH2's knockback stays (KH1's data has none). KH1's critical (finishers 4 %, +4) is not ported.
+
+## Combo length: already KH1's (Checked (decomp), no change)
+
+KH1: ground length `stats +0xD4` = 3 + Combo Plus equipped, air `+0xD5` = 3 + Air Combo Plus
+(`0x1402A5130`, counting ability 6 / 7 in the equipped list, `0x140284BE0`); the count `+0x41` is
+1 on a combo's first press (`0x1402A7510`, outside the combo window bit 22) and goes up by one each
+press inside it; the finisher row is marked when length ≤ count. KH2: a new combo sets `+0xD74`
+to 1 (`0x1403D6CA0` / `0x1403D6D50`), a press inside the combo window adds one, and the finisher
+test `0x1403D7780` is count + row offset (0 on Sora's finishers) ≥ length (`+0x5C0 → +0x200` /
+`+0x201`), base 3 + Combo Plus / Air Combo Plus (the OG rewrite). Same rule, same count: the third
+press is the finisher with no Combo Plus. KH2-only Negative Combo, Finishing Plus, Berserk Charge
+keep working (the owner, Phase 2).
+
+## t38: KH1's air swing hop and speed (`win/combo_tables.rs`)
+
+KH1's row runner `0x1402A68F0` (Checked (decomp)): an air swing hops by its row's height (20 on
+the plain air swings, 40 on the air finisher; `btltbl.bin`, Checked (files)) under KH1's gravity
+(`0x1402AF960`) and moves at a constant speed toward its aim: 8 on the combo's first hit, 12 on
+the air finishers, else 4. Ground swings get none (KH2's ground rows have speed 0 too). Sora's
+`ptya` air rows 9 / 10 → height 20, speed 4; 7 / 8 → height 40, speed 12, fixed (KH2: 17..67 /
+21..71 by the target's height, −8..8 / 12..18 by its distance). Not covered: the first hit's 8.

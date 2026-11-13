@@ -340,3 +340,13 @@ fn kh1_windows_on_kh2_triggers() {
         eprintln!("{id} <- KH1 {k}: blade {:?}\n   sora {:?} frames {:?}", blade.ranges.iter().map(|r| (r.start, r.end, r.id)).collect::<Vec<_>>(), sora.ranges.iter().map(|r| (r.start, r.end, r.id)).collect::<Vec<_>>(), sora.frames.iter().map(|f| (f.frame, f.id)).collect::<Vec<_>>());
     }
 }
+
+#[test]
+fn sora_ptya_rows() {
+    let Some(_) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let b = kh2_formats::battle::Battle::parse(&std::fs::read(dir.join("00battle.bin")).unwrap()).unwrap();
+    for e in b.ptya.set(1).unwrap() {
+        if e.ability == 0 { eprintln!("id {:2} motion {} jump {} {} {} speed {} {} adj {}", e.id, e.motion, e.jump, e.jump_min, e.jump_max, e.speed_min, e.speed_max, e.distance_adjust); }
+    }
+}
