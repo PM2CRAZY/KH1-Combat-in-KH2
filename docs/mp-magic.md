@@ -91,6 +91,17 @@ KH2's MP-up rewards (Checked (files), `00battle.bin` `bons`, character 1): five,
 - Assumptions: KH1's start is 2 bars (not yet read from KH1's new-game record); KH2's MP-up
   rewards come in reward order. Hits don't refill yet (step 2). Not checked in game.
 
+## t61: KH1's MP from hits (step 2)
+
+KH2 makes a hit record for every hit (`0x1403CE740 (attack, ATKP, target, ..)`, from
+`0x1403D12C0`; the attack's owner its handle `+0x10`, the record's `+0x28` the damage; Checked
+(decomp)). `win/mp.rs` hooks it: a hit base Sora lands that does damage adds KH1's units through
+the MP change (t60): 6 for his finishers (ATKP 129 / 130 / 133 / 134, KH1's finishers in Phase 2),
+0 for a magic-stat attack (ATKP `+5` = 1; KH1's spells give none: their attack data `+0x2C` is 0,
+Checked (files)), else 3 (KH1's plain swings, `+0x2C`, Checked (files)). KH1's level scaling (× (1 +
+level difference × 20 %), within 1 unit and 250 %) isn't applied: KH2's enemies have no KH1 level
+(Assumption, ×1). MP Haste's + 150 % is step 3's. Not checked in game.
+
 ## Camera (the owner, 2026-11-13: "bring in KH1's Camera, and have the setting ... in the config")
 
 The Config page already has the Camera row (`camera = kh2 / kh1`, t40); it does nothing yet. KH1's

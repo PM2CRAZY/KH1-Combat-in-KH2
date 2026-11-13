@@ -13,7 +13,8 @@
 //! - a script's MP Charge `0x1403D4A20`: for base Sora, MP emptied instead (no charge).
 //! - the costs: KH1's in KH2's `cmd` table (`kh1mp::KH1_SPELL_COSTS`), after the table loader
 //!   (`combo_tables`).
-//! Runs on MP changes and menu draws only; nothing per frame.
+//! - the hit record `0x1403CE740`: a hit he lands adds KH1's units (step 2, t61).
+//! Runs on MP changes, hits and menu draws only; nothing per frame.
 
 use super::hook;
 use super::log;
@@ -27,6 +28,7 @@ const COMMAND_STATE: usize = 0x3D_88E0;
 const RECORD_OF: usize = 0x3A_14E0;
 const HANDLE: usize = 0x4A_D270;
 const CHARGE_BY: usize = 0x3D_4A20;
+const HIT_RECORD: usize = 0x3C_E740;
 const SAVE: usize = 0x9A_BDA0;
 const CMD_TABLE: usize = 0x2A1_61E8;
 const CMD_ROW: usize = 0x30;
@@ -36,6 +38,45 @@ static O_BUILD: AtomicUsize = AtomicUsize::new(0);
 static O_CHANGE: AtomicUsize = AtomicUsize::new(0);
 static O_STATE: AtomicUsize = AtomicUsize::new(0);
 static O_CHARGE: AtomicUsize = AtomicUsize::new(0);
+static O_HIT: AtomicUsize = AtomicUsize::new(0);
+static HIT_LOGGED: AtomicBool = AtomicBool::new(false);
+
+/// KH2's swing ATKP ids that are finishers (KH1's finishers in Phase 2, `combo_tables::POWERS`).
+const FINISHERS: [u16; 4] = [129, 130, 133, 134];
+
+/// KH2 makes a hit record for every hit (`0x1403CE740 (attack, ATKP row, target, ..)`, called by
+/// `0x1403D12C0`; the attack's owner is its handle `+0x10`; the record's `+0x18` bit 2 "immune",
+/// `+0x28` the damage; Checked (decomp)). After it, a hit base Sora lands gives KH1's units
+/// (step 2): 6 for a finisher, 0 for a magic-stat attack (ATKP `+5` = 1), else 3.
+unsafe extern "system" fn hit_record(attack: usize, atkp: usize, target: usize, kind: u8) -> usize {
+    let o: unsafe extern "system" fn(usize, usize, usize, u8) -> usize = std::mem::transmute(O_HIT.load(Ordering::Acquire));
+    let rec = o(attack, atkp, target, kind);
+    if rec == 0 || attack == 0 || atkp == 0 {
+        return rec;
+    }
+    let base = BASE.load(Ordering::Relaxed);
+    let h: unsafe extern "system" fn(u32) -> usize = std::mem::transmute(base + HANDLE);
+    let owner = h(*((attack + 0x10) as *const u32));
+    if owner == 0 || owner == target || !is_base_sora(owner) || *((rec + 0x18) as *const u32) & 4 != 0 || *((rec + 0x28) as *const i32) <= 0 {
+        return rec;
+    }
+    let id = *((atkp + 2) as *const u16);
+    let units = if *((atkp + 5) as *const u8) == 1 {
+        0
+    } else if FINISHERS.contains(&id) {
+        kh1mp::KH1_FINISHER_UNITS
+    } else {
+        kh1mp::KH1_HIT_UNITS
+    };
+    if units > 0 {
+        let f: unsafe extern "system" fn(usize, i32, u8) -> u64 = std::mem::transmute(base + MP_CHANGE);
+        f(owner, units, 0);
+        if !HIT_LOGGED.swap(true, Ordering::Relaxed) {
+            log!("mp kh1: KH1's MP from Sora's hits (first: ATKP {id}, {units} units)");
+        }
+    }
+    rec
+}
 static LOGGED: AtomicBool = AtomicBool::new(false);
 
 unsafe fn sora_record() -> usize {
@@ -181,7 +222,8 @@ pub unsafe fn install(base: usize) {
     let b = a.is_some() && hook::install(base + MP_CHANGE, &[0x48, 0x89, 0x5C, 0x24, 0x08], change as *const () as usize, &O_CHANGE, "MP change 0x1403D3CF0").is_some();
     let c = b && hook::install(base + COMMAND_STATE, &[0x48, 0x89, 0x5C, 0x24, 0x08], command_state as *const () as usize, &O_STATE, "command state 0x1403D88E0").is_some();
     let d = c && hook::install(base + CHARGE_BY, &[0x48, 0x8B, 0x81, 0x48, 0x01, 0x00, 0x00], charge_by as *const () as usize, &O_CHARGE, "MP Charge start 0x1403D4A20").is_some();
-    if d {
+    let e = d && hook::install(base + HIT_RECORD, &[0x48, 0x89, 0x5C, 0x24, 0x08], hit_record as *const () as usize, &O_HIT, "hit record 0x1403CE740").is_some();
+    if e {
         log!("mp kh1: KH1's MP on base Sora ({} MP a bar, no MP Charge)", kh1mp::MP_PER_BAR);
     } else {
         log!("mp kh1: KH1's MP not used");

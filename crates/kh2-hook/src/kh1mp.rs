@@ -117,6 +117,13 @@ pub fn max_bars(level: u8, kh2_max_mp: i32) -> i32 {
 /// Aero 200). Magnet (4) and Reflect (5) keep their KH2 bytes (30, 10), read as KH1 units.
 pub const KH1_SPELL_COSTS: [(i16, u8); 4] = [(0, 30), (1, 30), (2, 100), (3, 100)];
 
+/// KH1's MP for a hit Sora lands (attack data `+0x2C`, Checked (files): his plain swings 3, his
+/// finishers 6, the spells 0), added as gauge units (`0x1402BF330`). KH1 scales it by the two levels
+/// (× (1 + difference × 20 %), within 1 unit and 250 %); KH2's enemies have no KH1 level, so ×1
+/// (Assumption, not 1:1 against an enemy of another level).
+pub const KH1_HIT_UNITS: i32 = 3;
+pub const KH1_FINISHER_UNITS: i32 = 6;
+
 #[cfg(test)]
 mod tests {
     use super::*;

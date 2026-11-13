@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 61 (testing branch: Phase 4: KH1's MP from Sora's hits)
+The owner's choice: MP comes back from the hits Sora lands, as KH1.
+
+- `win/mp.rs`: hooks KH2's hit record `0x1403CE740` (prologue checked; Checked (decomp): owner handle at the attack's +0x10, damage +0x28). A damaging hit by base Sora adds KH1's gauge units through the MP change: finishers (ATKP 129/130/133/134) 6, magic-stat attacks 0, else 3 (KH1 attack data +0x2C, Checked (files)).
+- `kh1mp.rs`: `KH1_HIT_UNITS` / `KH1_FINISHER_UNITS`.
+- Assumption: KH1's level scaling ×1 (KH2's enemies have no KH1 level). Not checked in game. Docs: `docs/mp-magic.md` (t61).
+
 ### 2026-11-13: Stage 60 (testing branch: Phase 4: KH1's MP pool on KH2's MP)
 The owner: "go ahead" (Phase 4 step 1; choices: KH1's bars, KH1's refill from hits, KH1's level gains + KH2's MP-up rewards).
 
