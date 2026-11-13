@@ -33,7 +33,27 @@ const BASE: usize = 0x90;
 /// KH2 model-space matrices for every frame of a KH1 motion, and its travel per frame.
 pub fn kh2_poses(motion: &Motion, kh1: &[Bone], kh2: &[Bone]) -> (Vec<Vec<Mat4>>, Vec<Vec3>) {
     let r = Retarget::new(kh1, kh2);
-    let inv = Inverse::new(kh1, kh2, &r, |i| i < GRIP_BONE && r.follows_one_part(i));
+    let mut inv = Inverse::new(kh1, kh2, &r, |i| i < GRIP_BONE && r.follows_one_part(i));
+    // Torso bones KH1 turns by copying a helper's rotation are measured from that helper's frame
+    // at rest: its parent helpers' turns (the helper table's), without its own.
+    for b in inv.torso_bones() {
+        let w = motion.joint_words.get(b).copied().unwrap_or(0);
+        if (w >> 21) & 3 == 0 && w & 3 == 2 {
+            let a = (((w >> 16 & 0x800) | (w & 0x7FC)) >> 2) as usize;
+            if a >= 1 {
+                let mut q = glam::Quat::IDENTITY;
+                let mut h = motion.helper_table.get(a - 1).map(|x| x.parent).unwrap_or(-1);
+                let mut guard = 0;
+                while h >= 1 && guard < 16 {
+                    let Some(x) = motion.helper_table.get(h as usize) else { break };
+                    q = kh2_anim::euler_quat(glam::Vec3::from(x.rotation)) * q;
+                    h = x.parent;
+                    guard += 1;
+                }
+                inv.set_torso_rest(b, q);
+            }
+        }
+    }
     let n = motion.frames.max(1) as usize;
     let mut poses = Vec::with_capacity(n);
     let mut travel = Vec::with_capacity(n);

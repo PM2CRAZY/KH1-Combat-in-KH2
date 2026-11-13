@@ -199,6 +199,24 @@ impl Inverse {
         frames(&self.parts, &at)
     }
 
+    /// Sets the rest rotation (model space) a torso part's KH1 bone `b` is measured from, where
+    /// KH1's motions turn that bone on another zero than its bind: a bone KH1 places by copying a
+    /// helper's rotation (joint word bits 0–1 = 2) takes that helper's frame, which is the body's
+    /// facing at zero angles, not the bone's bind rotation (KH1 Sora's root: bind (0, −90°, −90°),
+    /// 109° from the idle's own; `0x1403900B0`, Checked (decomp, kh1-posedump recording)).
+    pub fn set_torso_rest(&mut self, b: usize, rest: Quat) {
+        for t in self.torso.iter_mut().flatten() {
+            if t.0 == b {
+                t.1 = rest.normalize().inverse();
+            }
+        }
+    }
+
+    /// Per torso part: the KH1 bone whose turn it takes.
+    pub fn torso_bones(&self) -> Vec<usize> {
+        self.torso.iter().flatten().map(|(b, _)| *b).collect()
+    }
+
     /// How many KH2 bones turn with a measured part.
     pub fn mapped(&self) -> usize {
         self.ride.iter().filter(|r| !matches!(r, Ride::Parent)).count()

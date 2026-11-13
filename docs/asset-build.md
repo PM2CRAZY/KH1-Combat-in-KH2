@@ -173,3 +173,17 @@ helpers with them. Not compared with KH1's own pose in game yet.
   child offsets are the same points in a turned frame). Checked (files). If the mesh follows the
   motions' frames rather than the rest's, the transfer (`inverse.rs`, which turns each bone from
   KH2's rest) places the joints right but turns the skin around them. t22 tests that in game.
+- **t22 result (owner):** KH2's rest pose drawn by our writer is a clean T-pose. The rest's bone
+  frames are the ones the mesh follows.
+- **t23: the pelvis was measured from the wrong zero.** KH2 Sora's real mesh (`kh2_formats::mdlx`,
+  from the sister project) drawn offline on our poses showed the same torn polygons as the game.
+  The cause: the pelvis takes KH1 bone 0's turn, and KH1 places bone 0 by copying helper 3's
+  rotation (joint word bits 0–1 = 2). That rotation counts from the body's facing, not from bone
+  0's bind (0, −90°, −90°), which is 109° away. Checked (decomp `0x1403900B0`; offline: the
+  converted KH1 idle had the hip joints above the hips). `Inverse::set_torso_rest` now measures
+  such a bone from its helper's frame at rest (the parent helpers' turns from the helper table).
+  The converted idle's pelvis is now 20° from rest (KH1's own idle stance), the hips below the
+  root and the feet on the ground.
+- **Mesh stretch, measured offline** (largest growth of a triangle edge over the rest pose):
+  KH2's own A300 13.2. KH1 swing 98 before the fix: torn polygons. After it: 15–22 at the deepest
+  lunge frames, around the hips. Still to look at.

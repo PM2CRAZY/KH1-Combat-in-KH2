@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 23 (testing branch: KH1 swings: the pelvis measured from KH1's own zero)
+Owner (t22): "The T Pose looks normal. the rest of the combo looks how it did before".
+
+- KH2 Sora's real mesh drawn offline on the converted poses showed the game's torn polygons. The pelvis took KH1 bone 0's turn from its bind rotation, but KH1 drives bone 0 by copying helper 3's rotation (word bits 0-1 = 2), whose zero is the body's facing: 109° off. Now measured from the helper's rest frame (`Inverse::set_torso_rest`). Checked: decomp `0x1403900B0`, offline mesh (the converted idle stands right; swing 98 holds together).
+- The rest-pose test is off: the first ground swing is KH1's again.
+- Remaining: edges stretch up to 15–22 at the deepest lunge frames, around the hips (KH2's own swing: 13). Not checked in game.
+
 ### 2026-11-13: Stage 22 (testing branch: test: KH2's rest pose in the first ground swing)
 Test build. KH2's own `.mdlx` rest pose (bind), held still, plays as the first ground swing. If KH2's mesh looks clean on it (a T-pose), the rest's bone frames are the ones the mesh follows and the stretching is elsewhere; if the mesh twists, the transfer must turn bones from frames KH2's own motions use. Checked: nothing yet (the owner's look decides).
 

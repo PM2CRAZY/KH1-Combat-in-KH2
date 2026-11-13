@@ -308,3 +308,124 @@ fn dump_bind_vs_idle() {
     }
     eprintln!("{} bones turned over 60 deg between KH2's bind and its idle: {:?}", big.len(), big);
 }
+
+#[test]
+fn dump_template_constraints() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let mset = rd("P_EX100.mset");
+    let bar = Bar::parse(&mset).unwrap();
+    for slot in [151usize, 0] {
+        let anb = Bar::parse(bar.entries[slot * 4].data).unwrap();
+        let data = anb.entries.iter().find(|e| e.kind == 9).unwrap().data;
+        let m = kh2_formats::anim::Interpolated::parse(data).unwrap().unwrap();
+        eprintln!("motion {slot}: {} constraints, {} activations, {} limiters, {} expressions, {} nodes", m.constraints.len(), m.activations.len(), m.limiters.len(), m.expressions.len(), m.nodes.len());
+        for c in &m.constraints { eprintln!("  kind {} constrained {} source {} limiter {} act {}+{} temp {}", c.kind, c.constrained, c.source, c.limiter, c.activation_start, c.activation_count, c.temporary_active); }
+        for e in &m.expressions { eprintln!("  expr {:?}", e); }
+    }
+}
+
+#[test]
+fn dump_mesh_poses() {
+    let Some(d) = dir() else { return };
+    let Ok(out) = std::env::var("KH1_MESH_OUT") else { return };
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let mdlx = rd("P_EX100.mdlx");
+    let model = kh2_formats::mdlx::parse(&mdlx).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&rd("xa_ex_0010.mdls")).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
+    let motions = kh1_data::mset::parse(&rd("xa_ex_0010.mset")).unwrap();
+    let mset = rd("P_EX100.mset");
+    let bar = Bar::parse(&mset).unwrap();
+    let a300 = Bar::parse(bar.entries[151 * 4].data).unwrap();
+    let template = a300.entries.iter().find(|e| e.kind == 9).unwrap().data;
+    let tm = kh2_formats::anim::Interpolated::parse(template).unwrap().unwrap();
+    let m = motions[98].clone().unwrap();
+    let (poses, travel) = kh1_assets::convert::kh2_poses(&m, &kh1, &kh2);
+    let data = kh1_assets::convert::write_motion(template, &kh2, &poses, &travel).unwrap();
+    let back = kh2_formats::anim::Interpolated::parse(&data).unwrap().unwrap();
+    let mut sets: Vec<(String, Vec<glam::Mat4>)> = vec![("bind".into(), kh2_anim::Pose::bind(&kh2).bones)];
+    sets.push(("a300_f20".into(), kh2_anim::evaluate(&kh2, &tm, 20.0, kh2_anim::Options { constraints: true }).bones));
+    for f in [0usize, 10, 20, 30, 40] {
+        sets.push((format!("ours_f{f}"), kh2_anim::evaluate(&kh2, &back, f as f32, kh2_anim::Options { constraints: false }).bones));
+    }
+    for (name, bones) in sets {
+        let mut s = String::from("[");
+        let mut first = true;
+        for g in &model.groups {
+            for t in &g.triangles {
+                if !first { s.push(','); }
+                first = false;
+                let p: Vec<String> = t.iter().map(|v| { let w = bones[v.bone as usize].transform_point3(glam::Vec3::from(v.position)); format!("[{:.1},{:.1},{:.1},{}]", w.x, w.y, w.z, v.bone) }).collect();
+                s.push_str(&format!("[{}]", p.join(",")));
+            }
+        }
+        s.push(']');
+        std::fs::write(format!("{out}/mesh-{name}.json"), s).unwrap();
+    }
+}
+
+#[test]
+fn dump_locals_bind_vs_kh2() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&rd("P_EX100.mdlx")).unwrap();
+    let mset = rd("P_EX100.mset");
+    let bar = Bar::parse(&mset).unwrap();
+    let ms: Vec<kh2_formats::anim::Interpolated> = [151usize, 0].iter().map(|&s| { let anb = Bar::parse(bar.entries[s * 4].data).unwrap(); kh2_formats::anim::Interpolated::parse(anb.entries.iter().find(|e| e.kind == 9).unwrap().data).unwrap().unwrap() }).collect();
+    let val = |m: &kh2_formats::anim::Interpolated, j: usize, c: u8| -> String {
+        if let Some(x) = m.forward.iter().find(|x| x.joint as usize == j && x.channel == c) { return format!("curve{:.2}", x.eval(0.0)); }
+        if let Some(x) = m.initial_pose.iter().find(|x| x.0 as usize == j && x.1 == c as i16) { return format!("{:.2}", x.2); }
+        "-".into()
+    };
+    for b in [1usize, 2, 3, 10, 11, 12, 22, 23, 24, 32, 34, 38, 39, 40, 41, 52, 53, 63] {
+        let bone = &kh2[b];
+        let r: Vec<String> = (3..9u8).map(|c| val(&ms[0], b, c)).collect();
+        let i: Vec<String> = (3..9u8).map(|c| val(&ms[1], b, c)).collect();
+        eprintln!("bone {b} (parent {}): bind r {:?} t {:?} | A300 {:?} | idle {:?}", bone.parent, bone.rotation.map(|x| (x * 100.0).round() / 100.0), bone.translation.map(|x| (x * 10.0).round() / 10.0), r, i);
+    }
+}
+
+#[test]
+fn dump_idle_vs_kh2_idle() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&rd("xa_ex_0010.mdls")).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&rd("P_EX100.mdlx")).unwrap();
+    let motions = kh1_data::mset::parse(&rd("xa_ex_0010.mset")).unwrap();
+    let mset = rd("P_EX100.mset");
+    let bar = Bar::parse(&mset).unwrap();
+    let anb = Bar::parse(bar.entries[0].data).unwrap();
+    let idle2 = kh2_formats::anim::Interpolated::parse(anb.entries.iter().find(|e| e.kind == 9).unwrap().data).unwrap().unwrap();
+    let k2 = kh2_anim::evaluate(&kh2, &idle2, 0.0, kh2_anim::Options { constraints: true }).bones;
+    let (ours, _) = kh1_assets::convert::kh2_poses(&motions[0].clone().unwrap(), &kh1, &kh2);
+    let bind = kh2_anim::Pose::bind(&kh2).bones;
+    let ang = |a: &glam::Mat4, b: &glam::Mat4| { let (_, qa, _) = a.to_scale_rotation_translation(); let (_, qb, _) = b.to_scale_rotation_translation(); qa.angle_between(qb).to_degrees() as i32 };
+    for b in [0usize, 1, 2, 3, 4, 10, 11, 12, 13, 23, 24, 39, 40, 41, 52, 53, 68, 69, 74, 76, 79, 140, 141] {
+        eprintln!("bone {b}: ours vs KH2 idle {} deg, ours vs bind {} deg, KH2 idle vs bind {} deg; pos ours {:?} kh2 {:?}", ang(&ours[0][b], &k2[b]), ang(&ours[0][b], &bind[b]), ang(&k2[b], &bind[b]), ours[0][b].w_axis.truncate().round(), k2[b].w_axis.truncate().round());
+    }
+}
+
+#[test]
+fn dump_torso_refs() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&rd("xa_ex_0010.mdls")).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&rd("P_EX100.mdlx")).unwrap();
+    let motions = kh1_data::mset::parse(&rd("xa_ex_0010.mset")).unwrap();
+    let r = kh1_data::retarget::Retarget::new(&kh1, &kh2);
+    let inv = kh1_data::inverse::Inverse::new(&kh1, &kh2, &r, |i| i < 280 && r.follows_one_part(i));
+    let m0 = motions[0].clone().unwrap();
+    for b in inv.torso_bones() {
+        let w = m0.joint_words[b];
+        let p0 = kh1_data::rig::pose(&m0, &kh1, 0.0).bones[b];
+        let bind = kh2_anim::Pose::bind(&kh1).bones[b];
+        let (_, q0, _) = p0.to_scale_rotation_translation();
+        let (_, qb, _) = bind.to_scale_rotation_translation();
+        eprintln!("torso KH1 bone {b} parent {} word {w:#010x} (mode {} lo {} A {}), idle vs bind {:.0} deg", kh1[b].parent, (w >> 21) & 3, w & 3, ((w >> 16 & 0x800) | (w & 0x7FC)) >> 2, q0.angle_between(qb).to_degrees());
+    }
+}

@@ -162,7 +162,7 @@ pub const ROUND_TRIP_FIRST_SWING: bool = false;
 /// Test build (t22): KH1 motion 98's slot holds KH2's own rest pose (the `.mdlx` bind), held
 /// still, so the owner can see whether KH2's mesh sits right on the rest's bone frames (the
 /// transfer turns every bone from them; KH2's own motions use other frames for 175 bones).
-pub const REST_POSE_FIRST_SWING: bool = true;
+pub const REST_POSE_FIRST_SWING: bool = false;
 
 /// The KH2 motion id KH1 motion `kh1` is built as.
 pub fn kh2_motion_of(kh1: usize) -> Option<usize> {
