@@ -267,3 +267,11 @@ loads, runs, draws and collides it as its own spell; there is no spell player of
   one plays until then).
 - Not yet: KH1's re-pick of a new target within 500 when the first is gone; KH1's damage (KH2's
   Fire rows' powers still); KH1's sounds; Blizzard, Thunder, Cure next.
+
+## t71: Fire's attack radius call fixed
+
+`trap_attack_set_radius` takes 3 arguments (attack, radius, height; 0 = the radius): KH2's trap
+table 2 entry 11 (`0x140756B60 + 11 × 16`: `0x1404322F0`, flags 3) and its body pass the three to
+`0x140437C00`, Checked (exe + decomp); KH2's own Blizzard pushes three. t70's Fire pushed four, so
+the game would have read the radius as the attack. The test machine now fails any script that
+leaves a value on a stack between frames.

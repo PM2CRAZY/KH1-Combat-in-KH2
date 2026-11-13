@@ -1,3 +1,9 @@
+### 2026-11-13: Stage 71 (testing branch: Phase 4: KH1's Fire attack radius call)
+Follow-up to t70 (the owner: "perfect finish phase 4 now").
+
+- `trap_attack_set_radius` takes (attack, radius, height): KH2's trap table 2 at 0x140756B60, entry 11 = 0x1404322F0, flags 3 (Checked (exe)); its body passes args 0..2 to 0x140437C00 (Checked (decomp)). t70's KH1 Fire pushed four values, so the game would have taken the radius as the attack handle. Now three, as KH2's own Blizzard does.
+- Test VM: fails any script that leaves values on a value stack between frames (caught this).
+
 ### 2026-11-13: Stage 70 (testing branch: Phase 4: KH1's Fire inside KH2's own Fire)
 The owner: "perfect finish phase 4 now" (KH1's spells with KH1's effects, KH1's behaviour).
 

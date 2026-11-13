@@ -338,7 +338,9 @@ fn fire_code(a: &mut Asm) {
     a.push_v(Wp, W_RES).push_i(fire::BALL).push_i(1).push_i(0).sys("trap_pax_start").pop(SpD, B_FX);
     a.push_a(Wp, W_CASTER).push_i(fire::ATKP).push_i(-1).push_v(Wp, W_SUB).sys("trap_attack_new").pop(SpD, B_ATK);
     a.push_v(SpD, B_ATK).push_v(Wp, W_RES).sys("trap_attack_set_pax");
-    a.push_v(SpD, B_ATK).push_f(fire::RADIUS).push_f(fire::RADIUS).push_f(0.0).sys("trap_attack_set_radius");
+    // (attack, radius, height: 0 = the radius; 3 arguments, Checked (exe: trap table 2 entry 11,
+    // `0x1404322F0`), as KH2's own Blizzard calls it).
+    a.push_v(SpD, B_ATK).push_f(fire::RADIUS).push_f(0.0).sys("trap_attack_set_radius");
     // sp+4 the life left, sp+8 fading.
     a.push_f(fire::LIFE).pop(Sp, 4).push_i(0).pop(Sp, 8);
     a.label("fly");
@@ -495,6 +497,10 @@ mod tests {
                 if !vm.ctxs[t].done && vm.run(t, &mut w).unwrap() != kh2_bdx::Status::Yield {
                     vm.ctxs[t].done = true;
                 }
+            }
+            // Every trap call took what it was given: nothing left on any value stack between frames.
+            for c in [cast].into_iter().chain(release).chain(w.threads.iter().copied()) {
+                assert!(vm.ctxs[c].tp.is_empty(), "frame {f}: {:?} left on context {c}", vm.ctxs[c].tp);
             }
         }
         assert!(release.is_some());
