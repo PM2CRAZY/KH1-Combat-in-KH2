@@ -98,3 +98,31 @@ fn extended_mset_keeps_kh2s_entries_and_sharing() {
     assert_eq!(out.len(), orig.len() + 32 + 48);
     eprintln!("{} -> {} bytes", orig.len(), out.len());
 }
+
+#[test]
+fn rotations_play_back() {
+    let Some(d) = dir() else { return };
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&rd("xa_ex_0010.mdls")).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&rd("P_EX100.mdlx")).unwrap();
+    let motions = kh1_data::mset::parse(&rd("xa_ex_0010.mset")).unwrap();
+    let mset = rd("P_EX100.mset");
+    let bar = Bar::parse(&mset).unwrap();
+    let a300 = Bar::parse(bar.entries[151 * 4].data).unwrap();
+    let template = a300.entries.iter().find(|e| e.kind == 9).unwrap().data;
+    let m = motions[98].clone().unwrap();
+    let (poses, travel) = kh1_assets::convert::kh2_poses(&m, &kh1, &kh2);
+    let data = kh1_assets::convert::write_motion(template, &kh2, &poses, &travel).unwrap();
+    let back = kh2_formats::anim::Interpolated::parse(&data).unwrap().unwrap();
+    let mut worst = (0.0f32, 0, 0);
+    for f in 0..poses.len() {
+        let p = kh2_anim::evaluate(&kh2, &back, f as f32, kh2_anim::Options { constraints: false });
+        for b in 0..kh2.len() {
+            let (_, qa, _) = p.bones[b].to_scale_rotation_translation();
+            let (_, qb, _) = poses[f][b].to_scale_rotation_translation();
+            let a = qa.angle_between(qb);
+            if a > worst.0 { worst = (a, f, b); }
+        }
+    }
+    eprintln!("worst rotation error {:.3} rad at frame {} bone {}", worst.0, worst.1, worst.2);
+}

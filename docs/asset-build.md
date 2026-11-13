@@ -107,3 +107,8 @@ helpers with them. Not compared with KH1's own pose in game yet.
 - The build runs every launch because OpenKH rebuilds `mod\kh2` each launch, which drops our
   file (78–123 ms). Assumption. Note: an outfit mod that ships its own `obj/P_EX100.mset` is
   overwritten by ours, which is built from KH2's original.
+- **t15: the key-time count.** Header `+0x10` (OpenKH: KeyFrameCount) is the length of the
+  key-time table: in all 89 of KH2's interpolated Sora motions it equals the highest time index
+  the keys use, plus one. Checked (files). t12–t14 kept A300's 27 while our motions use 48–80
+  times; KH2 searching only the first 27 is the likely cause of the stretching that t14 didn't
+  fix (Assumption until the owner checks in game). Our own evaluator never read the field.

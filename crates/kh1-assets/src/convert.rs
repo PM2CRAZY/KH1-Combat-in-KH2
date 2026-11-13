@@ -266,6 +266,9 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
     set(&mut header, 0x04, frames as i32);
     set(&mut header, 0x08, o_ik);
     set(&mut header, 0x0C, o_joints);
+    // The key-time table's length (OpenKH: KeyFrameCount). KH2 searches the times by it; A300's
+    // own 27 left most of our key times past its end.
+    set(&mut header, 0x10, times.len() as i32);
     set(&mut header, 0x14, o_pose);
     set(&mut header, 0x18, initial.len() as i32);
     set(&mut header, 0x1C, o_root);

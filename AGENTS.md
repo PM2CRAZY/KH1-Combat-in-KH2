@@ -1,3 +1,10 @@
+### 2026-11-12: Stage 15 (testing branch: KH1 swings: the key-time count)
+Owner (video, t14): "he's still stretching like crazy".
+
+- Header `+0x10` of an interpolated motion is the length of its key-time table (checked: all 89 of KH2's own Sora motions). The writer kept A300's 27 while ours use 48–80 times; KH2 most likely searched only the first 27, so most keys landed on the wrong times. Now set to our table's length.
+- Rotations of every bone now checked to play back (test `rotations_play_back`, worst 0.013 rad), not only joint positions.
+- Checked: files. Not checked: in game.
+
 ### 2026-11-12: Stage 14 (testing branch: camp-menu crash and stretched swings)
 Owner: "soras animations are really bad he stretches like crazy. the game also crashed" / "the game crashes when entering the camp menu".
 
