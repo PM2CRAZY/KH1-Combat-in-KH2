@@ -79,9 +79,13 @@ fn euler_near(q: Quat, prev: Option<[f32; 3]>) -> [f32; 3] {
 }
 
 /// Each bone's local values (scale, Euler rotation, translation) every frame.
-fn locals(kh2: &[Bone], poses: &[Vec<Mat4>]) -> Vec<Vec<[f32; 9]>> {
+/// The first frame's angles are written the way KH2 writes that bone (`seed`, the template's own
+/// at its first frame): of a turn's two Euler forms (and their whole turns), the one nearest
+/// KH2's. KH2 blends motions by mixing these numbers, so a bone written in the other form turned
+/// the long way round during every blend in or out (the owner: "stretched like CRAZY").
+fn locals(kh2: &[Bone], poses: &[Vec<Mat4>], seed: &[Option<[f32; 3]>]) -> Vec<Vec<[f32; 9]>> {
     let mut out = vec![Vec::with_capacity(poses.len()); kh2.len()];
-    let mut prev: Vec<Option<[f32; 3]>> = vec![None; kh2.len()];
+    let mut prev: Vec<Option<[f32; 3]>> = (0..kh2.len()).map(|b| seed.get(b).copied().flatten()).collect();
     for pose in poses {
         for (b, bone) in kh2.iter().enumerate() {
             let (_, q, pos) = pose[b].to_scale_rotation_translation();
@@ -138,6 +142,26 @@ fn i32_at(b: &[u8], at: usize) -> Result<i32> {
     b.get(at..at + 4).map(|s| i32::from_le_bytes(s.try_into().unwrap())).ok_or_else(|| Error::Format(format!("motion: read past the end at {at:#x}")))
 }
 
+/// Each bone's Euler angles in `template` (a KH2 motion) at its first frame: its curve, else its
+/// starting value, else KH2's bind.
+fn template_angles(template: &[u8], kh2: &[Bone]) -> Vec<Option<[f32; 3]>> {
+    let Ok(Some(m)) = kh2_formats::anim::Interpolated::parse(template) else { return vec![None; kh2.len()] };
+    (0..kh2.len())
+        .map(|b| {
+            let mut r = kh2[b].rotation;
+            for (i, v) in r.iter_mut().enumerate() {
+                let c = (3 + i) as u8;
+                if let Some(cur) = m.forward.iter().find(|x| x.joint as usize == b && x.channel == c) {
+                    *v = cur.eval(0.0);
+                } else if let Some(p) = m.initial_pose.iter().find(|x| x.0 as usize == b && x.1 == c as i16) {
+                    *v = p.2;
+                }
+            }
+            Some(r)
+        })
+        .collect()
+}
+
 struct Curve {
     joint: i16,
     channel: u8,
@@ -157,7 +181,8 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
         return Err(Error::Format(format!("template has {bone_count} bones, the skeleton {}", kh2.len())));
     }
     let frames = poses.len();
-    let loc = locals(kh2, poses);
+    let seed = template_angles(template, kh2);
+    let loc = locals(kh2, poses, &seed);
     let mut initial: Vec<(i16, i16, f32)> = Vec::new();
     let mut forward: Vec<Curve> = Vec::new();
     for (b, chans) in loc.iter().enumerate() {

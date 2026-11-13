@@ -157,3 +157,19 @@ helpers with them. Not compared with KH1's own pose in game yet.
   side-on lunge, and the KH2 conversion matches it (stick figures). Whether KH1 shows 98 this way
   is not yet checked against the game: the bone pass (`0x1403900B0`: aims, two-bone IK) is the
   remaining unchecked part.
+- **t21: KH1's own poses (kh1-posedump recording).** Swings 98, 99, 101, 102, 103 and 104 and the
+  idle were recorded in KH1 and found in `xa_ex_0010.mset` by their joint words. KH1 really poses
+  98 with the hips at 59 and deep forward lunges mid-swing, as `rig.rs` does. The `rig.rs` joints
+  sit within 0.7 of KH1's for the idle and 7–30 for most swing frames (one 45–55 outlier frame each
+  in 99, 101 and 104). Checked (trace: the recording). Making the rig exact is still to do. 57
+  bones are skipped in KH1's pass (joint-word bit 26) and hold stale values; they're left out.
+- **t21: Euler forms chosen like KH2's.** A turn has two Euler forms (plus whole turns). KH2 blends
+  motions by mixing the numbers, so a bone written in the other form than KH2's own turns the long
+  way round during each blend. Each bone's first frame now takes the form nearest the template's
+  (A300) first frame, and later frames continue from there. Assumption: that blending caused part
+  of the stretching; not yet checked in game.
+- **KH2's rest pose against its own motions.** Between the `.mdlx` rest (bind) and KH2's own idle,
+  175 bones turn more than 60°: the root 138° and bone 3 149° (whose children stay put; bone 3's
+  child offsets are the same points in a turned frame). Checked (files). If the mesh follows the
+  motions' frames rather than the rest's, the transfer (`inverse.rs`, which turns each bone from
+  KH2's rest) places the joints right but turns the skin around them. t22 tests that in game.

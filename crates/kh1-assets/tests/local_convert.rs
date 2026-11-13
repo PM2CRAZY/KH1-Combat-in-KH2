@@ -285,3 +285,26 @@ fn dump_kh1_key_times() {
         eprintln!("m{idx}: frames {} fps {} max key time {mx}; helper3 ty keys {:?}", m.frames, m.fps, h3);
     }
 }
+
+#[test]
+fn dump_bind_vs_idle() {
+    let Some(d) = dir() else { return };
+    if std::env::var("KH1_KH2_ROOTS").is_err() { return }
+    let rd = |n: &str| std::fs::read(d.join(n)).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&rd("P_EX100.mdlx")).unwrap();
+    let mset = rd("P_EX100.mset");
+    let bar = Bar::parse(&mset).unwrap();
+    let anb = Bar::parse(bar.entries[0].data).unwrap();
+    let data = anb.entries.iter().find(|e| e.kind == 9).unwrap().data;
+    let m = kh2_formats::anim::Interpolated::parse(data).unwrap().unwrap();
+    let idle = kh2_anim::evaluate(&kh2, &m, 0.0, kh2_anim::Options { constraints: true });
+    let bind = kh2_anim::Pose::bind(&kh2);
+    let mut big = Vec::new();
+    for b in 0..kh2.len() {
+        let (_, qi, _) = idle.bones[b].to_scale_rotation_translation();
+        let (_, qb, _) = bind.bones[b].to_scale_rotation_translation();
+        let a = qi.angle_between(qb).to_degrees();
+        if a > 60.0 { big.push((b, a as i32, kh2[b].parent)); }
+    }
+    eprintln!("{} bones turned over 60 deg between KH2's bind and its idle: {:?}", big.len(), big);
+}

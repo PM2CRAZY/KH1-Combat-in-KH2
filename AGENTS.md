@@ -1,3 +1,9 @@
+### 2026-11-13: Stage 21 (testing branch: KH1 swings: Euler forms like KH2's; KH1 ground truth)
+Owner: KH1's swings on KH2 Sora are "stretched like CRAZY"; recorded KH1's own poses with kh1-posedump.
+
+- Recording compared (test `kh1_truth`): KH1 itself puts 98's hips at 59 and lunges low mid-swing, as our KH1 reader does (within 0.7 idle, 7–30 most swing frames). Checked: trace.
+- Converter: each bone's first frame takes the Euler form nearest A300's own, so KH2's motion blends (which mix the numbers) don't turn bones the long way round. Assumption: part of the stretching; not checked in game.
+
 ### 2026-11-13: Stage 20 (testing branch: kh1-posedump: F10 on its own thread, hooks logged)
 Owner: "i pressed f10 twice" (nothing recorded). The tool read F10 only inside the hooked skeleton passes. It now watches F10 every 30 ms on its own thread, and logs each hook's first call and every 3600th, so the log shows whether KH1's passes reach the hooks. Checked: nothing new (a test tool).
 
