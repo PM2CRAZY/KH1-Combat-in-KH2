@@ -135,3 +135,14 @@ turned by −3.165, back to front (the owner, t42 / t44: "guarding still flips s
 - a KH2 motion moved onto KH1's skeleton keeps the template's root turn curves, sampled a frame at
   a time (`convert::write_motion_keep_turn`), so KH2's own guard still turns.
 The t43 Euler-seed change stays (it doesn't hurt), but it was not this.
+
+## t48: a Keyblade bone on KH1's grip
+
+The owner (t44): "the keyblade is not in his hands for any keyblade he has equipped". KH2 hangs the
+Keyblade from the hand bone in the skeleton data (Assumption: in t27 it followed our map 85 → KH1
+202, while KH2's own motions, moved onto KH1, turned KH1's hand like KH2's). KH1's own motions turn
+the hand KH1's way and hold the Keyblade at KH1's grip bone (280). Now the model has a 294th bone
+(`player_model::WEAPON_BONE`), on the grip, turned by KH1's grip bind → KH2's hand bind (a fixed
+turn, `weapon_local`), placed in every motion from the grip; the hand map 85 → 293 (skeleton data
+and collision). So KH2's Keyblade motions, made for its hand, sit in KH1's grip. Assumption: the
+two binds hold their Keyblades alike.

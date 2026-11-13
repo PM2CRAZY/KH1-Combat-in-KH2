@@ -1,3 +1,8 @@
+### 2026-11-13: Stage 48 (testing branch: Keyblade bone on KH1's grip)
+Owner: "the keyblade is not in his hands for any keyblade he has equipped" (t44 video, KH1 motions on the KH1 model).
+
+- `player_model::WEAPON_BONE` (293): a bone of ours on KH1's grip bone 280, turned from KH1's grip bind to KH2's hand (85) bind, placed in every motion we write; KH2's hand (85) now maps to it (skeleton data, collision), so the Keyblade hangs from KH1's grip held as KH2 holds it. Assumptions: KH2 hangs the Keyblade from the skeleton data's hand bone; the two binds hold their Keyblades alike.
+
 ### 2026-11-13: Stage 47 (testing branch: Looping motions loop)
 Owner: "Sora's animations freeze if they play too long. Walking and Running both freeze and so does his idle."
 
