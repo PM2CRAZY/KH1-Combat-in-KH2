@@ -197,11 +197,13 @@ pub const GUARD: [(usize, usize); 1] = [(173, 110)];
 /// KH2 (the OG rewrite's ids, the rows Checked (files)): 0 idle (rows 0, 2), 1 walk (4, 6, 7),
 /// 2 run (8, 10, 11), 3 jump (14), 4 fall (18), 5 land (22). KH1 (lengths and poses Checked
 /// (files); which is which an Assumption from them and the sister project's request map, KH1
-/// requests 0 / 1 / 2 → slots 0..1 / 2..4 / 5..7, the jump's requests 9..0xC → slots 12, 13, 10,
-/// 11): 0 the field idle (120 frames, standing tall), 1 the battle idle (170, the Keyblade
-/// stance), 2 / 3 / 4 the walks, 5 / 6 / 7 the runs, 12 the jump (34: crouch to stretched), 10
-/// the fall (40, held), 11 the landing (28). KH1's 13 (the top of the jump) has no KH2 row.
-pub const MOVES: [(usize, usize); 11] = [(0, 0), (2, 1), (4, 2), (6, 3), (7, 4), (8, 5), (10, 6), (11, 7), (14, 12), (18, 10), (22, 11)];
+/// requests 0 / 1 / 2 → slots 0..1 / 2..4 / 5..7, the jump's requests 4..7 → slots 8..11, the High
+/// Jump's 9..0xC → 12, 13, 10, 11): 0 the field idle (120 frames, standing tall), 1 the battle idle
+/// (170, the Keyblade stance), 2 / 3 / 4 the walks, 5 / 6 / 7 the runs, 8 the jump (26), 10 the
+/// fall (40, held), 11 the landing (28). The owner (t42): 12 is KH1's High Jump (it was on the
+/// jump). KH1's 9 / 13 (the jumps' tops) have no KH2 row; KH2's High Jump (201) isn't in
+/// `P_EX100.mset` (a DUMM row, Checked (files)), so KH1's 12 waits for where KH2 loads it from.
+pub const MOVES: [(usize, usize); 11] = [(0, 0), (2, 1), (4, 2), (6, 3), (7, 4), (8, 5), (10, 6), (11, 7), (14, 8), (18, 10), (22, 11)];
 
 static SLOTS: std::sync::RwLock<Option<Vec<(usize, usize)>>> = std::sync::RwLock::new(None);
 

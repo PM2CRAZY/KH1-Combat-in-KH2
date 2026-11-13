@@ -1,3 +1,8 @@
+### 2026-11-13: Stage 44 (testing branch: KH1 jump on KH2's jump)
+Owner: "Sora has his KH1 high jump animation for normal jump, and KH2's High jump for high jump".
+
+- `MOVES`: KH2's jump row (14) gets KH1 motion 8 (KH1's jump; requests 4..7 → slots 8..11) instead of 12, which is KH1's High Jump (requests 9..0xC → 12, 13, 10, 11). KH2's High Jump motion (201) is a DUMM row in `P_EX100.mset` (Checked (files)): KH1's 12 goes there once the set KH2 loads it from is found.
+
 ### 2026-11-13: Stage 43 (testing branch: KH1 motions: travel in the bones, one Euler form)
 Owner: "Sora still rubber bands during his ground combo", "Sora still flips 180 during his KH1 guard with the KH1 player model".
 
