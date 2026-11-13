@@ -267,3 +267,36 @@ fn kh1_world_tilt() {
         }
     }
 }
+
+#[test]
+fn kh1_mesh_on_kh1() {
+    let (Ok(files), Ok(dump)) = (std::env::var("KH1_KH2_FILES"), std::env::var("KH1_POSEDUMP")) else { return };
+    let Ok(out) = std::env::var("KH1_MESH_OUT") else { return };
+    let rd = |n: &str| std::fs::read(std::path::Path::new(&files).join(n)).unwrap();
+    let mdls = rd("xa_ex_0010.mdls");
+    let (meshes, textures) = kh1_data::mdls::parse_mesh(&mdls).unwrap();
+    eprintln!("{} meshes, {} vertices, {} triangles, {} textures {:?}", meshes.len(), meshes.iter().map(|m| m.vertices.len()).sum::<usize>(), meshes.iter().map(|m| m.triangles.len()).sum::<usize>(), textures.len(), textures.iter().map(|t| (t.width, t.height)).collect::<Vec<_>>());
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let mset = kh1_data::mset::parse(&rd("xa_ex_0010.mset")).unwrap();
+    let (motions, frames) = read_dump(&std::fs::read(dump).unwrap());
+    let ws: Vec<f32> = meshes.iter().flat_map(|m| m.vertices.iter().map(|v| v.weight)).collect();
+    eprintln!("weights min {} max {}", ws.iter().cloned().fold(f32::MAX, f32::min), ws.iter().cloned().fold(0.0, f32::max));
+    for idx in [0usize, 98] {
+        let m = mset[idx].as_ref().unwrap();
+        let mp = motions.iter().find(|(_, w)| w == &m.joint_words).unwrap().0;
+        let f = frames.iter().filter(|f| f.tag == 2 && f.motion == mp).min_by(|a, b| (a.t - 16.0).abs().total_cmp(&(b.t - 16.0).abs())).unwrap();
+        let ours = kh1_data::rig::pose(m, &kh1, f.t).bones;
+        let mut s = String::from("[");
+        let mut first = true;
+        for mesh in &meshes {
+            for t in &mesh.triangles {
+                if !first { s.push(','); }
+                first = false;
+                let p: Vec<String> = t.iter().map(|&i| { let v = mesh.vertices[i as usize]; let w = ours[v.joint as usize].transform_point3(glam::Vec3::from(v.position)); format!("[{:.1},{:.1},{:.1}]", w.x, w.y, w.z) }).collect();
+                s.push_str(&format!("[{}]", p.join(",")));
+            }
+        }
+        s.push(']');
+        std::fs::write(format!("{out}/kh1mesh-{idx}.json"), s).unwrap();
+    }
+}

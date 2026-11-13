@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 26 (testing branch: KH1 player model, step 1: read KH1 Sora's mesh)
+Owner: "Lets see if we can have KH1 sora's player model be placed in KH2", then "B" (KH1's own skeleton; KH2's motions converted onto it).
+
+- Plan in docs/kh1-player-model.md (5 steps).
+- Step 1: `kh1_data::mdls::parse_mesh` reads KH1 Sora's meshes and textures (layout after OpenKH's `OpenKh.Kh1.Mdls`, Apache-2.0, credited; our own code). `xa_ex_0010.mdls`: 9 groups, 5,182 vertices, 2,828 triangles, 7 textures; all single-weight.
+- Checked: files (the mesh drawn offline on KH1's idle and swing 98 is whole). No change in game yet.
+
 ### 2026-11-13: Stage 25 (testing branch: KH1 swings: the lean on KH2's proportions)
 Owner: "B" (KH1's timing, swing path, travel and hit frames, with the lean and spread scaled to KH2's proportions; not 1:1).
 
