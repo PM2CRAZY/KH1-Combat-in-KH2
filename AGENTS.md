@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 62 (testing branch: KH1's follow camera on KH2's mode 0)
+The owner: "continue with the camera"; "feel free to look at any of the code we did for putting KH1 into ReCoM".
+
+- `kh1cam.rs`: KH1's follow / lock camera, engine-agnostic, copied from the owner's KH1-in-ReCom (testing: `crates/kh1-recom/src/camera.rs` `pub mod kh1`, `kh1-core/src/math.rs`; numbers from the KH1 Steam decomp there).
+- `win/camera.rs` (camera = kh1): hooks KH2's follow `0x140165110` (prologue checked); on Sora it runs KH1's follow and writes KH2's goals +0x64 / +0x84 and drawn view +0x18 / +0x08 (spring velocities +0x74 / +0x94 zeroed; Checked (decomp) `0x140165700`); KH2's cut flag +0x41 → behind Sora; a return after other modes → KH1's entry. Walls: KH2's segment test `0x140171210`. Inputs from KH2's pad and options.
+- Assumptions: stick y sign / Normal; a ray for KH1's sphere. Not yet: lock camera, FOV. Not checked in game. Docs: `docs/camera.md` (t62).
+
 ### 2026-11-13: Stage 61 (testing branch: Phase 4: KH1's MP from Sora's hits)
 The owner's choice: MP comes back from the hits Sora lands, as KH1.
 

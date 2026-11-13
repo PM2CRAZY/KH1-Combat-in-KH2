@@ -6,6 +6,7 @@ mod weapon_hold;
 mod config_menu;
 mod arc;
 mod build;
+mod camera;
 mod crash;
 mod highjump;
 mod hook;
@@ -196,6 +197,9 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
             prty::install(base);
             highjump::install(base);
             airsteer::install(base);
+        }
+        if s.style("camera") == crate::settings::Style::Kh1 {
+            camera::install(base);
         }
         if s.style("defence") == crate::settings::Style::Kh1 {
             roll::install(base);

@@ -65,3 +65,24 @@ mode 3, lock-on, `0x1401E2650`; the camera task `0x1401E5D90`. Mode 1's globals 
    (§5.3), and `0x140165700` / `0x140164520` in KH2.
 2. **KH1's lock-on camera** as KH2's mode 2 the same way.
 3. A trace to check it frame for frame against KH1's.
+
+## t62: KH1's follow camera on KH2's mode 0
+
+The owner (2026-11-13): "continue with the camera", and "feel free to look at any of the code we did
+for putting KH1 into ReCoM". KH1-in-ReCom (testing) already has KH1's follow and lock camera
+written out engine-agnostic, every number from the KH1 Steam decomp (`crates/kh1-recom/src/
+camera.rs` `pub mod kh1`, `crates/kh1-core/src/math.rs`). They are copied here as `kh1cam.rs`
+(the Re:CoM stick and inversion helpers left out).
+
+`win/camera.rs` (`camera = kh1`): KH2's follow `0x140165110` (prologue checked), on Sora, runs
+KH1's follow (`kh1cam::kh1::Follow::step` / `view`) and writes its eye and look as KH2's goals
+(`+0x64` / `+0x84`) and drawn view (`+0x18` / `+0x08`), with the spring's velocities (`+0x74` /
+`+0x94`) zeroed, so KH2's lag `0x140165700` leaves them where KH1 put them; KH2's yaw `+0x5C` /
+`+0x60` follow. Entry: KH2's cut flag `+0x41` (a new room, an event's end) re-places it behind Sora
+(KH1's way); coming back after other modes (more than 0.1 s without a follow step), KH1's entry at
+the drawn view's yaw. Walls: KH2's segment test `0x140171210`, the eye backed off by the sweep's
+radius (Assumption: a ray stands for KH1's 40-unit sphere). Inputs: see the file's notes.
+
+Not yet: KH1's lock camera (KH2's mode 2 stays KH2's); KH1's FOV (53°; KH2's kept); first person.
+Assumptions: KH2's right stick's y sign and its Normal as KH1's; KH2's world and KH1's share units
+and axes (both y down, yaw `atan2(x, z)`). Not checked in game.
