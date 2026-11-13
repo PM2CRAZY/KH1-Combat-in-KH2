@@ -1,3 +1,9 @@
+### 2026-11-13: Stage 45 (testing branch: No root turn on our motions)
+Owner: "Guarding still flips sora". KH2's guard motion 173 turns Sora by its root block: rotation y −3.165 with a curve 0 → −2π → 0 (Checked (files)). We kept the block with the curve cut, so the KH1 guard was drawn turned −3.165 (180°).
+
+- `convert::write_motion`: the root block's rotation is zeroed with its translation; the poses carry everything.
+- `write_motion_keep_turn`: a KH2 motion moved onto KH1's skeleton (model = kh1) keeps the template's root turn curves, sampled each frame, so KH2's own guard still spins.
+
 ### 2026-11-13: Stage 44 (testing branch: KH1 jump on KH2's jump)
 Owner: "Sora has his KH1 high jump animation for normal jump, and KH2's High jump for high jump".
 

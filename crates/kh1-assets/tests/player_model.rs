@@ -430,3 +430,53 @@ fn all_slots_size() {
     eprintln!("all KH1 slots: {} rows, {} -> {} bytes", s.len(), mset2.len(), out.len());
     assert!(out.len() < mset2.len());
 }
+
+#[test]
+fn guard_euler_jumps() {
+    let Some((mdls, mdlx)) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let mset2 = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let mset1 = kh1_data::mset::parse(&std::fs::read(dir.join("xa_ex_0010.mset")).unwrap()).unwrap();
+    let kh1 = kh1_data::mdls::parse_skeleton(&mdls).unwrap();
+    let kh2 = kh2_formats::anim::parse_skeleton(&mdlx).unwrap();
+    kh1_assets::select_kh1_slots(true, true, true);
+    let (out, _) = player_model::build_mset(&mset2, &kh2, &kh1, &mset1, true, &Default::default()).unwrap();
+    kh1_assets::select_kh1_slots(true, false, false);
+    let bar = kh2_formats::bar::Bar::parse(&out).unwrap();
+    for row in [173 * 4, 0, 2, 151 * 4] {
+        let anb = kh2_formats::bar::Bar::parse(bar.entries[row].data).unwrap();
+        let m = anb.entries.iter().find(|e| e.kind == 9).unwrap();
+        let i = kh2_formats::anim::Interpolated::parse(m.data).unwrap().unwrap();
+        let mut big = Vec::new();
+        for c in &i.forward {
+            if !(3..=5).contains(&c.channel) { continue; }
+            for w in c.keys.windows(2) {
+                let d = (w[1].value - w[0].value).abs();
+                let dt = w[1].time - w[0].time;
+                if d / dt.max(1.0) > 0.5 || d > 2.5 { big.push((c.joint, c.channel, w[0].time, w[1].time, (d * 100.0).round() / 100.0)); }
+            }
+        }
+        // first frame root values
+        let root: Vec<_> = i.forward.iter().filter(|c| c.joint <= 3 && (3..=5).contains(&c.channel)).map(|c| (c.joint, c.channel, c.keys[0].value)).collect();
+        eprintln!("row {row}: fast rotation keys {:?}\n   roots {root:?} init {:?}", &big[..big.len().min(12)], i.initial_pose.iter().filter(|p| p.0 <= 3).collect::<Vec<_>>());
+    }
+}
+
+#[test]
+fn guard_root_rotation() {
+    let Some(_) = files() else { return };
+    let dir = std::path::PathBuf::from(std::env::var("KH1_KH2_FILES").unwrap());
+    let raw = std::fs::read(dir.join("P_EX100.mset")).unwrap();
+    let bar = kh2_formats::bar::Bar::parse(&raw).unwrap();
+    for row in [692usize, 604, 806] {
+        let x = kh2_formats::bar::Bar::parse(bar.entries[row].data).unwrap();
+        let m = x.entries.iter().find(|e| e.kind == 9).unwrap();
+        let i = kh2_formats::anim::Interpolated::parse(m.data).unwrap().unwrap();
+        let ro = 0x90 + i32::from_le_bytes(m.data[0xA0 + 0x1C..0xA0 + 0x20].try_into().unwrap()) as usize;
+        let f: Vec<f32> = (0..12).map(|k| f32::from_le_bytes(m.data[ro + k * 4..ro + k * 4 + 4].try_into().unwrap())).collect();
+        let ids: Vec<i32> = (0..9).map(|k| i32::from_le_bytes(m.data[ro + 0x30 + k * 4..ro + 0x34 + k * 4].try_into().unwrap())).collect();
+        let all: Vec<&kh2_formats::anim::FCurve> = i.forward.iter().chain(&i.inverse).collect();
+        let vals: Vec<String> = ids.iter().enumerate().filter(|(_, id)| **id >= 0).map(|(k, id)| { let c = all[*id as usize]; format!("ch{k}: {:?}", (0..=4).map(|q| (c.eval(q as f32 * i.frame_count as f32 / 4.0) * 100.0).round() / 100.0).collect::<Vec<_>>()) }).collect();
+        eprintln!("row {row}: block {:?} ids {ids:?} {vals:?}", f.iter().map(|x| (x * 1000.0).round() / 1000.0).collect::<Vec<_>>());
+    }
+}

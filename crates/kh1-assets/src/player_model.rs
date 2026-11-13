@@ -208,7 +208,7 @@ pub fn build_mset(kh2_mset: &[u8], kh2: &[Bone], kh1: &[Bone], kh1_motions: &[Op
                     r.pose(&body).into_iter().map(|m| on * m).collect::<Vec<_>>()
                 })
                 .collect();
-            write_motion(m, kh1, &kh1_poses, &travel)
+            crate::convert::write_motion_keep_turn(m, kh1, &kh1_poses, &travel)
         })
     })?;
     if kh1_swings && swings.len() != crate::kh1_slots().len() {

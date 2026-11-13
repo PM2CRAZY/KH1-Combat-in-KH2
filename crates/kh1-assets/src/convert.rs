@@ -350,6 +350,18 @@ fn own_seed(bones: &[Bone]) -> Vec<Option<[f32; 3]>> {
 
 /// A KH2 motion (BAR type 9 data) for `poses` / `travel`, on `template` (a KH2 Sora motion).
 pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &[Vec3]) -> Result<Vec<u8>> {
+    write_motion_ex(template, kh2, poses, travel, false)
+}
+
+/// As `write_motion`, for a pose taken from `template` itself (a KH2 motion moved onto another
+/// skeleton): the template's root turn curves (root block channels 3..5) are kept, sampled a
+/// frame at a time. KH2's guard (173) turns Sora a whole turn that way (its root y goes 0 → −2π
+/// → 0, Checked (files)); our evaluator leaves it out of the poses.
+pub fn write_motion_keep_turn(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &[Vec3]) -> Result<Vec<u8>> {
+    write_motion_ex(template, kh2, poses, travel, true)
+}
+
+fn write_motion_ex(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: &[Vec3], keep_turn: bool) -> Result<Vec<u8>> {
     let h = BASE + 0x10;
     if i32_at(template, BASE)? != 0 {
         return Err(Error::Format("template is not an interpolated motion".into()));
@@ -403,6 +415,20 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
         travel_ids[axis] = (forward.len() + inverse.len()) as i32;
         let keys = fit_hermite(&v, POS_TOL);
         inverse.push(Curve { joint: if own { OWN_TRAVEL_JOINT } else { TRAVEL_JOINT }, channel: ch, keys });
+    }
+    let mut turn_ids = [-1i32; 3];
+    if keep_turn {
+        if let (Ok(Some(t)), Some(ro)) = (kh2_formats::anim::Interpolated::parse(template), usize::try_from(hdr(0x1C)?).ok().filter(|&r| r > 0)) {
+            let all: Vec<&kh2_formats::anim::FCurve> = t.forward.iter().chain(&t.inverse).collect();
+            for k in 0..3 {
+                let id = i32_at(template, BASE + ro + 0x30 + (3 + k) * 4)?;
+                let Some(c) = usize::try_from(id).ok().and_then(|i| all.get(i)) else { continue };
+                let v: Vec<f32> = (0..frames).map(|f| c.eval(f as f32)).collect();
+                turn_ids[k] = (forward.len() + inverse.len()) as i32;
+                let keys = fit_hermite(&v, ROT_TOL);
+                inverse.push(Curve { joint: if own { OWN_TRAVEL_JOINT } else { TRAVEL_JOINT }, channel: (3 + k) as u8, keys });
+            }
+        }
     }
 
     // Tables: times (one a frame), values, one zero tangent.
@@ -491,8 +517,13 @@ pub fn write_motion(template: &[u8], kh2: &[Bone], poses: &[Vec<Mat4>], travel: 
     }
     let ro = BASE + ro as usize;
     let mut root = template.get(ro..ro + 0x54).ok_or_else(|| Error::Format("template root block".into()))?.to_vec();
+    // The root block (OpenKH `RootPosition`: scale, a word, rotation xyzw at 0x10, translation
+    // xyzw at 0x20, then nine curve ids): no rotation and no translation of our own, the poses
+    // carry everything. KH2's guard (173) has a root turn of -3.165 on y and a curve for it
+    // (Checked (files)): kept, it turned the KH1 guard round by 180° (the owner, t42 / t44).
+    root[0x10..0x1C].fill(0);
     root[0x20..0x2C].fill(0);
-    for (i, id) in [-1i32, -1, -1, -1, -1, -1, travel_ids[0], travel_ids[1], travel_ids[2]].iter().enumerate() {
+    for (i, id) in [-1i32, -1, -1, turn_ids[0], turn_ids[1], turn_ids[2], travel_ids[0], travel_ids[1], travel_ids[2]].iter().enumerate() {
         let id = if *id >= 0 { *id } else { -1 };
         root[0x30 + i * 4..0x34 + i * 4].copy_from_slice(&id.to_le_bytes());
     }

@@ -124,3 +124,14 @@ So the converted set is now smaller than KH2's own: 2.39 MB (KH2's 2.61 MB; the 
   motions could start in the two forms of the same turn and the blend went round by 180°. Every
   motion for KH1's skeleton now starts from the forms of one reference pose (KH1's battle idle,
   motion 1, frame 0; `convert::set_own_seed`).
+
+## t45: the root block's turn
+
+KH2's guard (173) turns Sora with its root block (OpenKH `RootPosition`): rotation y −3.165 and a
+curve on it that goes 0 → −2π → 0 over the guard (Checked (files)), a whole turn. Our motions
+took the template's root block with its curves cut but its rotation left: the KH1 guard was drawn
+turned by −3.165, back to front (the owner, t42 / t44: "guarding still flips sora"). Now:
+- every motion we write has no root rotation (and no root translation);
+- a KH2 motion moved onto KH1's skeleton keeps the template's root turn curves, sampled a frame at
+  a time (`convert::write_motion_keep_turn`), so KH2's own guard still turns.
+The t43 Euler-seed change stays (it doesn't hurt), but it was not this.
