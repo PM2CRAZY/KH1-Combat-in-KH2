@@ -51,9 +51,39 @@ pub fn apex_time(h: f32) -> f32 {
     ((h + h) / KH1_GRAVITY).abs().sqrt()
 }
 
+/// KH1's air knock-back (`0x14029CC40` → `0x1402B7F20(actor, 20.0, dir)`, Checked (decomp)): a
+/// launch of height 20 (`0x1402AF960`) with the sideways speed of btltbl's reaction block `+0x3C`,
+/// 16 (the sister project's `kh1-hit-reactions-native.md` §4, Checked (files) there), the
+/// sideways speed then × `KH1_AIR_DRAG` a 30 Hz frame with the stick let go (state 2's step, the
+/// sister project's `kh1-physics.md`).
+pub const KH1_KNOCKBACK_HOP: f32 = 20.0;
+pub const KH1_KNOCKBACK_SPEED: f32 = 16.0;
+
+/// Height above the launch point `t` frames into a KH1 launch of height `h` (KH1's arc: rising
+/// `h · sin(π/2 · sin(π/2 · t / T))` to the apex at `T`, then `h − g/2 · (t − T)²`; the sister
+/// project's `kh1-physics.md`, Checked (decomp) there).
+pub fn arc_height(t: f32, h: f32) -> f32 {
+    let tt = apex_time(h);
+    if t < tt {
+        let half = std::f32::consts::FRAC_PI_2;
+        h * (half * (half * t / tt).sin()).sin()
+    } else {
+        h - KH1_GRAVITY * 0.5 * (t - tt) * (t - tt)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kh1_knockback_arc() {
+        assert_eq!(arc_height(0.0, KH1_KNOCKBACK_HOP), 0.0);
+        let t = apex_time(KH1_KNOCKBACK_HOP);
+        assert!((arc_height(t, KH1_KNOCKBACK_HOP) - 20.0).abs() < 1e-3);
+        assert!(arc_height(t * 0.5, KH1_KNOCKBACK_HOP) > 10.0);
+        assert!(arc_height(2.0 * t, KH1_KNOCKBACK_HOP) < 0.1);
+    }
 
     #[test]
     fn kh1_apex_time() {

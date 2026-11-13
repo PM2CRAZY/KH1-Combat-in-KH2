@@ -75,6 +75,23 @@ project's `docs/kh1-roll-guard-native.md` (KH1 Steam addresses, re-checked here 
   degrees a link to keep `W_EX010.mset` within KH2's size (268,400 of 270,224).
 - Not checked in game.
 
+## t59: KH1's air knock-back path
+
+The owner (answer): "KH1's exact path". KH2's blow step `0x140422780 (action, out, object, dt)`
+(Checked (decomp)): per step the sideways speed × sstm `+0x18` (0.8) floored at `+0x10C`, a rising
+speed × `+0x20` (0.8), then + 20/49 capped at `+0x138`; out = velocity (`+0x20..+0x28`, y down) ×
+dt. KH1's (`0x14029CC40` → `0x1402B7F20(actor, 20.0, dir)`, Checked (decomp)): KH1's arc of
+height 20 under its gravity 0.48469 (rising `h · sin(π/2 · sin(π/2 · t / T))`, then `g/2 · (t −
+T)²`, the drop capped at 20 a frame) and 16 sideways along the hit, × 0.95 a 30 Hz frame with the
+stick let go.
+
+`win/reactions.rs`: when its big air hit starts KH2's launch, the hook gives the launch KH1's
+sideways 16 along KH2's direction and marks it; KH2's blow step then moves him on KH1's arc
+(`kh1::arc_height`) and KH1's drag for that launch only, writing the velocity back so KH2's own
+reads (falling flag, landing) follow. Any other blow (KH2's own, a script's) is untouched: it is
+told apart by its velocity. Assumptions: `dt` is in 60 Hz frames (logged once); KH1's stick is let
+go during the knock-back (the drag applies). Not checked in game.
+
 ## t58: KH1's air knock-back motions
 
 KH1 (Checked (decomp), `0x14029CC40`): a big hit in the air plays request `0x50` from the front
@@ -89,10 +106,7 @@ from behind, until he lands, then 17 / 19 (`0x1403D2FE0` case 4, Checked (decomp
 - Sizes: `convert::REACH_TOL` 0.12 → 0.16 units (each joint within 0.16 of the pose written),
   `P_EX100.mset` 2,527,536 (KH2's 2,611,760); the Keyblade's rows 70 / 78 share row 22's (the same
   KH1 landing, `SHARED_KEYBLADE`, duplicate-marked): `W_EX010.mset` 266,960 (KH2's 270,224).
-- Still KH2's: the launch's numbers (up 24, sideways 40, × 0.8 a 30 Hz tick, gravity 20/49; the
-  OG rewrite's `combat-model.md`). KH1's is a hop of 20 under KH1's arc and 16 sideways. KH2's
-  blow brakes every tick where KH1's doesn't, so no pair of KH2 numbers gives KH1's path: a
-  question to the owner. Not checked in game.
+- The launch's path: t59. Not checked in game.
 
 ## t57: KH1's guard arc
 

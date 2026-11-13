@@ -1,3 +1,10 @@
+### 2026-11-13: Stage 59 (testing branch: Phase 3: KH1's air knock-back path)
+The owner (answer): "KH1's exact path" for big hits in the air.
+
+- `win/reactions.rs`: hooks KH2's blow step `0x140422780` (prologue checked; Checked (decomp): sideways × 0.8 floored, rising × 0.8, + 20/49 capped, out = velocity × dt). The launch our reaction hook starts for a big air hit gets KH1's sideways 16 (along KH2's direction) and is moved on KH1's arc of height 20 (`kh1::arc_height`, KH1's gravity, drop capped at 20 a frame) with KH1's drag 0.95 a 30 Hz frame (KH1 `0x14029CC40` / `0x1402B7F20`, Checked (decomp)); velocity written back for KH2's own reads. Other blows untouched (told apart by velocity).
+- `kh1.rs`: `KH1_KNOCKBACK_HOP` / `KH1_KNOCKBACK_SPEED`, `arc_height` (tested).
+- Assumptions: dt in 60 Hz frames (logged); KH1's drag applies (stick let go). Not checked in game. Docs: `docs/defence.md` (t59).
+
 ### 2026-11-13: Stage 58 (testing branch: Phase 3: KH1's air knock-back motions)
 The owner: "finish phase 3". KH1's air knock-back (t54's big air hits, defence = kh1).
 
