@@ -15,7 +15,9 @@ the decomp alone left it ambiguous.
 1. Turn the KH2-combat-in-KH1 mod off for the recording: it redraws Sora after KH1's pass, but
    the tool records straight after KH1's pass, before any mod changes it. Turning it off keeps KH1
    vanilla in every other way too.
-2. Put `kh1-posedump.dll` where Panacea loads KH1 DLLs (OpenKH: `mod\kh1\dll\`).
+2. Enable the OpenKH mod `PM2CRAZY/KH1-PoseDump` for KH1 (its `mod.yml` copies
+   `kh1-posedump.dll` to `dll/`) and Build. A DLL put straight into `mod\kh1\dll\` is lost:
+   OpenKH rebuilds `mod\kh1` from the enabled mods (it removed ours, owner's PC, t19).
 3. In KH1, press F10, do the ground combo and the air combo (and anything else to check), then
    press F10 again.
 4. The recording is `kh1-posedump.bin` beside `KINGDOM HEARTS FINAL MIX.exe`; the log
@@ -46,3 +48,9 @@ the decomp alone left it ambiguous.
   matrix argument (16 `f32`), the world matrices (bones × 16 `f32`), the local matrices (the same).
   Matrices are as KH1 keeps them: row-vector, which is glam's column-major memory. KH1's world is
   y-down.
+
+## Not the cause of KH1's ability-menu crash (owner, t19)
+
+KH1 crashed after the ability menu (`CrashDump.dmp`, 05:28): an access violation at exe offset
+`0x2EBF10` (a null read). `ReFormAbilityToggle.dll`, another mod, is on the stack. Our tool hadn't
+loaded (no `kh1-posedump.log`; OpenKH had removed it), so it wasn't involved. Checked (dump).
