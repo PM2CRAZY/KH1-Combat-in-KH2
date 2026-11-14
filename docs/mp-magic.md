@@ -385,3 +385,37 @@ Checked (files); KH1-in-ReCom's `recom-m7-magic.md` §7.6 (Checked (files + deco
 - Sounds: KH2's Cure's stand in (129 cast, 130 heal).
 - Not yet: KH1's heal amount (KH1: power 15 / 27 / 36 + max MP; KH2's rows heal by Magic); the
   member choice (KH1 asks which member; KH2's menu has no such step: an open design question).
+
+## t85: KH1's held hits under Stop (owner, 2026-11-14: "Make these all 1:1")
+
+KH1 (Checked (decomp), KH1-in-ReCom `recom-m7-magic.md` "M7 f3"): a hit on a stopped actor is
+built as a record (damage worked out then) and queued on it; a record joining a queue that isn't
+empty gets a delay of 6..11 frames (`6 − (int)(r × −6)`, KH1's `0x14031BA30` random). While stopped
+the actor skips its hit pass; from the frame after Stop each frame pops: a head with a delay loses one
+and ends the pop, a head with none is applied and the next looked at. KH1's pool: 128 records for
+everyone. Stop records themselves are handled while stopped. A record on a downed actor is dropped
+(`0x1402B7B90`).
+
+KH2 (Checked (decomp)): a hit is delivered at once: a record from KH2's pool (`0x1403CE740`, 20 of
+0x40 at `0x142A24530`, free list `0x142A24A30`, count `0x142A24A80`; damage at `+0x28`), the struck
+object's hit slot (`vtable + 0xC0`: generic `0x1403C2B30` → `0x1403D60C0` → HP `0x1403D3BA0`, then the
+reaction slot), then the record back (`0x1403CE950`). Record: `+0x10` the attacker, `+0x14` the struck
+object, `+0x1C` the attack, `+0x20` the ATKP row (handles), `+0x27` the push kind. Handles are packed
+pointers (`0x1404AD240` / `0x1404AD270`), not checked for life.
+
+Built (`win/held_hits.rs`, `held_hits.rs`; no hook on a function, six call sites):
+- KH2's six deliveries (`call [r9+0xC0]` at `0x1401CACAB`, `0x1403D0879`, `0x1403D1930`,
+  `0x14043295D`, `0x140538B47`, `0x14053AADF`, Checked (exe)) call ours: a hit on an object whose stop
+  block runs KH1's Stop kind (0x20), other than a Stop strike, is copied to KH1's queue (KH1's delay
+  rule) and KH2's record goes back to its pool as usual; anything else goes to the slot as before.
+- Each frame, only while hits are kept: for an object no longer stopped, KH1's pop; each hit to land
+  takes a record from KH2's pool and goes through the object's own hit slot, then back (KH2's own
+  pattern). An object gone from KH2's live objects (`0x1403BF4F0`) loses its hits; a downed one (HP 0)
+  drops them, as KH1.
+- A push away from the attack (kind 5 asks the attack object `+0x1C`, `0x1403CEAB0`): its centre is
+  kept at the hit; if the attack is gone from KH2's live attacks (`0x142A24B40`, next `+0xC4`) at the
+  landing, a stand-in attack of ours answers with that centre.
+- **Assumptions:** our per-frame step runs after KH2's objects tick their stop blocks, so the first
+  held hit lands the frame after Stop (KH1's); KH2's hit sparks and attacker-side events stay at the
+  contact (KH1's spark timing not read); the random's law only (6..11 evenly), not KH1's sequence.
+- **Tests:** KH1's delay law and pool, the landing frames (`held_hits` tests).

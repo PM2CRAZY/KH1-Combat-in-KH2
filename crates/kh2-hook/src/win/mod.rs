@@ -13,6 +13,7 @@ mod hook;
 mod prty;
 mod menu_rows;
 mod gravity;
+mod held_hits;
 mod mp;
 mod reactions;
 mod roll;
@@ -106,6 +107,7 @@ pub extern "C" fn OnFrame() {
     if IN_KH2.load(Ordering::Relaxed) {
         trace::frame();
         menu_rows::debug_spells();
+        held_hits::frame();
     }
 }
 
@@ -268,6 +270,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         combo_tables::install(base, model);
         menu_rows::install(base);
         gravity::install(base);
+        held_hits::install(base);
     }
     1
 }
