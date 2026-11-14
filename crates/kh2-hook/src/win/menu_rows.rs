@@ -151,8 +151,12 @@ pub fn set_debug_spells(level: u8) {
 /// Each frame (debug only): Gravity's item count up to the debug level, once our rows are in,
 /// with `magic = kh1` (a save loaded later still gets it).
 pub fn debug_spells() {
+    if !APPLIED.load(Ordering::Relaxed) || !crate::settings::kh1(crate::settings::MAGIC) {
+        return;
+    }
+    earned_spells();
     let level = DEBUG_SPELLS.load(Ordering::Relaxed);
-    if level == 0 || !APPLIED.load(Ordering::Relaxed) || !crate::settings::kh1(crate::settings::MAGIC) {
+    if level == 0 {
         return;
     }
     for (slot, name) in crate::magic_rows::SLOTS.iter().zip(["Gravity", "Stop", "Aero"]) {
@@ -161,6 +165,38 @@ pub fn debug_spells() {
             if *at < level {
                 *at = level;
                 log!("debug: {name} given at level {level} (new_spells)");
+            }
+        }
+    }
+}
+
+/// KH2's earned victory bonuses (`0x1409ACFB4`, a bit a reward id, set by `0x1403EDCA0`).
+const BONUS_BITS: usize = 0x9A_CFB4;
+
+/// A save that passed a spell's story points before KH1's spells were on (or before this
+/// version) still has the levels it earned: each new spell's count is at least the number of
+/// its bonuses already earned. Each frame: nine bit tests (the count only ever goes up).
+fn earned_spells() {
+    let base = BASE.load(Ordering::Relaxed);
+    let dir = super::mod_path();
+    for (k, element) in [GRAVITY, STOP, AERO].into_iter().enumerate() {
+        let earned = crate::magic_rows::UNLOCKS
+            .iter()
+            .filter(|u| u.1 == element)
+            .filter(|u| unsafe { *((base + BONUS_BITS + 4 * (u.0 as usize >> 5)) as *const u32) } >> (u.0 & 31) & 1 != 0)
+            .count() as u8;
+        if earned == 0 {
+            continue;
+        }
+        let at = (base + ITEM_COUNTS + crate::magic_rows::SLOTS[k] as usize) as *mut u8;
+        unsafe {
+            if *at < earned {
+                let file = ["GRAVITY", "STOP", "AERO"][k];
+                if !std::path::Path::new(&dir).join(format!("magic/{file}_1.mag")).is_file() {
+                    continue;
+                }
+                *at = earned;
+                log!("magic kh1: {file} at level {earned} from bonuses already earned");
             }
         }
     }

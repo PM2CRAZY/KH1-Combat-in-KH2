@@ -71,6 +71,7 @@ static SAVED_SPELLS: Saved = Saved::new();
 
 const LOADER: usize = 0x3F_4C30;
 const ATKP: usize = 0x2AE_57B0;
+const BONS: usize = 0x2AE_58F8;
 const ROW: usize = 0x30;
 const PTYA: usize = 0x2AE_57B8;
 const SORA_SET: usize = 1;
@@ -201,6 +202,27 @@ unsafe fn patch_spells() {
         }
     }
     log!("magic kh1: KH1's hit effects on {changed} of base Sora's spell rows (ATKP {:?})", SPELL_ROWS.map(|x| x.0));
+    patch_unlocks();
+}
+
+/// KH1's new spells learnt at their story points (`magic_rows::UNLOCKS`): the second bonus item
+/// of those KH2 victory bonuses, for each spell whose files are built.
+unsafe fn patch_unlocks() {
+    let t = *((BASE.load(Ordering::Relaxed) + BONS) as *const usize);
+    if t == 0 {
+        return;
+    }
+    let dir = super::mod_path();
+    let built = |f: &str| (1..=3).all(|l| std::path::Path::new(&dir).join(format!("magic/{f}_{l}.mag")).is_file());
+    use crate::menu_rows::{AERO, GRAVITY, STOP};
+    let elements: Vec<u8> = [(GRAVITY, "GRAVITY"), (STOP, "STOP"), (AERO, "AERO")].into_iter().filter(|(_, f)| built(f)).map(|(e, _)| e).collect();
+    let n = (*((t + 4) as *const i32)).clamp(0, 0x1000) as usize;
+    let table = std::slice::from_raw_parts(t as *const u8, 8 + n * crate::magic_rows::BONS_ROW);
+    let writes = crate::magic_rows::unlock_writes(table, &elements);
+    for &(o, item) in &writes {
+        SAVED_SPELLS.write(t + o, &item.to_le_bytes());
+    }
+    log!("magic kh1: Gravity, Stop and Aero at their story points: {} bonus rows (spells built: {elements:?})", writes.len());
 }
 
 /// The Config menu switched magic: KH1's spells' hit effects, or KH2's back. (The spell files

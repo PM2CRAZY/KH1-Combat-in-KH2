@@ -253,6 +253,36 @@ pub fn extend_magc(t: &[u8], element: u8, file: &str, k: usize) -> Option<Vec<u8
     Some(out)
 }
 
+/// Where Sora learns Gravity, Stop and Aero (owner, 2026-11-14: approved): each level as the
+/// second bonus item (`+0xE`, 0 on every Sora row of KH2's: Checked (files)) of the KH2 victory
+/// bonus (`00battle.bin` `bons`, pointer `0x142AE58F8`, rows of 16: `+0` reward id, `+1`
+/// character (1 Sora), applied by `0x1403EDCA0` → `0x1403EDF90`; Checked (decomp)). Reward ids
+/// matched by their rewards against the game's list (Checked (files): the item names from
+/// `sys.bar`): 57 Phil's Training (Aerial Dive), 19 Oogie Boogie (Item Slot, Jack +15),
+/// 8 Hades (Magnet Burst), 16 the Cornerstone of Light (Dodge Slash), 4 Pete at Timeless River
+/// (Reflect, King Mickey's row), 24 Luxord (Magnet Element), 3 the Dark Thorn (Retaliating Slash,
+/// Beast +35), 10 the Storm Rider (Thunder Element, Mulan +25), 72 the Transport to Remembrance
+/// (Item Slot, Donald +3, Goofy +4: Assumption, the last of KH2 FM's added rows with that reward).
+pub const UNLOCKS: [(u8, u8); 9] = [(57, GRAVITY), (19, GRAVITY), (8, GRAVITY), (16, STOP), (4, STOP), (24, STOP), (3, AERO), (10, AERO), (72, AERO)];
+pub const BONS_ROW: usize = 16;
+
+/// The bytes to write in KH2's `bons` table (header and rows): (offset of `+0xE`, item).
+pub fn unlock_writes(t: &[u8], elements: &[u8]) -> Vec<(usize, u16)> {
+    let Some(n) = count(t) else { return vec![] };
+    let mut out = Vec::new();
+    for i in 0..n {
+        let o = 8 + i * BONS_ROW;
+        let Some(r) = t.get(o..o + BONS_ROW) else { break };
+        if r[1] != 1 || u16::from_le_bytes([r[0xE], r[0xF]]) != 0 {
+            continue;
+        }
+        if let Some(&(_, e)) = UNLOCKS.iter().find(|u| u.0 == r[0] && elements.contains(&u.1)) {
+            out.push((o + 0xE, ITEMS[e as usize]));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,6 +350,9 @@ mod tests {
         assert_eq!(g.len(), 21);
         let st: Vec<_> = (0..count(&a).unwrap()).map(|i| &a[8 + i * 0x30..8 + (i + 1) * 0x30]).filter(|r| u16::from_le_bytes([r[2], r[3]]) == STOP_ATKP).collect();
         assert!(!st.is_empty() && st.iter().all(|r| r[4] == STOP_TYPE && r[0x0A] == 0));
+        let w = unlock_writes(&bget("bons"), &[GRAVITY, STOP, AERO]);
+        assert_eq!(w.len(), 9);
+        assert_eq!(w.iter().filter(|x| x.1 == 84).count(), 3);
         let sp = extend_stop(&bget("stop")).unwrap();
         assert_eq!(count(&sp), Some(17));
         let ids: Vec<u16> = (0..count(&a).unwrap()).map(|i| u16::from_le_bytes([a[8 + i * 0x30 + 2], a[8 + i * 0x30 + 3]])).collect();

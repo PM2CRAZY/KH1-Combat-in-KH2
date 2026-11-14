@@ -250,6 +250,20 @@ share, "(c) Everyone full"):
   the attack when the script reads them); KH1's bone 32770 as KH2's body centre. Not yet: the
   wind's KH1 damage (8 + 2 × bars), KH1's sounds.
 
+## Step 5: the unlocks (t84)
+
+- KH2's victory bonuses (`bons`, pointer `0x142AE58F8`, rows of 16: reward id, character,
+  HP, MP, Drive, slots, two bonus items; applied by `0x1403EDCA0` → `0x1403EDF90`, which sets the
+  reward's bit in `0x1409ACFB4`; Checked (decomp)). With `magic = kh1` and a spell's files built,
+  Sora's row of each approved story point gets the spell's item as its second bonus item (0 on all
+  of KH2's Sora rows): reward ids found by matching their rewards (item names from `sys.bar`):
+  Gravity 57 Phil's Training, 19 Oogie Boogie, 8 Hades; Stop 16 the Cornerstone of Light, 4 Pete
+  (Timeless River), 24 Luxord; Aero 3 the Dark Thorn, 10 the Storm Rider, 72 the Transport to
+  Remembrance (Assumption: 72 by elimination among the "Item Slot +1" rows). The item count is
+  the level, so the order the story points come in doesn't matter. Put back at `magic = kh2`.
+- A save past some of those points: each frame, a new spell's level is raised to the number of its
+  bonuses already earned (nine bit tests; only ever up).
+
 ## The plan (one step a version)
 
 1. (done, t77) Map every read and write of a submenu's tail (`+0x74`, `+0x78`) and every "submenu by number"
@@ -265,7 +279,7 @@ share, "(c) Everyone full"):
    `0x1403C5750`, `0x1403C5900`, `0x1403C5940`, `0x1403C5A90`, `0x1403C5C50`, `0x1403C5CE0`,
    `0x1403C5DC0`, `0x140025690`; the Magic list `+0xB68`), new MAGC / item / command rows, the
    spells, the menu order.
-5. The unlocks. **Approved by the owner (2026-11-14)**, each as the second bonus of KH2's reward
+5. (done, t84) The unlocks. **Approved by the owner (2026-11-14)**, each as the second bonus of KH2's reward
    row (every Sora row has `BonusItem2 = 0`): Gravity at Phil's Training (OC1), Oogie Boogie (HT1),
    Hades (OC2); Stop at the Cornerstone of Light (TR), Pete (TR), Luxord; Aero at Dark Thorn (BC1),
    Storm Rider (LoD2), Transport to Remembrance.
