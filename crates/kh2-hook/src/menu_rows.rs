@@ -12,6 +12,9 @@
 //! menu as before; nothing of ours runs per frame. Checked (exe: every site's bytes, read from the
 //! Steam exe; decomp: each function read).
 //!
+//! Step 3 (t78): the command HUD draws up to 16 sprites a menu level (was 9), so a submenu's
+//! title and 12 rows fit (`hud_patches`).
+//!
 //! This module only computes the bytes (so it can be tested anywhere); `win::menu_rows` writes them.
 
 /// The `YS::PLAYER_COMMAND` object (Steam RVA).
@@ -171,7 +174,106 @@ pub const SHORT_SITES: &[(u32, &[u8])] = &[
     (0x3b1002, &[0x48, 0xC1, 0xE0, 0x07, 0x48, 0x03, 0x43, 0x08]), // shl rax,7; add rax,[rbx+8]
     (0x3b193a, &[0x48, 0xC1, 0xE0, 0x07, 0x48, 0x03, 0x43, 0x08]), // shl rax,7; add rax,[rbx+8]
     (0x3b1acd, &[0x48, 0xC1, 0xE0, 0x07, 0x48, 0x03, 0x43, 0x08]), // shl rax,7; add rax,[rbx+8]
+    // the HUD's slots (`0x14015D140`, `0x14015E800`)
+    (0x15d1b2, &[0x48, 0x8B, 0x74, 0xF9, 0x20, 0x49, 0x8B, 0x8C, 0x24, 0x98, 0x03, 0, 0]), // mov rsi,[rcx+rdi*8+0x20]; mov rcx,[r12+0x398]
+    (0x15d302, &[0x49, 0x89, 0x74, 0xFE, 0x20, 0xEB, 0x44]), // mov [r14+rdi*8+0x20],rsi; jmp 0x14015d34d
+    (0x15ea5f, &[0x49, 0x8D, 0x4E, 0x20, 0x4C, 0x89, 0x6C, 0x24, 0x50]), // lea rcx,[r14+0x20]; mov [rsp+0x50],r13
 ];
+
+
+// ---- The command HUD (`dk::COMMAND_DRAW`): step 3 ------------------------------------------
+
+/// KH2's command HUD (one object, made by `0x14015E410`, `0x670` bytes) keeps, for each of 4
+/// menu levels, 9 sprite slots (`+0x20 + 8 (9 level + k)`: the title and 8 rows) and a flag byte
+/// for each (`+0x140 + 9 level + k`); `DAT_140ABC4F8` counts the slots used this frame per level.
+/// The object is made bigger and both arrays move past KH2's end, 16 slots a level (title, 12
+/// rows, and the few extra sprites level 0 and the cursor add). Checked (exe + decomp).
+pub const HUD_OLD_SIZE: u32 = 0x670;
+/// `DAT_140ABC508`, the HUD (0 until KH2 makes it, on the first field load).
+pub const HUD_POINTER_RVA: u32 = 0xA_BC508;
+pub const HUD_LEVEL: u32 = 16;
+pub const HUD_SPRITES: u32 = HUD_OLD_SIZE;
+pub const HUD_FLAGS: u32 = HUD_SPRITES + 4 * HUD_LEVEL * 8;
+pub const HUD_SIZE: u32 = HUD_FLAGS + 4 * HUD_LEVEL;
+const OLD_SPRITES: u32 = 0x20;
+const _: () = assert!(HUD_SIZE % 16 == 0 && HUD_SPRITES / 8 < 0x80 * 2);
+
+/// KH2's `0x14015C5D0` (clears the slots and flags, the per-level row and cursor ints to -1).
+const HUD_CLEAR_OLD: &[u8] = &[0xC7, 0x81, 0x90, 0x01, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x48, 0x8D, 0x91, 0x41, 0x01, 0x00, 0x00, 0x4C, 0x8D, 0x81, 0x64, 0x01, 0x00, 0x00, 0x45, 0x33, 0xC9, 0x48, 0x8D, 0x41, 0x28, 0xB9, 0x04, 0x00, 0x00, 0x00, 0x41, 0xC7, 0x40, 0x10, 0xFF, 0xFF, 0xFF, 0xFF, 0x48, 0x8D, 0x52, 0x09, 0x41, 0xC7, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x4D, 0x8D, 0x40, 0x04, 0x4C, 0x89, 0x48, 0xF8, 0x48, 0x8D, 0x40, 0x48, 0x44, 0x88, 0x4A, 0xF6, 0x4C, 0x89, 0x48, 0xB8, 0x44, 0x88, 0x4A, 0xF7, 0x4C, 0x89, 0x48, 0xC0, 0x44, 0x88, 0x4A, 0xF8, 0x4C, 0x89, 0x48, 0xC8, 0x44, 0x88, 0x4A, 0xF9, 0x4C, 0x89, 0x48, 0xD0, 0x44, 0x88, 0x4A, 0xFA, 0x4C, 0x89, 0x48, 0xD8, 0x44, 0x88, 0x4A, 0xFB, 0x4C, 0x89, 0x48, 0xE0, 0x44, 0x88, 0x4A, 0xFC, 0x4C, 0x89, 0x48, 0xE8, 0x44, 0x88, 0x4A, 0xFD, 0x4C, 0x89, 0x48, 0xF0, 0x44, 0x88, 0x4A, 0xFE, 0x48, 0x83, 0xE9, 0x01, 0x75, 0x97, 0xC3];
+
+/// The same, for KH2's arrays and ours: `rcx` = the HUD.
+fn hud_clear() -> Vec<u8> {
+    let mut v = vec![0xC7, 0x81, 0x90, 0x01, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF]; // mov dword [rcx+0x190],-1
+    v.extend([0x57, 0x48, 0x8B, 0xD1]); // push rdi; mov rdx,rcx
+    v.extend([0x48, 0x8D, 0xB9, 0x64, 0x01, 0, 0]); // lea rdi,[rcx+0x164]
+    v.extend([0x83, 0xC8, 0xFF, 0xB9, 8, 0, 0, 0, 0xF3, 0xAB]); // or eax,-1; mov ecx,8; rep stosd
+    v.extend([0x48, 0x8D, 0x7A, OLD_SPRITES as u8, 0x31, 0xC0, 0xB9]); // lea rdi,[rdx+0x20]; xor eax,eax; mov ecx,
+    v.extend((0x164 - OLD_SPRITES).to_le_bytes()); // KH2's slots and flags, up to the per-level ints
+    v.extend([0xF3, 0xAA, 0x48, 0x8D, 0xBA]); // rep stosb; lea rdi,[rdx+
+    v.extend(HUD_SPRITES.to_le_bytes());
+    v.push(0xB9); // mov ecx,
+    v.extend((HUD_SIZE - HUD_SPRITES).to_le_bytes());
+    v.extend([0xF3, 0xAA, 0x5F, 0xC3]); // rep stosb; pop rdi; ret
+    v.resize(HUD_CLEAR_OLD.len(), 0xCC);
+    v
+}
+
+/// In-place changes to the HUD's code: (RVA, KH2's bytes, ours).
+pub fn hud_patches() -> Vec<(u32, &'static [u8], Vec<u8>)> {
+    let l = HUD_LEVEL as u8;
+    let base = (HUD_SPRITES / 8) as i32; // slot index of level 0 slot 0, from the object
+    let flags = |old: &'static [u8], at: usize| {
+        let mut n = old.to_vec();
+        n[at..at + 4].copy_from_slice(&HUD_FLAGS.to_le_bytes());
+        n
+    };
+    let mut out: Vec<(u32, &'static [u8], Vec<u8>)> = vec![
+        // the object's size (`0x14015E410`: mov edx,0x670)
+        (0x15e46f, &[0xBA, 0x70, 0x06, 0, 0], { let mut n = vec![0xBA]; n.extend(HUD_SIZE.to_le_bytes()); n }),
+        (0x15c5d0, HUD_CLEAR_OLD, hud_clear()),
+        // level x 9 -> level x 16 (imul r, r, 16)
+        (0x15ae28, &[0x48, 0x8D, 0x0C, 0xC9], vec![0x48, 0x6B, 0xC9, l]),
+        (0x15ae70, &[0x48, 0x8D, 0x0C, 0xC9], vec![0x48, 0x6B, 0xC9, l]),
+        (0x15b8a8, &[0x48, 0x8D, 0x0C, 0xC9], vec![0x48, 0x6B, 0xC9, l]),
+        (0x15bac9, &[0x4B, 0x8D, 0x0C, 0xFF], vec![0x49, 0x6B, 0xCF, l]),
+        (0x15bb07, &[0x4B, 0x8D, 0x0C, 0xFF], vec![0x49, 0x6B, 0xCF, l]),
+        (0x15c3de, &[0x4B, 0x8D, 0x14, 0xC0], vec![0x49, 0x6B, 0xD0, l]),
+        (0x15d1a3, &[0x4B, 0x8D, 0x3C, 0xFF], vec![0x49, 0x6B, 0xFF, l]),
+        // first slot of a level: (9 level + 4) -> (16 level + HUD_SPRITES / 8)
+        (0x15ad47, &[0x4A, 0x8D, 0x1C, 0xD5, 4, 0, 0, 0, 0x49, 0x03, 0xDA], [&[0x49, 0x6B, 0xDA, l][..], &x86::add(x86::RBX, base)].concat()),
+        (0x15aef6, &[0x48, 0x8D, 0x1C, 0xC5, 4, 0, 0, 0, 0x48, 0x03, 0xD8], [&[0x48, 0x6B, 0xD8, l][..], &x86::add(x86::RBX, base)].concat()),
+        // slots a level
+        (0x15ad70, &[0xBF, 9, 0, 0, 0], vec![0xBF, l, 0, 0, 0]),
+        (0x15af10, &[0xBF, 9, 0, 0, 0], vec![0xBF, l, 0, 0, 0]),
+        (0x15eab0, &[0xBB, 9, 0, 0, 0], vec![0xBB, l, 0, 0, 0]),
+        // next level's slots in `0x14015E800`: add rcx,0x48 -> sub rcx,-0x80
+        (0x15eb10, &[0x48, 0x83, 0xC1, 0x48], vec![0x48, 0x83, 0xE9, (0u8).wrapping_sub(8 * l)]),
+    ];
+    // the frees of a level's unused slots (`0x14015AF50`, and its copy in `0x14015CBE0`)
+    for (cmp, body, step) in [(0x15af86u32, 0x15af8bu32, 0x15afbfu32), (0x15cc25, 0x15cc2a, 0x15cc5f)] {
+        out.push((cmp, &[0x83, 0xFA, 9], vec![0x83, 0xFA, l]));
+        // lea rbx,[rdx+4]; mov edi,9; add rbx,r14; sub edi,edx; lea rbx,[r15+rbx*8]
+        let mut n = vec![0x4A, 0x8D, 0x9C, 0x32]; // lea rbx,[rdx+r14+disp32]
+        n.extend(base.to_le_bytes());
+        n.extend([0x6A, l, 0x5F]); // push l; pop rdi
+        n.extend([0x2B, 0xFA, 0x49, 0x8D, 0x1C, 0xDF, 0x90]); // sub edi,edx; lea rbx,[r15+rbx*8]; nop
+        out.push((body, &[0x48, 0x8D, 0x5A, 0x04, 0xBF, 9, 0, 0, 0, 0x49, 0x03, 0xDE, 0x2B, 0xFA, 0x49, 0x8D, 0x1C, 0xDF], n));
+        out.push((step, &[0x49, 0x83, 0xC6, 9], vec![0x49, 0x83, 0xC6, l]));
+    }
+    // the flag bytes
+    for (rva, old) in [
+        (0x15ae37u32, &[0x80, 0xBC, 0x01, 0x40, 0x01, 0, 0, 0][..]),
+        (0x15ae81, &[0x80, 0xBC, 0x01, 0x40, 0x01, 0, 0, 0]),
+        (0x15b8ba, &[0x80, 0xBC, 0x01, 0x40, 0x01, 0, 0, 0]),
+        (0x15badb, &[0x80, 0xBC, 0x01, 0x40, 0x01, 0, 0, 0]),
+        (0x15bb0e, &[0x80, 0xBC, 0x01, 0x40, 0x01, 0, 0, 0]),
+        (0x15c3e5, &[0x80, 0xBC, 0x02, 0x40, 0x01, 0, 0, 0]),
+    ] {
+        out.push((rva, old, flags(old, 3)));
+    }
+    out.push((0x15d433, &[0x42, 0x88, 0xAC, 0x37, 0x40, 0x01, 0, 0], flags(&[0x42, 0x88, 0xAC, 0x37, 0x40, 0x01, 0, 0], 4)));
+    out
+}
 
 /// `object + D0` is submenu 0's header in the block.
 fn d0(pc: u64, mem: u64) -> Result<i32, String> {
@@ -307,6 +409,21 @@ fn stub(rva: u32, base: u64, at: u64, d0: i32) -> Result<Vec<u8>, String> {
             v.extend([0x48, 0x03, 0x43, 0x08]); // add rax,[rbx+8]
             v.extend(add(RAX, d0 - OLD_FIRST as i32));
         }
+        0x15d1b2 => {
+            v.extend([0x48, 0x8B, 0xB4, 0xF9]); // mov rsi,[rcx+rdi*8+disp32]
+            v.extend(HUD_SPRITES.to_le_bytes());
+            v.extend([0x49, 0x8B, 0x8C, 0x24, 0x98, 0x03, 0, 0]); // mov rcx,[r12+0x398]
+        }
+        0x15d302 => {
+            v.extend([0x49, 0x89, 0xB4, 0xFE]); // mov [r14+rdi*8+disp32],rsi
+            v.extend(HUD_SPRITES.to_le_bytes());
+            v.extend(rel(JMP, at + v.len() as u64, site(0x15d34d))?);
+        }
+        0x15ea5f => {
+            v.extend([0x49, 0x8D, 0x8E]); // lea rcx,[r14+disp32]
+            v.extend(HUD_SPRITES.to_le_bytes());
+            v.extend([0x4C, 0x89, 0x6C, 0x24, 0x50]); // mov [rsp+0x50],r13
+        }
         _ => return Err(format!("no stub for {rva:#x}")),
     }
     Ok(v)
@@ -351,6 +468,9 @@ pub fn plan(base: u64, mem: u64) -> Result<Plan, String> {
         let mut new = bytes.to_vec();
         new[at..at + 4].copy_from_slice(&i32::try_from(disp).map_err(|_| "displacement".to_string())?.to_le_bytes());
         patches.push(Patch { rva, expect: bytes, new });
+    }
+    for (rva, expect, new) in hud_patches() {
+        patches.push(Patch { rva, expect, new });
     }
     let mut stubs = Vec::new();
     for &(rva, bytes) in SHORT_SITES {
@@ -424,8 +544,8 @@ mod tests {
     #[test]
     fn plan_covers_every_site_once() {
         let p = plan(BASE, MEMAT).unwrap();
-        assert_eq!(p.patches.len(), CURSOR_SITES.len() + NUMBER_SITES.len() + SHORT_SITES.len());
-        assert_eq!((CURSOR_SITES.len(), NUMBER_SITES.len(), SHORT_SITES.len()), (58, 32, 17));
+        assert_eq!(p.patches.len(), CURSOR_SITES.len() + NUMBER_SITES.len() + SHORT_SITES.len() + hud_patches().len());
+        assert_eq!((CURSOR_SITES.len(), NUMBER_SITES.len(), SHORT_SITES.len(), hud_patches().len()), (58, 32, 20, 28));
         let mut spans: Vec<(u32, u32)> = p.patches.iter().map(|x| (x.rva, x.rva + x.expect.len() as u32)).collect();
         spans.sort();
         for w in spans.windows(2) {

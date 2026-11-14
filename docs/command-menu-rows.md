@@ -85,6 +85,33 @@ pointers moved, then all 107 sites are written. Every site's bytes are checked f
 differs, nothing is changed. The stubs were run in an emulator against KH2's own code for all 19
 submenus (Checked (exe, emulated)); in-game: Assumption until tested.
 
+## Step 3: the HUD draws up to 16 sprites a level (t78; Checked (exe + decomp), emulated)
+
+- **What KH2 has.** The command HUD `dk::COMMAND_DRAW` (vtable `0x1405B1C28`; one object, made
+  by `0x14015E410` with `0x670` bytes, pointer at `0x140ABC508`; its menu object at `+0x398`)
+  keeps 4 menu levels × 9 sprite slots (`+0x20 + 8 (9 level + k)`) and a flag byte for each
+  (`+0x140 + 9 level + k`); `0x140ABC4F8` (4 ints) counts the slots used this frame per level, zeroed
+  each frame by `0x14015E800`. Every sprite of a level takes the next slot (`0x14015D140`): the
+  title (`0x14015B6D0`), the rows, the cursor row (`0x14015BA00`), and extras: level 0 adds up to 5
+  (`0x14015BC30`, `0x14015D670`, `0x14015DF90`), a deeper level 1 (`0x14015BF80`). So a submenu of 12
+  rows needs at least 14 slots. Sprites come from a pool of 52 `dk::COMMAND_ONE` (`0x14015C660`,
+  free count `+0xC570`); a slot keeps its sprite until its level shrinks (`0x14015AD20`,
+  `0x14015AED0`, `0x14015AF50`, `0x14015CBE0` free them).
+- **Rows past 8.** A row's place comes from the count: rows at `y = 0x19A − 0x16 × count + 0x16 i`,
+  the title at `0x184 − 0x16 × count` (`0x14015B6D0`), the frame at `0x179 − 0x16 × count`
+  (`0x14015D670`): the menu grows upward by itself. 12 rows put the title at `y = 0x7C`.
+- **The change.** The object is made `0x8B0` bytes; slots move to `+0x670` (16 a level) and flags to
+  `+0x870`; KH2's code addresses them there: `level × 9` → `imul r, r, 16` (7 places; each checked
+  that the flags it changes are written again before they are read), the flags' `disp32` `0x140`
+  → `0x870` (7), the first-slot sums and loop counts in the four free functions, the level step in
+  `0x14015E800` (`add rcx,0x48` → `sub rcx,-0x80`), the clear `0x14015C5D0` rewritten (KH2's arrays
+  and ours, the per-level ints to −1), the object's size, and three short sites through stubs
+  (`0x14015D1B2` / `0x14015D302` read and store a slot, `0x14015EA5F` a level's first slot). If the
+  HUD already exists when we load, nothing at all is changed.
+- **Checked (emulated)**: the frees for every level range and random counts, the level-0 compare
+  free, the clear, against KH2's own code. The pool (52) is enough: only the drawn levels hold
+  sprites (root ≤ 11, a 12-row submenu 14). Assumption until tested in game.
+
 ## The plan (one step a version)
 
 1. (done, t77) Map every read and write of a submenu's tail (`+0x74`, `+0x78`) and every "submenu by number"
@@ -95,7 +122,7 @@ submenus (Checked (exe, emulated)); in-game: Assumption until tested.
    `+0x14 + 12 × i`, a slot is `0xC0` bytes. Every "submenu by number" site moved to the block;
    KH2's ctor is left as it is (it runs once, before the move). The old inline area stays unused (a write there that was missed harms
    nothing). The HUD still takes 8 until step 3, so Magic keeps 8 until then.
-3. The HUD's levels to 13 slots (title + 12 rows), and the rows' placement past 8.
+3. (done, t78) The HUD's levels to 16 slots (title + 12 rows + extras); rows past 8 place themselves.
 4. KH2's six magic elements to nine (`0x142A23A80` arrays and their loops: `0x1403C5170`, `0x1403C5440`,
    `0x1403C5750`, `0x1403C5900`, `0x1403C5940`, `0x1403C5A90`, `0x1403C5C50`, `0x1403C5CE0`,
    `0x1403C5DC0`, `0x140025690`; the Magic list `+0xB68`), new MAGC / item / command rows, the

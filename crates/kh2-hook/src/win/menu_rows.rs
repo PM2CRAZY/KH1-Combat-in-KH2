@@ -29,6 +29,10 @@ pub unsafe fn install(base: usize) {
             return;
         }
     }
+    if *((base + HUD_POINTER_RVA as usize) as *const usize) != 0 {
+        log!("menu rows: KH2's command HUD already exists (made at KH2's size); nothing changed, submenus keep 8 rows");
+        return;
+    }
     BASE.store(base, Ordering::Relaxed);
     MEMORY.store(mem, Ordering::Relaxed);
     let _ = PLAN.set(plan);
@@ -64,5 +68,5 @@ unsafe fn apply() {
             done += 1;
         }
     }
-    log!("menu rows: KH2's {SUBMENUS} command submenus moved to {mem:#x} with room for {ROWS} rows each ({done} of {} sites)", plan.patches.len());
+    log!("menu rows: KH2's {SUBMENUS} command submenus moved to {mem:#x} with room for {ROWS} rows each, the HUD draws {HUD_LEVEL} sprites a level ({done} of {} sites)", plan.patches.len());
 }
