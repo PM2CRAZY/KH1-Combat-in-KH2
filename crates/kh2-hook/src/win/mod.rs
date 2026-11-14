@@ -12,6 +12,7 @@ mod highjump;
 mod hook;
 mod prty;
 mod menu_rows;
+mod gravity;
 mod mp;
 mod reactions;
 mod roll;
@@ -104,6 +105,7 @@ fn load_settings() -> crate::settings::Settings {
 pub extern "C" fn OnFrame() {
     if IN_KH2.load(Ordering::Relaxed) {
         trace::frame();
+        menu_rows::debug_spells();
     }
 }
 
@@ -127,6 +129,11 @@ pub unsafe extern "C" fn OnInit(mod_path: *const u16) {
 
 /// The mod folder Panacea gave `OnInit` (for a rebuild after a switch in the Config menu).
 static MOD_PATH: Mutex<String> = Mutex::new(String::new());
+
+/// The mod folder (empty until `OnInit`).
+pub fn mod_path() -> String {
+    MOD_PATH.lock().map(|g| g.clone()).unwrap_or_default()
+}
 /// Sora's model as this launch loads it (`model` changes at the next launch: `settings::NEXT_LAUNCH`).
 static BOOT_MODEL: AtomicBool = AtomicBool::new(false);
 /// One build at a time; a switch while one runs builds again after it.
@@ -242,6 +249,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         if s.trace {
             trace::enable(base);
         }
+        menu_rows::set_debug_spells(s.new_spells);
         // Every system's hooks, whatever its setting: each asks `settings::kh1` when KH2 calls it
         // and runs KH2's own code untouched while the system is kh2, so the Config menu can switch
         // it at once (`switch`).
@@ -259,6 +267,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         mp::install(base);
         combo_tables::install(base, model);
         menu_rows::install(base);
+        gravity::install(base);
     }
     1
 }

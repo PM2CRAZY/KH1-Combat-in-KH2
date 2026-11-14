@@ -155,7 +155,33 @@ submenus (Checked (exe, emulated)); in-game: Assumption until tested.
   `0x142A23C68`: element, level, file name, item, command, motions) and their spell files with
   KH1's behaviour, one spell a version.
 
-## Step 4c: Gravity (in progress; plan and findings)
+## Step 4c: Gravity (t81)
+
+**Built** (owner's answers: the Drive Forms cast KH1's version, "a"; every enemy takes KH1's full
+share, "(c) Everyone full"):
+- `kh1_assets::spells` `Kind::Gravity`: `magic/GRAVITY_1..3.mag` built on KH2's
+  `BLIZZARD_n.mag` (its PAX and script stay in the file unused: the trigger stubs send every sub
+  to ours, `kh1_only`), KH1's `xm_gravity0n.mag` effects added (elements 100 charge, 108 hand,
+  102 marker, 101 sphere, 104 / 105 impact). Script: at the cast the target and the offset, a
+  marker thread (28 frames, 240 above the point); at the release the hand effect and the sphere
+  from 240 above, 230 down over N, scale 0.01 → S (`trap_effect_set_scale(effect, &vec)`,
+  `0x14041E000`, Checked (decomp)); at N the impact effect (4 if a 100 ray finds the floor, else
+  5), every enemy part within 170 × S (KH2's target searcher, nearest first, one strike each) struck
+  once with ATKP 2066; the sphere × 1.02 a frame for 20, then killed. Test VM: the marker, the
+  start and the impact frame (28 + N), the strikes (in reach, one per enemy, not the dead), the
+  scales, the no-target point (`kh1_gravity_falls_and_crushes_as_kh1s`).
+- `kh2-hook::magic_rows`: ATKP 2066 (Blizzard's 248 rows, every sub, type 7, power 40 / 55 / 70 by
+  level, no element, hit group 3); MAGC rows for element 6 (Blizzard's base rows, `GRAVITY_n`,
+  item 84, commands 797..799), only when the files are in the mod folder.
+- `win/gravity.rs`: KH2's damage function `0x1403C12F0` (prologue `40 53 48 83 EC 40`) computes
+  type 7 as KH1's: current HP × (power + 5 × max MP bars)%, at least 1; KH2's general resistance 0
+  (scripted invulnerability) still stops it (Assumption).
+- Debug `new_spells = 1..3` in `kh2-kh1.ini` gives Gravity at that level (magic = kh1) until the
+  unlocks (step 5).
+- Not yet: KH1's slow on enemies the falling sphere touches (time × 0.8; KH2 has no per-enemy
+  time scale found yet), KH1's sounds, the struck part's bodies (KH2 part centres stand in).
+
+### Findings
 
 - **Owner (2026-11-14, "a for now")**: the Drive Forms that cast magic cast Gravity, Stop and Aero
   as base Sora does (KH1's version), so our spell files run KH1's script for every sub.

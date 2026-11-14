@@ -193,7 +193,7 @@ unsafe fn sora_record() -> usize {
 }
 
 /// KH1's max bars for Sora now, from his save record.
-unsafe fn max_bars() -> i32 {
+pub(super) unsafe fn max_bars() -> i32 {
     let r = sora_record();
     if r == 0 {
         return kh1mp::KH1_START_BARS;

@@ -75,11 +75,14 @@ pub struct Settings {
     pub styles: Vec<Style>,
     /// The debug trace (`trace = on`): F10 starts and stops a recording of Sora each frame.
     pub trace: bool,
+    /// Debug (`new_spells = 0..3`): Sora has KH1's new spells (Gravity so far) at that level,
+    /// without their unlocks; 0 off.
+    pub new_spells: u8,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { styles: vec![Style::Kh2; SYSTEMS.len()], trace: false }
+        Settings { styles: vec![Style::Kh2; SYSTEMS.len()], trace: false, new_spells: 0 }
     }
 }
 
@@ -101,6 +104,10 @@ impl Settings {
                 s.trace = v == "on";
                 continue;
             }
+            if k == "new_spells" {
+                s.new_spells = v.parse::<u8>().unwrap_or(0).min(3);
+                continue;
+            }
             let Some(i) = SYSTEMS.iter().position(|(key, _)| *key == k) else { continue };
             match v.as_str() {
                 "kh1" => s.styles[i] = Style::Kh1,
@@ -117,7 +124,7 @@ impl Settings {
         let has = |key: &str| {
             text.lines().any(|l| l.trim_start().to_ascii_lowercase().strip_prefix(key).is_some_and(|r| r.trim_start().starts_with('=')))
         };
-        !(SYSTEMS.iter().all(|(k, _)| has(k)) && has("trace"))
+        !(SYSTEMS.iter().all(|(k, _)| has(k)) && has("trace") && has("new_spells"))
     }
 
     /// The ini as written on first launch (and the layout `parse` reads).
@@ -133,6 +140,10 @@ impl Settings {
         out.push_str(&format!(
             "# Debug: F10 starts / stops a trace of Sora each frame (kh2-kh1-trace-N.csv)\ntrace = {}\n",
             if self.trace { "on" } else { "off" }
+        ));
+        out.push_str(&format!(
+            "\n# Debug: Sora has KH1's new spells (Gravity so far) at this level, 1 to 3, without\n# their unlocks (0 off; needs magic = kh1)\nnew_spells = {}\n",
+            self.new_spells
         ));
         out
     }
@@ -162,6 +173,8 @@ mod tests {
         s.styles[1] = Style::Kh1;
         assert_eq!(Settings::parse(&s.render()), s);
         s.trace = true;
+        assert_eq!(Settings::parse(&s.render()), s);
+        s.new_spells = 2;
         assert_eq!(Settings::parse(&s.render()), s);
         assert!(!Settings::missing_rows(&s.render()));
         assert!(Settings::missing_rows("movement = kh1\n"));

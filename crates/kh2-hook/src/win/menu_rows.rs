@@ -15,6 +15,8 @@ static PLAN: OnceLock<Plan> = OnceLock::new();
 static APPLIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 const CMD_TABLE: usize = 0x2A1_61E8;
 const ITEM_TABLE: usize = 0x2A2_5370;
+const ATKP_TABLE: usize = 0x2AE_57B0;
+const MAGC_TABLE: usize = 0x2A2_3C68;
 
 /// After KH2's table loader (`combo_tables`): its `cmd` and `item` tables copied with Gravity's,
 /// Stop's and Aero's rows (`crate::magic_rows`), KH2's pointers set to the copies. The copies are
@@ -28,6 +30,26 @@ pub unsafe fn extend_tables(base: usize) {
         (CMD_TABLE, crate::magic_rows::CMD_ROW, crate::magic_rows::extend_commands as fn(&[u8]) -> Option<Vec<u8>>, "cmd"),
         (ITEM_TABLE, crate::magic_rows::ITEM_ROW, crate::magic_rows::extend_items, "item"),
     ] {
+        let p = (base + at) as *mut usize;
+        if *p == 0 {
+            continue;
+        }
+        let n = (*((*p + 4) as *const i32)).clamp(0, 0x4000) as usize;
+        let old = std::slice::from_raw_parts(*p as *const u8, 8 + n * row);
+        if let Some(new) = f(old) {
+            *p = Box::leak(new.into_boxed_slice()).as_ptr() as usize;
+            done.push(what);
+        }
+    }
+    // Gravity's MAGC rows only when its files are in the mod folder (KH2 loads the file of the
+    // level Sora has; a missing one would fail).
+    let dir = super::mod_path();
+    let gravity = (1..=3).all(|l| std::path::Path::new(&dir).join(format!("magic/GRAVITY_{l}.mag")).is_file());
+    let mut more: Vec<(usize, usize, Box<dyn Fn(&[u8]) -> Option<Vec<u8>>>, &str)> = vec![(ATKP_TABLE, crate::magic_rows::ATKP_ROW, Box::new(crate::magic_rows::extend_atkp), "atkp")];
+    if gravity {
+        more.push((MAGC_TABLE, crate::magic_rows::MAGC_ROW, Box::new(|t: &[u8]| crate::magic_rows::extend_magc(t, GRAVITY, "GRAVITY", 0)), "magc gravity"));
+    }
+    for (at, row, f, what) in more {
         let p = (base + at) as *mut usize;
         if *p == 0 {
             continue;
@@ -111,4 +133,29 @@ unsafe fn apply() {
     }
     APPLIED.store(done == plan.patches.len(), Ordering::Relaxed);
     log!("menu rows: KH2's {SUBMENUS} command submenus moved to {mem:#x} with room for {ROWS} rows each, the HUD draws {HUD_LEVEL} sprites a level, {ELEMENTS} magic elements in KH1's order ({done} of {} sites)", plan.patches.len());
+}
+
+/// Debug `new_spells` (0 off): the level the new spells are given at.
+static DEBUG_SPELLS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+/// KH2's item counts (`0x1409ACE30`, by an item's slot; `0x1403C4720`, Checked (decomp)).
+const ITEM_COUNTS: usize = 0x9A_CE30;
+
+pub fn set_debug_spells(level: u8) {
+    DEBUG_SPELLS.store(level, Ordering::Relaxed);
+}
+
+/// Each frame (debug only): Gravity's item count up to the debug level, once our rows are in,
+/// with `magic = kh1` (a save loaded later still gets it).
+pub fn debug_spells() {
+    let level = DEBUG_SPELLS.load(Ordering::Relaxed);
+    if level == 0 || !APPLIED.load(Ordering::Relaxed) || !crate::settings::kh1(crate::settings::MAGIC) {
+        return;
+    }
+    let at = (BASE.load(Ordering::Relaxed) + ITEM_COUNTS + crate::magic_rows::SLOTS[0] as usize) as *mut u8;
+    unsafe {
+        if *at < level {
+            *at = level;
+            log!("debug: Gravity given at level {level} (new_spells)");
+        }
+    }
 }

@@ -588,7 +588,7 @@ fn build_spell(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, kh1_name: &st
     {
         let src = kh1.read(Source::Original, kh1_name)?;
         let set = spells::kh1_effect_set(&src).ok_or_else(|| Error::Format(format!("{kh1_name}: no effect set")))?;
-        let own = kh2.read(kh2_name)?;
+        let own = kh2.read(&spells::kh2_base(kh2_name))?;
         let merged = spells::kh1_mag(kind, level, &own, &src).ok_or_else(|| Error::Format(format!("{kh2_name}: not a spell file we know")))?;
         files.push((mod_dir.join(kh2_name), merged));
         let dpd_at = u32::from_le_bytes(set[16..20].try_into().unwrap()) as usize;
@@ -596,7 +596,7 @@ fn build_spell(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, kh1_name: &st
         let mut hd: Vec<_> = kh1.read_remastered_all(Source::Original, kh1_name).unwrap_or_default().into_iter().filter(|a| a.name.ends_with(".dds")).collect();
         hd.sort_by_key(|a| u32::from_str_radix(a.name.trim_start_matches('-').trim_end_matches(".dds"), 16).unwrap_or(u32::MAX));
         // KH2's own HD textures first (its DPD is first in the merged file), then KH1's.
-        let mut own_hd: Vec<_> = kh2.read_remastered_all(kh2_name).unwrap_or_default().into_iter().filter(|a| a.name.ends_with(".dds")).collect();
+        let mut own_hd: Vec<_> = kh2.read_remastered_all(&spells::kh2_base(kh2_name)).unwrap_or_default().into_iter().filter(|a| a.name.ends_with(".dds")).collect();
         own_hd.sort_by_key(|a| u32::from_str_radix(a.name.trim_start_matches('-').trim_end_matches(".dds"), 16).unwrap_or(u32::MAX));
         let dir = mod_dir.join("remastered").join(kh2_name);
         let _ = std::fs::remove_dir_all(&dir);
@@ -614,7 +614,8 @@ fn build_spell(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, kh1_name: &st
 
 /// Our spell files out of the mod folder (KH2 loads its own).
 pub fn remove_spells(mod_dir: &Path) {
-    for (_, kh2_name, _, _) in spells::SPELLS {
+    // KH1's new spells stay (KH2 may still load one Sora owns; nothing gives them at kh2).
+    for (_, kh2_name, _, _) in spells::SPELLS.iter().filter(|s| !spells::kh1_only(s.2)) {
         let _ = std::fs::remove_file(mod_dir.join(kh2_name));
         let _ = std::fs::remove_dir_all(mod_dir.join("remastered").join(kh2_name));
     }

@@ -135,7 +135,7 @@ pub fn mag(name: &[u8; 4], pax: &[u8], bdx: &[u8]) -> Vec<u8> {
 /// KH2's `magic/<SPELL>_n.mag` is level n (its MAGC rows; the Drive Forms cast the same files,
 /// the sister's `drive-model.md`); KH1's `xm_<spell>0n.mag` likewise (Checked (files): the scripts
 /// differ only in the level's numbers, Blizzard's shard speed 20 / 30 / 40).
-pub const SPELLS: [(&str, &str, Kind, usize); 12] = [
+pub const SPELLS: [(&str, &str, Kind, usize); 15] = [
     ("xm_fire01.mag", "magic/FIRE_1.mag", Kind::Fire, 0),
     ("xm_fire02.mag", "magic/FIRE_2.mag", Kind::Fire, 1),
     ("xm_fire03.mag", "magic/FIRE_3.mag", Kind::Fire, 2),
@@ -148,7 +148,22 @@ pub const SPELLS: [(&str, &str, Kind, usize); 12] = [
     ("xm_cure01.mag", "magic/CURE_1.mag", Kind::Cure, 0),
     ("xm_cure02.mag", "magic/CURE_2.mag", Kind::Cure, 1),
     ("xm_cure03.mag", "magic/CURE_3.mag", Kind::Cure, 2),
+    ("xm_gravity01.mag", "magic/GRAVITY_1.mag", Kind::Gravity, 0),
+    ("xm_gravity02.mag", "magic/GRAVITY_2.mag", Kind::Gravity, 1),
+    ("xm_gravity03.mag", "magic/GRAVITY_3.mag", Kind::Gravity, 2),
 ];
+
+/// The KH2 file a spell's file is built on: its own, or for a spell KH2 doesn't have, the KH2
+/// spell cast on the same motions (Gravity: Blizzard's, KH1's 55 / 80), whose script, elements and
+/// effects stay in the file unused (our script takes every sub).
+pub fn kh2_base(kh2_name: &str) -> String {
+    kh2_name.replace("GRAVITY", "BLIZZARD")
+}
+
+/// A spell KH2 doesn't have: our script for every sub, the Drive Forms too (owner, 2026-11-14).
+pub fn kh1_only(kind: Kind) -> bool {
+    kind == Kind::Gravity
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -156,6 +171,7 @@ pub enum Kind {
     Blizzard,
     Thunder,
     Cure,
+    Gravity,
 }
 
 /// KH2's own spell file (`kh2`, `magic/<SPELL>_n.mag`) with KH1's spell added (`kh1`, the matching
@@ -189,6 +205,8 @@ pub const SHOT_B: i32 = 105;
 /// Thunder's area marker (KH1's effect 1) and its bolt on each enemy it strikes (effect 2).
 pub const MARK: i32 = 102;
 pub const BOLT: i32 = 103;
+/// An effect held on the caster's hand at the release (Gravity).
+pub const HAND: i32 = 108;
 
 /// KH1's Fire (`xm_fire0n.mag`'s script; read with KH1-in-ReCom's disassembler, Checked (files)).
 pub mod fire {
@@ -254,6 +272,30 @@ pub mod thunder {
     pub const ATKP: i32 = 250;
 }
 
+/// KH1's Gravity (`xm_gravity0n.mag`, KH1-in-ReCom §7.8, Checked (files + decomp) there; the
+/// disassembly here agrees: `func_8cc(…, S, N)`, `func_3ea`'s parameters).
+pub mod gravity {
+    /// The sphere's scale at the impact and the frames of its fall, by level.
+    pub const SCALE: [f32; 3] = [1.0, 1.5, 1.6];
+    pub const FRAMES: [f32; 3] = [60.0, 70.0, 60.0];
+    pub const START_SCALE: f32 = 0.01;
+    /// Hit radius at scale 1 (`hp+0`), the fall (`hp+4`, the start 10 higher), the marker's frames
+    /// (`hp+0x1C`), the fade's frames and growth (`hp+0x14`, `hp+0x18`).
+    pub const RADIUS: f32 = 170.0;
+    pub const FALL: f32 = 230.0;
+    pub const ABOVE: f32 = 240.0;
+    pub const MARK_FRAMES: f32 = 28.0;
+    pub const FADE: f32 = 20.0;
+    pub const FADE_GROWTH: f32 = 1.02;
+    /// Without a target: the caster + 200 along his facing (offset taken at the cast).
+    pub const AHEAD: f32 = 200.0;
+    /// The floor-contact impact (effect 4) when the sphere ends within this of the floor, else 5.
+    pub const NEAR_FLOOR: f32 = 100.0;
+    /// Our ATKP (KH2's last is 2065, Checked (files)): `kh2-hook::magic_rows` adds its rows,
+    /// a KH2 attack type of ours (7) for KH1's % of HP.
+    pub const ATKP: i32 = 2066;
+}
+
 /// KH1's Cure (`xm_cure0n.mag`, the same in all three files, Checked (files); KH1-in-ReCom §7.7).
 pub mod cure {
     /// KH2's Cure heal on the caster (ATKP 708, kind 6: heals by Magic; rows by the sub; Checked
@@ -302,6 +344,17 @@ pub fn elements(kind: Kind, kh1: u16) -> Vec<Element> {
         ],
         // KH1 Cure: 0 the charge on the Keyblade, 1 the heal on Sora (placed by the script).
         Kind::Cure => vec![el(CAST, 0, 0x4003, 0x2A1, 0, 129), el(SHOT, 1, 0, 0, 0, 130)],
+        // KH1 Gravity: 0 the charge on the Keyblade, 1 the hand effect (on the Keyblade's tip:
+        // Assumption), 2 the marker, 3 the sphere, 4 / 5 the impact near / off the floor. No
+        // hit element. Sounds: Blizzard's cast stands in (KH1's not in KH2's banks yet).
+        Kind::Gravity => vec![
+            el(CAST, 0, 0x4003, 0x2A1, 0, 120),
+            el(HAND, 1, 0x4003, 0x2A1, 0, -1),
+            el(MARK, 2, 0, 0, 0, -1),
+            el(SHOT, 3, 0, 0, 0, -1),
+            el(POINT, 4, 0, 0, 0, -1),
+            el(SHOT_B, 5, 0, 0, 0, -1),
+        ],
     }
 }
 
@@ -320,7 +373,10 @@ const W_ZERO: u16 = 80;
 const W_ATK0: u16 = 96;
 const W_LIGHT: u16 = 100;
 const W_RELEASED: u16 = 104;
-const WORK: u32 = 112;
+/// Gravity: the target at the cast, the no-target offset.
+const W_TARGET: u16 = 108;
+const W_OFFSET: u16 = 112;
+const WORK: u32 = 128;
 
 // A shot's block (`memory_alloc`): a copy of the caster's record, its place, target, effect id,
 // effect, attack and direction, a scratch vector.
@@ -362,7 +418,12 @@ pub fn onto(kind: Kind, level: usize, kh2: &[u8]) -> Option<Vec<u8>> {
     let ours = ((p.work_size.max(WORK) + 3) & !3) as u16;
     let mut a = Asm::new();
     a.label("t20").pop(Sp, 0).pop(Sp, 4).pop(Sp, 8).pop(Sp, 12);
-    a.push_v(Sp, 4).push_i(10).bin("sub").un("sltz").beqz("t20_kh2");
+    if kh1_only(kind) {
+        a.push_i(1);
+    } else {
+        a.push_v(Sp, 4).push_i(10).bin("sub").un("sltz");
+    }
+    a.beqz("t20_kh2");
     a.push_i(1).pop(Wp, ours).push_v(Sp, 12).push_v(Sp, 8).push_v(Sp, 4).push_v(Sp, 0).b("cast");
     a.label("t20_kh2").push_i(0).pop(Wp, ours).push_v(Sp, 12).push_v(Sp, 8).push_v(Sp, 4).push_v(Sp, 0).b("kh2_20");
     a.label("t21").push_v(Wp, ours).bnez("release").b("kh2_21");
@@ -373,8 +434,9 @@ pub fn onto(kind: Kind, level: usize, kh2: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn code(kind: Kind, level: usize, a: &mut Asm) {
-    cast_code(a, kind == Kind::Thunder);
+    cast_code(a, kind == Kind::Thunder, kind == Kind::Gravity);
     match kind {
+        Kind::Gravity => gravity_code(level.min(2), a),
         Kind::Fire => fire_code(a),
         Kind::Blizzard => blizzard_code(level.min(2), a),
         Kind::Thunder => thunder_code(a),
@@ -385,7 +447,7 @@ fn code(kind: Kind, level: usize, a: &mut Asm) {
 /// Trigger 20, the cast (every KH1 spell): the game pushes the caster, the resources, the sub and
 /// `magi`. KH1's cast effect on the Keyblade, held while the cast motion plays (KH2's own spells
 /// do: a cast cut short does nothing more).
-fn cast_code(a: &mut Asm, tint: bool) {
+fn cast_code(a: &mut Asm, tint: bool, marker: bool) {
     use Mode::*;
     a.label("cast").pop(Sp, 0).pop(Sp, 4).pop(Sp, 8).pop(Sp, 12);
     a.push_v(Sp, 12).memcpy(Wp, 16, W_CASTER);
@@ -402,6 +464,9 @@ fn cast_code(a: &mut Asm, tint: bool) {
         a.push_i(1).sys("trap_light_create").pop(Wp, W_LIGHT);
         let c = thunder::TINT_COLOUR;
         a.push_v(Wp, W_LIGHT).push_i(c).push_i(c).push_i(c).push_f(thunder::TINT).sys("trap_light_set_color");
+    }
+    if marker {
+        gravity_marker_start(a);
     }
     a.push_a(Wp, W_CASTER).push_dpop(4).sys("trap_sysobj_motion_id").pop(Wp, W_MOTION);
     a.label("cast_wait").push_a(Wp, W_CASTER).push_dpop(4).sys("trap_sysobj_motion_id").push_v(Wp, W_MOTION).bin("sub").un("seqz").beqz("cast_end").halt().b("cast_wait");
@@ -703,6 +768,137 @@ fn thunder_code(a: &mut Asm) {
     a.ret();
 }
 
+/// Gravity's cast (KH1 `L008cc`): the target (or none) and the no-target offset (the caster's
+/// facing × 200, taken now), and the marker thread.
+fn gravity_marker_start(a: &mut Asm) {
+    use Mode::*;
+    a.push_a(Wp, W_CASTER).sys("trap_btlobj_target").sys("trap_target_dup").pop(Wp, W_TARGET);
+    a.push_a(Wp, W_CASTER).sys("trap_obj_dir").push_f(gravity::AHEAD).sys("trap_vector_mul").memcpy(Wp, 16, W_OFFSET);
+    a.push_pc("gr_marker").push_i(0).sys("trap_magic_start_thread").drop();
+}
+
+/// The point now: the target's (if it lives), else the caster's place + the cast's offset, into
+/// `sp + to` of the current context's block (`SpD`) or the work (`Wp`).
+fn gravity_point(a: &mut Asm, mode: Mode, to: u16, l: &str) {
+    use Mode::*;
+    a.push_v(Wp, W_TARGET).sys("trap_target_is_exist").beqz(&format!("{l}_alone"));
+    a.push_v(Wp, W_TARGET).sys("trap_target_pos").memcpy(mode, 16, to).b(&format!("{l}_done"));
+    a.label(&format!("{l}_alone")).push_a(Wp, W_CASTER).sys("trap_obj_pos").push_a(Wp, W_OFFSET).sys("trap_vector_add").memcpy(mode, 16, to);
+    a.label(&format!("{l}_done"));
+}
+
+fn gravity_code(level: usize, a: &mut Asm) {
+    use Mode::*;
+    let (scale, frames) = (gravity::SCALE[level], gravity::FRAMES[level]);
+    // The marker thread (KH1 `0x25A`, 28 frames from the cast): KH1's marker 240 above the point
+    // each frame. Its block: the point (B_POS), the effect (B_FX), the frames left (B_SCRATCH).
+    a.label("gr_marker").pop(Sp, 4);
+    new_block(a);
+    a.push_v(Wp, W_RES).push_i(MARK).push_i(1).push_i(0).sys("trap_pax_start").pop(SpD, B_FX);
+    a.push_f(gravity::MARK_FRAMES).pop(SpD, B_SCRATCH);
+    a.label("gr_mark_frame");
+    gravity_point(a, SpD, B_POS, "gr_mp");
+    a.push_v(SpD, B_POS + 4).push_f(gravity::ABOVE).bin("sub.s").pop(SpD, B_POS + 4);
+    a.push_v(SpD, B_FX).push_a(SpD, B_POS).sys("trap_effect_set_pos");
+    a.push_v(SpD, B_SCRATCH).sys("trap_frametime").bin("sub.s").pop(SpD, B_SCRATCH);
+    a.push_v(SpD, B_SCRATCH).un("sgtz.s").beqz("gr_mark_end");
+    a.halt().b("gr_mark_frame");
+    a.label("gr_mark_end").push_v(Sp, 0).sys("trap_memory_free");
+    a.ret();
+
+    // Trigger 21 (KH1's release, 28): the hand effect; the point again; the sphere's block and
+    // its thread.
+    a.label("release");
+    a.push_v(Wp, W_RES).push_i(HAND).push_a(Wp, W_CASTER).push_i(1).push_i(0).sys("trap_pax_start_bind").drop();
+    new_block_of(a, T_BLOCK);
+    gravity_point(a, SpD, B_POS, "gr_rp");
+    a.push_v(SpD, B_POS + 4).push_f(gravity::ABOVE).bin("sub.s").pop(SpD, B_POS + 4);
+    a.push_v(Sp, 0).push_i(B_THREAD as i32).bin("add").push_pc("gr_fall").push_v(Sp, 0).sys("trap_magic_start_thread").store();
+    a.ret();
+
+    // The fall (KH1 `0x44..0x258`): the sphere 230 down over N frames, scale 0.01 to S; then one
+    // attack struck on every enemy within 170 × S of its centre; the impact effect; the sphere
+    // grows × 1.02 a frame for 20 frames and is killed. Scale vector at B_DIR, frames left at T_I.
+    a.label("gr_fall").pop(Sp, 0);
+    a.push_v(Wp, W_RES).push_i(SHOT).push_i(1).push_i(0).sys("trap_pax_start").pop(SpD, B_FX);
+    for k in 0..3u16 {
+        a.push_f(gravity::START_SCALE).pop(SpD, B_DIR + 4 * k);
+    }
+    a.push_f(1.0).pop(SpD, B_DIR + 12);
+    a.push_v(SpD, B_FX).push_a(SpD, B_POS).sys("trap_effect_set_pos");
+    a.push_v(SpD, B_FX).push_a(SpD, B_DIR).sys("trap_effect_set_scale");
+    a.push_f(frames).pop(SpD, T_I);
+    a.label("gr_falling").halt();
+    a.push_v(SpD, B_POS + 4).push_f(gravity::FALL / frames).sys("trap_frametime").bin("mul.s").bin("add.s").pop(SpD, B_POS + 4);
+    for k in 0..3u16 {
+        a.push_v(SpD, B_DIR + 4 * k).push_f((scale - gravity::START_SCALE) / frames).sys("trap_frametime").bin("mul.s").bin("add.s").pop(SpD, B_DIR + 4 * k);
+    }
+    a.push_v(SpD, B_FX).push_a(SpD, B_POS).sys("trap_effect_set_pos");
+    a.push_v(SpD, B_FX).push_a(SpD, B_DIR).sys("trap_effect_set_scale");
+    a.push_v(SpD, T_I).sys("trap_frametime").bin("sub.s").pop(SpD, T_I);
+    a.push_v(SpD, T_I).un("sgtz.s").bnez("gr_falling");
+    // The impact effect: near the floor (a ray of 100 down finds it) 4, else 5.
+    a.push_a(SpD, B_POS).push_a(SpD, B_SCRATCH).push_f(gravity::NEAR_FLOOR).sys("trap_bg_ground_pos").beqz("gr_air");
+    a.push_v(Wp, W_RES).push_i(POINT).push_i(1).push_i(0).sys("trap_pax_start").pop(Sp, 4).b("gr_impact");
+    a.label("gr_air").push_v(Wp, W_RES).push_i(SHOT_B).push_i(1).push_i(0).sys("trap_pax_start").pop(Sp, 4);
+    a.label("gr_impact");
+    a.push_v(Sp, 4).push_a(SpD, B_POS).sys("trap_effect_set_pos");
+    a.push_v(Sp, 4).push_a(SpD, B_DIR).sys("trap_effect_set_scale");
+    // The strikes: every enemy (KH2's target searcher, as Thunder's list) whose part centre is
+    // within 170 × S of the centre (KH1 `sys 90` type 1 on its bodies: the part's centre here,
+    // Assumption), struck once with one attack.
+    a.push_a(Wp, W_CASTER).push_i(gravity::ATKP).push_i(-1).push_v(Wp, W_SUB).sys("trap_attack_new").pop(SpD, B_ATK);
+    a.push_v(SpD, B_ATK).push_v(Wp, W_RES).sys("trap_attack_set_pax");
+    a.push_v(SpD, B_ATK).push_a(SpD, B_POS).sys("trap_attack_set_pos");
+    for k in 0..4u16 {
+        a.push_i(0).pop(SpD, T_FAKE + 4 * k);
+    }
+    a.push_a(SpD, T_SEARCH).push_i(T_HISTORY).sys("trap_target_searcher_init");
+    a.push_f(1.0e9).pop(SpD, T_SEARCH + 0x14);
+    a.push_i(0).pop(SpD, T_TRIES).push_i(0).pop(SpD, T_N);
+    a.label("gr_next");
+    a.push_v(SpD, T_TRIES).push_i(T_HISTORY).bin("sub").un("sltz").beqz("gr_struck");
+    a.push_v(SpD, T_TRIES).push_i(1).bin("add").pop(SpD, T_TRIES);
+    a.push_a(SpD, T_SEARCH).push_a(SpD, T_REC).push_a(SpD, B_POS).push_a(SpD, B_POS).push_i(1).push_i(0).push_i(1).sys("trap_target_seracher_search");
+    a.push_a(SpD, T_REC).sys("trap_target_is_exist").beqz("gr_struck");
+    a.push_a(SpD, T_REC).sys("trap_target_pos").memcpy(SpD, 16, B_SCRATCH);
+    for (k, at) in [(0u16, 8u16), (4, 12), (8, 16)] {
+        a.push_v(SpD, B_SCRATCH + k).push_v(SpD, B_POS + k).bin("sub.s").pop(Sp, at);
+    }
+    a.push_v(Sp, 8).push_v(Sp, 8).bin("mul.s").push_v(Sp, 12).push_v(Sp, 12).bin("mul.s").bin("add.s").push_v(Sp, 16).push_v(Sp, 16).bin("mul.s").bin("add.s");
+    // Nearest first: the first one out of reach ends the list.
+    let r = gravity::RADIUS * scale;
+    a.push_f(r * r).bin("sub.s").un("sgtz.s").bnez("gr_struck");
+    // One strike an enemy (another part of one struck is passed).
+    a.push_i(0).pop(SpD, T_J);
+    a.label("gr_dedupe");
+    a.push_v(SpD, T_J).push_v(SpD, T_N).bin("sub").un("sltz").beqz("gr_new");
+    a.push_v(Sp, 0).push_i(T_LIST as i32).bin("add").push_v(SpD, T_J).push_i(4).bin("mul").bin("add").push_dpop(0);
+    a.push_v(SpD, T_REC).bin("sub").un("seqz").bnez("gr_next");
+    a.push_v(SpD, T_J).push_i(1).bin("add").pop(SpD, T_J).b("gr_dedupe");
+    a.label("gr_new");
+    a.push_v(SpD, T_N).push_i(thunder::MAX).bin("sub").un("sltz").beqz("gr_struck");
+    a.push_v(Sp, 0).push_i(T_LIST as i32).bin("add").push_v(SpD, T_N).push_i(4).bin("mul").bin("add").push_v(SpD, T_REC).store();
+    a.push_v(SpD, T_N).push_i(1).bin("add").pop(SpD, T_N);
+    a.push_v(SpD, T_REC).pop(SpD, T_FAKE + 4);
+    a.push_v(SpD, B_ATK).push_a(SpD, T_FAKE).push_i(0).push_i(0).sys("trap_attack_strike");
+    a.b("gr_next");
+    a.label("gr_struck");
+    a.push_v(SpD, B_ATK).sys("trap_attack_free");
+    a.push_f(gravity::FADE).pop(SpD, T_I);
+    a.label("gr_fade").halt();
+    for k in 0..3u16 {
+        a.push_v(SpD, B_DIR + 4 * k).push_f(gravity::FADE_GROWTH).bin("mul.s").pop(SpD, B_DIR + 4 * k);
+    }
+    a.push_v(SpD, B_FX).push_a(SpD, B_DIR).sys("trap_effect_set_scale");
+    a.push_v(SpD, T_I).sys("trap_frametime").bin("sub.s").pop(SpD, T_I);
+    a.push_v(SpD, T_I).un("sgtz.s").bnez("gr_fade");
+    a.push_v(SpD, B_FX).sys("trap_effect_kill");
+    a.push_v(Wp, W_TARGET).sys("trap_target_free");
+    a.push_v(Sp, 0).sys("trap_memory_free");
+    a.ret();
+}
+
 fn cure_code(a: &mut Asm) {
     use Mode::*;
     // Trigger 21 (KH1's release, frame 36; `xm_cure01.mag` `0x56`): the heal struck straight onto
@@ -843,6 +1039,7 @@ mod tests {
         /// (frame, object) of each strike.
         pub(super) strikes: Vec<(usize, i32)>,
         pub(super) light: Vec<(usize, &'static str, f32)>,
+        pub(super) scales: Vec<(usize, i32, f32)>,
     }
 
     impl World {
@@ -871,6 +1068,7 @@ mod tests {
                 history: HashMap::new(),
                 strikes: vec![],
                 light: vec![],
+                scales: vec![],
             }
         }
 
@@ -1067,6 +1265,10 @@ mod tests {
                     self.fx_alive.insert(args[0].i(), false);
                 }
                 "trap_attack_free" => {}
+                "trap_effect_set_scale" => {
+                    let p = v(vm, args[1]);
+                    self.scales.push((self.frame, args[0].i(), p[0]));
+                }
                 "trap_magic_start_thread" => {
                     let wp = vm.ctxs[ctx].wp;
                     let t = vm.spawn(Some(wp));
@@ -1231,6 +1433,37 @@ mod tests {
     }
 
     #[test]
+    fn kh1_gravity_falls_and_crushes_as_kh1s() {
+        for level in 0..3 {
+            let (s, n) = (gravity::SCALE[level], gravity::FRAMES[level] as usize);
+            let r = gravity::RADIUS * s;
+            let mut w = World::new(Some([0.0, -80.0, 500.0]), None);
+            // Two parts of one enemy at the centre, one just inside, one just outside, one dead.
+            w.enemies = vec![(1, [0.0, -90.0, 500.0], true), (1, [0.0, -80.0, 500.0], true), (2, [r - 5.0, -90.0, 500.0], true), (3, [r + 5.0, -90.0, 500.0], true), (4, [0.0, -90.0, 500.0], false)];
+            let w = cast_with(&script(Kind::Gravity, level), 2 * level as i32, w);
+            // The marker 240 above the target from the cast.
+            assert!(w.started.iter().any(|(id, p)| *id == MARK && (p[1] - (-80.0 - 240.0)).abs() < 0.01), "{:?}", w.started);
+            // The sphere starts 240 above at the release (28) and lands 10 above after N frames.
+            let sphere = w.started.iter().find(|(id, _)| *id == SHOT).unwrap().1;
+            assert!((sphere[1] - (-320.0)).abs() < 0.01 && (sphere[2] - 500.0).abs() < 0.01, "{sphere:?}");
+            // Struck once each, at the impact: 1 and 2, not 3 (out of reach) or 4 (dead).
+            let struck: Vec<i32> = w.strikes.iter().map(|x| x.1).collect();
+            assert_eq!(struck, vec![1, 2], "level {level}");
+            let at = w.strikes[0].0;
+            assert_eq!(at, 28 + n, "impact frame, level {level}");
+            // The scale reaches S at the impact, then × 1.02 for 20 frames.
+            let s_at = w.scales.iter().filter(|x| x.0 == at).map(|x| x.2).fold(0.0f32, f32::max);
+            assert!((s_at - s).abs() < 1e-3, "{s_at} {s}");
+            let last = w.scales.iter().map(|x| x.2).fold(0.0f32, f32::max);
+            assert!((last - s * 1.02f32.powi(20)).abs() < 1e-3, "{last}");
+        }
+        // Without a target: 200 ahead of Sora (+z) at the release.
+        let w = cast_with(&script(Kind::Gravity, 0), 0, World::new(None, None));
+        let sphere = w.started.iter().find(|(id, _)| *id == SHOT).unwrap().1;
+        assert!((sphere[2] - 200.0).abs() < 0.01 && (sphere[1] + 240.0).abs() < 0.01, "{sphere:?}");
+    }
+
+    #[test]
     fn kh1_cure_heals_sora_as_kh1s() {
         let mut w = World::new(None, None);
         w.motion_end = 68;
@@ -1256,7 +1489,7 @@ mod tests {
     fn script_avoids_the_games_30_fps_patches() {
         // KH2 replaces some float pushes at fixed code positions (`kh2_bdx::vm::pc_patch`); none of
         // ours may sit there.
-        for kind in [Kind::Fire, Kind::Blizzard, Kind::Thunder, Kind::Cure] {
+        for kind in [Kind::Fire, Kind::Blizzard, Kind::Thunder, Kind::Cure, Kind::Gravity] {
             for level in 0..3 {
                 let p = kh2_bdx::Program::parse(&script(kind, level)).unwrap();
                 let mut pc = (12 + 8 * (p.triggers.len() as u32 + 1)) / 2;
@@ -1293,7 +1526,7 @@ mod files {
     fn kh1_spells_onto_kh2s_files() {
         let (Ok(k1), Ok(k2)) = (std::env::var("KH1_MAGS"), std::env::var("KH2_MAGS")) else { return };
         for (kh1_name, kh2_name, kind, level) in super::SPELLS {
-            let (Ok(kh1), Ok(kh2)) = (std::fs::read(format!("{k1}/{kh1_name}")), std::fs::read(format!("{k2}/{}", kh2_name.trim_start_matches("magic/")))) else {
+            let (Ok(kh1), Ok(kh2)) = (std::fs::read(format!("{k1}/{kh1_name}")), std::fs::read(format!("{k2}/{}", super::kh2_base(kh2_name).trim_start_matches("magic/")))) else {
                 eprintln!("{kh1_name} / {kh2_name}: not staged");
                 continue;
             };

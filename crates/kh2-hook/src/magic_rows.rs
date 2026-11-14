@@ -87,6 +87,94 @@ pub fn extend_items(t: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// Gravity's attack (`kh1_assets::spells::gravity::ATKP`): KH2's `atkp` (pointer `0x142AE57B0`,
+/// rows of `0x30` from `+8`, `bsearch` on (id, sub), so sorted; Checked (decomp) `0x1403EAFC0`;
+/// `+0` level, `+1` sub, `+2` id, `+4` type, `+5` stat source, `+6` power, `+9` element, `+0xB`
+/// hit effect group) gets 2066's rows: Blizzard's shard rows (248: every sub, the Drive Forms'
+/// too) with type `GRAVITY_TYPE` (a KH2 attack type of ours, computed by `gravity_damage` in
+/// KH2's damage function), KH1's power for the sub's level, no element, our hit-effect group.
+pub const ATKP_ROW: usize = 0x30;
+pub const GRAVITY_ATKP: u16 = kh1_assets::spells::gravity::ATKP as u16;
+pub const GRAVITY_TYPE: u8 = 7;
+/// KH1's Gravity powers (btltbl `0x6468` / `0x64D8` / `0x6548`, Checked (files) in KH1-in-ReCom).
+pub const GRAVITY_POWER: [u16; 3] = [40, 55, 70];
+const ATKP_TEMPLATE: u16 = 248;
+
+/// KH2's `atkp` table with Gravity's rows added.
+pub fn extend_atkp(t: &[u8]) -> Option<Vec<u8>> {
+    let n = count(t)?;
+    if t.len() < 8 + n * ATKP_ROW {
+        return None;
+    }
+    let rows: Vec<&[u8]> = (0..n).map(|i| &t[8 + i * ATKP_ROW..8 + (i + 1) * ATKP_ROW]).collect();
+    let id = |r: &[u8]| u16::from_le_bytes([r[2], r[3]]);
+    if rows.last().map(|r| id(r)) >= Some(GRAVITY_ATKP) {
+        return None;
+    }
+    let mut out = t[..8 + n * ATKP_ROW].to_vec();
+    let mut added = 0;
+    for r in rows.iter().filter(|r| id(r) == ATKP_TEMPLATE) {
+        let mut g = r.to_vec();
+        g[2..4].copy_from_slice(&GRAVITY_ATKP.to_le_bytes());
+        g[4] = GRAVITY_TYPE;
+        let level = ((g[1] % 10) / 2).min(2) as usize;
+        g[6..8].copy_from_slice(&GRAVITY_POWER[level].to_le_bytes());
+        g[9] = 0;
+        g[0x0B] = kh1_assets::spells::HIT_GROUP;
+        out.extend_from_slice(&g);
+        added += 1;
+    }
+    if added == 0 {
+        return None;
+    }
+    out[4..8].copy_from_slice(&((n + added) as u32).to_le_bytes());
+    Some(out)
+}
+
+/// KH1's Gravity damage (`0x1402BFA80`, element 8; KH1-in-ReCom §7.8): current HP × (power + 5 ×
+/// max MP bars)%, at least 1; every enemy at KH1's full share (owner, 2026-11-14: "(c) Everyone
+/// full"). KH2's own immunity (the general resistance `+0x1AE` at 0, scripted invulnerability)
+/// still stops it (Assumption: the owner's "full" is about KH1's resistances, not KH2's
+/// invulnerable phases).
+pub fn gravity_damage(hp: i32, power: i32, bars: i32, general: u8) -> i32 {
+    if general == 0 || hp <= 0 {
+        return 0;
+    }
+    ((hp as i64 * (power + 5 * bars) as i64 / 100) as i32).max(1)
+}
+
+/// MAGC (`00battle.bin` `magc`, pointer `0x142A23C68`, rows of `0x38` from `+8`; `0x1403C5DC0`
+/// takes an element's rows in order, the highest level the item count reaches; Checked
+/// (decomp)): `+0` element, `+1` level, `+2` world (0 any), `+4` file name (32), `+0x24` item,
+/// `+0x26` command, then the cast motions. Gravity's: Blizzard's base rows (KH1 casts Gravity on
+/// Blizzard's motions), element 6, `magic/GRAVITY_n.mag`, item 84, commands 797..799.
+pub const MAGC_ROW: usize = 0x38;
+const MAGC_TEMPLATE_ELEMENT: u8 = 1;
+
+pub fn extend_magc(t: &[u8], element: u8, file: &str, k: usize) -> Option<Vec<u8>> {
+    let n = count(t)?;
+    if t.len() < 8 + n * MAGC_ROW {
+        return None;
+    }
+    let rows: Vec<&[u8]> = (0..n).map(|i| &t[8 + i * MAGC_ROW..8 + (i + 1) * MAGC_ROW]).collect();
+    if rows.iter().any(|r| r[0] == element) {
+        return None;
+    }
+    let mut out = t[..8 + n * MAGC_ROW].to_vec();
+    for level in 1..=3u8 {
+        let mut r = rows.iter().find(|r| r[0] == MAGC_TEMPLATE_ELEMENT && r[1] == level && r[2] == 0)?.to_vec();
+        r[0] = element;
+        let name = format!("magic/{file}_{level}.mag");
+        r[4..0x24].fill(0);
+        r[4..4 + name.len()].copy_from_slice(name.as_bytes());
+        r[0x24..0x26].copy_from_slice(&ITEMS[element as usize].to_le_bytes());
+        r[0x26..0x28].copy_from_slice(&command(k, level as usize - 1).to_le_bytes());
+        out.extend_from_slice(&r);
+    }
+    out[4..8].copy_from_slice(&((n + 3) as u32).to_le_bytes());
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,6 +186,15 @@ mod tests {
             t.extend(r);
         }
         t
+    }
+
+    #[test]
+    fn gravity_takes_kh1s_share() {
+        // 55 % at max MP 3 (power 40), KH1-in-ReCom's check; at least 1; KH2's immunity.
+        assert_eq!(gravity_damage(1000, 40, 3, 100), 550);
+        assert_eq!(gravity_damage(1, 40, 3, 100), 1);
+        assert_eq!(gravity_damage(1000, 70, 9, 100), 1150);
+        assert_eq!(gravity_damage(1000, 40, 3, 0), 0);
     }
 
     #[test]
@@ -130,6 +227,18 @@ mod tests {
         let c = extend_commands(&get("cmd")).unwrap();
         assert_eq!(count(&c), Some(751 + 9));
         let i = extend_items(&get("item")).unwrap();
+        let b = kh2_formats::bar::Bar::parse(&std::fs::read(std::env::var("KH2_BATTLE").unwrap()).unwrap()).unwrap().entries.iter().map(|e| (e.name.to_string(), e.data.to_vec())).collect::<Vec<_>>();
+        let bget = |n: &str| b.iter().find(|e| e.0 == n).unwrap().1.clone();
+        let a = extend_atkp(&bget("atkp")).unwrap();
+        let ids: Vec<(u16, u8)> = (0..count(&a).unwrap()).map(|i| (u16::from_le_bytes([a[8 + i * 0x30 + 2], a[8 + i * 0x30 + 3]]), a[8 + i * 0x30 + 1])).collect();
+        assert!(ids.windows(2).all(|w| w[0] <= w[1]));
+        let g: Vec<_> = (0..count(&a).unwrap()).map(|i| &a[8 + i * 0x30..8 + (i + 1) * 0x30]).filter(|r| u16::from_le_bytes([r[2], r[3]]) == GRAVITY_ATKP).collect();
+        assert_eq!(g.len(), 21);
+        assert!(g.iter().all(|r| r[4] == GRAVITY_TYPE && r[9] == 0));
+        assert_eq!(u16::from_le_bytes([g[5][6], g[5][7]]), 70);
+        let m = extend_magc(&bget("magc"), GRAVITY, "GRAVITY", 0).unwrap();
+        let last = &m[8 + 38 * MAGC_ROW..8 + 39 * MAGC_ROW];
+        assert_eq!((last[0], last[1], &last[4..25], u16::from_le_bytes([last[0x24], last[0x25]]), u16::from_le_bytes([last[0x26], last[0x27]])), (6, 3, &b"magic/GRAVITY_3.mag\0\0"[..], 84, 799));
         let r = row(&i, ITEM_ROW, 86).unwrap();
         assert_eq!((r[2], r[4], u16::from_le_bytes([r[0x10], r[0x11]]), u16::from_le_bytes([r[0x12], r[0x13]])), (0x12, AERO, command(2, 0), 77));
     }
