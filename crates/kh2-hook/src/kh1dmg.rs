@@ -63,6 +63,32 @@ pub fn sora_attack(id: u16, sub: u8) -> Option<Attack> {
     })
 }
 
+/// KH1's combo modifiers and Counterattack on the KH2 attacks their motion slots hit with
+/// (`kh1_assets::MODIFIERS`, `abilities = kh1`; the slot's first hit window's ATKP, Checked (files):
+/// `W_EX010.mset` for the Keyblade's, `P_EX100.mset` for Sora's own): (ATKP id, KH1 data). KH1's
+/// rows (Checked (files): the owner's `btltbl.bin`): Sliding Dash `0x50B8`, Vortex and Aerial
+/// Sweep `0x4CC8`, Hurricane Blast `0x5048`, Blitz `0x4D38`, Ripple Drive `0x4E88` (max MP × 3),
+/// Stun Impact `0x4EF8` (element 10), Gravity Break `0x4F68` (% of HP, + Strength), Zantetsuken
+/// `0x4FD8` (% of HP, no stat), Counterattack `0x4E18`.
+pub const MODIFIER_ATKP: [(u16, Attack); 10] = [
+    (968, a(0, 1, 0, 0, 0)),
+    (1007, a(0, 1, 2, 0, 0)),
+    (909, a(0, 1, 2, 0, 0)),
+    (1131, a(0, 1, 6, 4, 4)),
+    (1896, a(0, 1, 6, 4, 4)),
+    (911, a(4, 1, 10, 0, 0)),
+    (876, a(0, 10, 4, 0, 0)),
+    (854, a(0, 8, 40, 200, 0)),
+    (1582, a(2, 8, 250, 200, 0)),
+    (1581, a(0, 1, 0, 200, 4)),
+];
+
+/// KH1's data for a modifier's KH2 attack (only at `abilities = kh1`: at kh2 these ATKPs are
+/// KH2's own moves).
+pub fn modifier_attack(id: u16) -> Option<Attack> {
+    MODIFIER_ATKP.iter().find(|m| m.0 == id).map(|m| m.1)
+}
+
 /// The target's KH1 numbers.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Target {

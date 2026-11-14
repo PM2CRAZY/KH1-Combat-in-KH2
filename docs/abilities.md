@@ -145,7 +145,27 @@ row whose request isn't playing).
   for Hurricane Blast is any air pick; Aerial Sweep's hop and speed are KH2's jump approach's (as
   the plain jump-up today), not KH1's computed ones; Counterattack when KH2's Counterguard would
   be taken.
-- Still KH2's on these motions: the ATKP rows of the slots (power, reaction): next version.
+- Still KH2's on these motions: the ATKP rows of the slots (power, reaction): t94.
+
+## t94: the modifiers' hits and KH1's damage
+
+- **Hit windows** (`swing_triggers::modifier`, the build): in a modifier slot KH2's own attack
+  windows on Sora (Explosion's burst, Flash Step's and Guard Break's guard windows, ATKP 124 /
+  161 / 162 / 406) and its no-hurt range (27) go: KH1's move has its hit only. Where the Keyblade
+  has no hit window in the KH2 slot (Explosion 166, Finishing Leap 167, Counterguard 171: Sora's
+  body hits, Checked (files)), KH1's hit goes on Sora with the slot's first own attack (911 / 854 /
+  1581) and group. Checked (files): Ripple Drive 34–46, Gravity Break 32–38, Counterattack 8–24 on
+  Sora; the rest on the Keyblade at KH1's frames.
+- **Damage** (`damage = kh1` and `abilities = kh1`, `kh1dmg::MODIFIER_ATKP`): the slots' attacks
+  take KH1's rows (Checked (files), btltbl): Sliding Dash (968) `0x50B8` power 0; Vortex (1007),
+  Aerial Sweep (909) `0x4CC8` power 2; Hurricane Blast (1131) `0x5048` 6, crit 4 / +4; Blitz (1896)
+  `0x4D38` 6, crit 4 / +4; Ripple Drive (911) `0x4E88` 10 + max MP × 3; Stun Impact (876) `0x4EF8`
+  4, element 10; Gravity Break (854) `0x4F68` (Strength + 40)% of HP, crit 200; Zantetsuken (1582)
+  `0x4FD8` 250% of HP, no stat, crit 200; Counterattack (1581) `0x4E18` 0, crit 200 / +4. At
+  abilities = kh2 these ATKPs are KH2's moves and keep KH2's damage.
+- **Not yet KH1's**: the reaction each hit gives (stun, launch, KH1's radii): the slots' KH2 ATKP
+  rows' reactions stay (Assumption: close enough until a trace compares). Unknown range 44 in
+  Explosion / Finishing Leap / Counterguard kept (Assumption: not a hurt rule).
 
 ## Where KH1's specials will run (research for the next version)
 

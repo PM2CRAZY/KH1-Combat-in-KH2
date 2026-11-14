@@ -95,10 +95,44 @@ pub fn sora(kh2: &MotionTriggers, kh2_hit: Option<(i16, i16)>, kh2_len: f32, kh1
 /// Sora's triggers for `row` (`kh1` its KH1 motion, `total` the frames written there with any
 /// prelude): a cast's (`crate::CASTS`) or a swing's and the rest (`sora`).
 pub fn for_row(row: usize, kh2: &MotionTriggers, kh2_hit: Option<(i16, i16)>, kh2_len: f32, kh1: &Motion, total: i16) -> MotionTriggers {
+    if crate::MODIFIERS.iter().any(|m| m.0 * 4 == row) {
+        return modifier(kh2, kh2_hit, kh2_len, kh1);
+    }
     match crate::cast_at(row) {
         Some((releases, free)) => cast(kh2, kh2_len, total, releases, free),
         None => sora(kh2, kh2_hit, kh2_len, kh1),
     }
+}
+
+/// Sora's triggers for a KH1 combo modifier in a KH2 ability's slot (`crate::MODIFIERS`): KH2's
+/// own attack windows (range 10 / 33: its burst, its guard windows) and its no-hurt range (27)
+/// are KH2's move's and go: KH1's move has its hit only. Where the Keyblade has no hit window in
+/// the KH2 slot (Explosion, Finishing Leap, Counterguard hit with Sora's body, Checked (files)),
+/// KH1's hit windows go on Sora with the slot's first own hit window's attack and group. The rest
+/// moves with the hit (Sora's own hit span as the anchor then); the combo window is KH1's.
+pub fn modifier(kh2: &MotionTriggers, kh2_hit: Option<(i16, i16)>, kh2_len: f32, kh1: &Motion) -> MotionTriggers {
+    let is_hit = |r: &RangeTrigger| r.id == range_id::ATTACK_HITBOX || r.id == range_id::ATTACK_HITBOX_COMBO;
+    let span = kh2_hit.or_else(|| hit_span(kh2));
+    let w = |f: i16| warp(f, span, kh2_len, kh1);
+    let mut out = MotionTriggers::default();
+    for r in &kh2.ranges {
+        if r.id == range_id::ALLOW_COMBO || r.id == range_id::HURTBOX_OFF || is_hit(r) {
+            continue;
+        }
+        out.ranges.push(RangeTrigger { start: w(r.start), end: w(r.end), ..r.clone() });
+    }
+    for (start, end) in ranges_of(kh1, 5, 0) {
+        out.ranges.push(RangeTrigger { start, end, id: range_id::ALLOW_COMBO, params: Vec::new() });
+    }
+    if kh2_hit.is_none() {
+        if let Some(h) = kh2.ranges.iter().find(|r| is_hit(r)) {
+            for (start, end) in ranges_of(kh1, 1, 0) {
+                out.ranges.push(RangeTrigger { start, end, ..h.clone() });
+            }
+        }
+    }
+    out.frames = kh2.frames.iter().map(|f| kh2_formats::motion::FrameTrigger { frame: w(f.frame), ..f.clone() }).collect();
+    out
 }
 
 /// A KH2 cast motion's triggers on a KH1 cast of `len` frames: each magic-cast event (frame

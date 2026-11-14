@@ -93,7 +93,8 @@ pub unsafe fn kh1(status: *const i32, attack: usize, atkp: *const u8, kh2: impl 
         return None;
     }
     let (id, sub) = (u16::from_le_bytes([*atkp.add(2), *atkp.add(3)]), *atkp.add(1));
-    let atk = crate::kh1dmg::sora_attack(id, sub)?;
+    let modifier = || (sub < 10 && crate::settings::kh1(crate::settings::ABILITIES)).then(|| crate::kh1dmg::modifier_attack(id)).flatten();
+    let atk = crate::kh1dmg::sora_attack(id, sub).or_else(modifier)?;
     let bars = super::mp::max_bars();
     // Cure (KH1 element 11: the power as it is) heals Sora; no enemy record.
     if atk.element == 11 {
