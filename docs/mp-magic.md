@@ -473,3 +473,13 @@ ahead over a nearer one behind; nothing within 500 flies straight.
 - **Assumptions:** the enemy's part centre for KH1's actor position (as Thunder); KH2's battle target
   that is already gone at the release counts as "no target" (KH1 would keep a dead argument and not
   pick); exact score ties take the nearer (KH1: actor-array order).
+
+## Correction (2026-11-14): KH1's `sys 186` is not a hit stop
+
+t72 and t74 listed "KH1's hit stop (`sys 186`)" as not yet built. Checked (exe + decomp): KH1's syscall
+table (`0x140529180`) entry 186 is `0x1402BCB90` = `mov ecx,[rcx]; jmp 0x14028C660`, which adds one to
+a play-record counter (`0x142868BA0 + 0x848 + n × 2`, capped at 9999; counters 7 and 0x10 also unlock
+records at 2000 / 100). The spells call it once a cast with their own number (Thunder 2, Gravity 4,
+Stop 5): the journal's spell counts. Nothing freezes or pauses on a spell hit, so there is nothing of
+KH1's to add for a hit stop, and KH2's spell attacks (ATKP rows) have no hit-stop field of their own
+(OpenKH `Atkp`). KH1's counters are KH1's journal, which KH2 doesn't have.
