@@ -60,6 +60,35 @@ pub fn kh1_effect_set(kh1_mag: &[u8]) -> Option<Vec<u8>> {
     Some(set)
 }
 
+/// Each KH1 effect's own sound (KH1-in-ReCom `recom-m13-kh1-fx.md` §4–5, Checked (decomp +
+/// files) there): the set's entries are (DPD offset, program index, effect id) (Checked (files):
+/// `xm_air01.mag`'s 8 entries, effect 21 on program 7); a program's header `+0xFC` is its sound
+/// id (KH1's system bank `se000` for ids under 1000: every spell sound, 95..175), played when the
+/// effect starts (`0x1401ECB50` → `0x140179AC0`), `+0xFE` a volume offset (0 on every spell
+/// program, Checked (files)). Returns (effect id, sound id) for the effects that have one.
+pub fn program_sounds(kh1_mag: &[u8]) -> Option<Vec<(u16, u16)>> {
+    let start = u32_at(kh1_mag, 8)? as usize;
+    let set = kh1_mag.get(start..)?;
+    if u32_at(set, 0)? != 0x82 {
+        return None;
+    }
+    let n = u32_at(set, 12)? as usize;
+    let mut out = Vec::new();
+    for i in 0..n.min(256) {
+        let e = 16 + i * 32;
+        let (dpd, prog, effect) = (u32_at(set, e)? as usize, u32_at(set, e + 4)? as usize, u32_at(set, e + 8)? as u16);
+        if u32_at(set, dpd)? != 0x96 || prog >= u32_at(set, dpd + 4)? as usize {
+            continue;
+        }
+        let pd = dpd + u32_at(set, dpd + 8 + 4 * prog)? as usize;
+        let sound = u16::from_le_bytes(set.get(pd + 0xFC..pd + 0xFE)?.try_into().ok()?);
+        if sound != 0 {
+            out.push((effect, sound));
+        }
+    }
+    Some(out)
+}
+
 /// One PAX element: script id `id` plays the set's effect `effect` on `bone` (a bone index or one
 /// of KH2's anchors: 0x4000 the object, 0x4003 / 0x4004 the weapon tips, ...), with `flags` (1 bind,
 /// 2 bind at start, 4 position only, 0x20 gone when the motion changes, 0x80 gone at the loop's
@@ -185,7 +214,10 @@ pub enum Kind {
 
 /// KH2's own spell file (`kh2`, `magic/<SPELL>_n.mag`) with KH1's spell added (`kh1`, the matching
 /// `xm_<spell>0n.mag`): KH2's script, elements and effects stay for the Drive Forms.
-pub fn kh1_mag(kind: Kind, level: usize, kh2: &[u8], kh1: &[u8]) -> Option<Vec<u8>> {
+/// `sounds`: KH1's sound id → its KH2 id in the bank the build made (`kh2_formats::scd_merge`);
+/// when given, each of our elements plays its KH1 effect's own sound (none when KH1's has none),
+/// else KH2's stand-ins stay.
+pub fn kh1_mag(kind: Kind, level: usize, kh2: &[u8], kh1: &[u8], sounds: Option<&dyn Fn(u16) -> Option<i32>>) -> Option<Vec<u8>> {
     let bar = kh2_formats::bar::Bar::parse(kh2).ok()?;
     let pax_e = bar.entries.iter().find(|e| e.kind == 18)?;
     let bdx_e = bar.entries.iter().find(|e| e.kind == 3 && e.duplicate == 0)?;
@@ -196,7 +228,17 @@ pub fn kh1_mag(kind: Kind, level: usize, kh2: &[u8], kh1: &[u8]) -> Option<Vec<u
         n
     };
     let set = kh1_effect_set(kh1)?;
-    let (pax, _) = merge_pax(pax_e.data, &set, |k| elements(kind, k))?;
+    let own = program_sounds(kh1).unwrap_or_default();
+    let (pax, _) = merge_pax(pax_e.data, &set, |k| {
+        let mut els = elements(kind, k);
+        if let Some(map) = sounds {
+            for e in &mut els {
+                let effect = e.effect - k;
+                e.sound = own.iter().find(|x| x.0 == effect).and_then(|x| map(x.1)).unwrap_or(-1);
+            }
+        }
+        els
+    })?;
     Some(mag(&name, &pax, &onto(kind, level, bdx_e.data)?))
 }
 
@@ -1950,6 +1992,28 @@ mod tests {
 
 #[cfg(test)]
 mod files {
+    /// KH1's spell programs' own sounds (KH1-in-ReCom's §4 table, Checked (files) there) read back
+    /// from the owner's `xm_*.mag` (`KH1_MAGS`), and our elements take them through the map.
+    #[test]
+    fn kh1_program_sounds() {
+        let Ok(k1) = std::env::var("KH1_MAGS") else { return };
+        let read = |n: &str| std::fs::read(format!("{k1}/{n}")).unwrap();
+        // (Effects 100+ repeat 0..5 on the same programs: KH1-in-ReCom §4.)
+        let below = |n: &str| super::program_sounds(&read(n)).unwrap().into_iter().filter(|x| x.0 < 100).collect::<Vec<_>>();
+        assert_eq!(below("xm_fire01.mag"), vec![(0, 100), (1, 101), (2, 133), (3, 102)]);
+        assert_eq!(below("xm_air01.mag"), vec![(0, 95), (2, 96), (3, 97), (5, 98), (21, 99)]);
+        assert_eq!(below("xm_stop02.mag"), vec![(0, 170), (2, 171), (3, 172)]);
+        let Ok(k2) = std::env::var("KH2_MAGS") else { return };
+        let kh2 = std::fs::read(format!("{k2}/FIRE_1.mag")).unwrap();
+        let map = |id: u16| Some(1000 + id as i32);
+        let m = super::kh1_mag(super::Kind::Fire, 0, &kh2, &read("xm_fire01.mag"), Some(&map)).unwrap();
+        let bar = kh2_formats::bar::Bar::parse(&m).unwrap();
+        let p = kh2_formats::pax::Pax::parse(bar.entries[0].data).unwrap();
+        let q = kh2_formats::pax::Pax::parse(kh2_formats::bar::Bar::parse(&kh2).unwrap().entries[0].data).unwrap();
+        let ours: Vec<(u16, i32)> = p.elements[q.elements.len()..].iter().map(|e| (e.id, e.sound)).collect();
+        // cast 0 → 100, ball 1 → 101, flash 4 → none, body hit 3 → 102, wall hits 2 → 133.
+        assert_eq!(ours, vec![(100, 1100), (101, 1101), (104, -1), (103, 1102), (106, 1133), (107, 1133)]);
+    }
 
     /// The owner's KH1 spell files (staged at `KH1_MAGS`, a folder of `xm_*.mag`) and KH2's
     /// (`KH2_MAGS`, `FIRE_1.mag` …): each KH1 set into KH2's file, KH2's elements, effects and
@@ -1966,7 +2030,7 @@ mod files {
             let dpd_at = u32::from_le_bytes(set[16..20].try_into().unwrap()) as usize;
             let d = kh2_formats::dpd::Dpd::parse(&set[dpd_at..]).unwrap();
             assert!(d.particles.iter().all(|x| x.se == 0));
-            let m = super::kh1_mag(kind, level, &kh2, &kh1).unwrap();
+            let m = super::kh1_mag(kind, level, &kh2, &kh1, None).unwrap();
             let bar = kh2_formats::bar::Bar::parse(&m).unwrap();
             let old = kh2_formats::bar::Bar::parse(&kh2).unwrap();
             let p = kh2_formats::pax::Pax::parse(bar.entries[0].data).unwrap();

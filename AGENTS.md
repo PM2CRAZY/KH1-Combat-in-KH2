@@ -1,3 +1,8 @@
+### 2026-11-14: Stage 88 (testing branch: KH1's spell sounds in KH2's sound bank)
+- **Ask** (owner, 2026-11-14): "Make these all 1:1" (KH1's sounds for the spells).
+- **Change**: `kh2_formats::scd_merge` adds sounds of one SEDBSSCF bank to another; the build writes `se/se000.win32.scd` = KH2's system bank + KH1's spell sounds (from KH1's `amusic/se000.dat` HD asset), and each of our spell elements plays its KH1 effect's own program sound (`+0xFC`), by KH2 id 0 x 1000 + its new index. KH2's elements keep KH2's.
+- **Checked (files)**: both banks' layouts; the merge keeps every KH2 sound byte for byte and copies each KH1 sound's audio and track (test with the owner's banks); KH1's program sounds per effect (test with the owner's mags). **Checked (decomp)**: KH1 plays a spell's sounds from its effects only; KH2's `SslSeCreate` `0x1401391D0`. **Assumption**: Panacea serves the loose bank at boot; KH2's engine reads KH1's v3 track scripts in its v4 bank.
+
 ### 2026-11-14: Stage 87 (testing branch: KH1's Fire re-picks a target)
 - **Ask** (owner, 2026-11-14): "Make these all 1:1" (Fire: KH1's re-pick).
 - **Change**: `kh1_assets::spells` Fire: a ball cast with no target picks, each frame, KH1's best enemy within 500 of it (score d x (1 + 2(1 - cos)), the first taken, later ones only if smaller) from KH2's target searcher, and homes on it at KH1's 3 degrees; a ball cast at a target keeps KH2's / KH1's dead-target rule (straight on).

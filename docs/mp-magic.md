@@ -483,3 +483,34 @@ records at 2000 / 100). The spells call it once a cast with their own number (Th
 Stop 5): the journal's spell counts. Nothing freezes or pauses on a spell hit, so there is nothing of
 KH1's to add for a hit stop, and KH2's spell attacks (ATKP rows) have no hit-stop field of their own
 (OpenKH `Atkp`). KH1's counters are KH1's journal, which KH2 doesn't have.
+
+## t88: KH1's spell sounds in KH2's own sound bank
+
+KH1 (Checked (decomp + files), KH1-in-ReCom `recom-m13-kh1-fx.md` §4–5): every spell sound is its
+effect program's own (`+0xFC` id, `+0xFE` volume offset: 0 on every spell program), played when the
+effect starts (`0x1401ECB50` → `0x140179AC0`); the spell scripts call no sound syscall. The ids are 95..175,
+under 1000, so KH1's system bank: `amusic/se000.dat`, whose HD asset is `se000.win32.scd` (SEDBSSCF v3,
+184 sounds; a sound's record id is its index; Checked (files): the owner's `kh1_first` package).
+
+KH2 (Checked (files + exe)): a PAX element's `sound` is `bank × 1000 + index`; its spells' sounds are
+in its system bank `se/se000.win32.scd` (bank 0, SEDBSSCF v4, 314 sounds), loaded at boot (the path is
+read in `0x1401DC770`); `SslSeCreate` (`0x1401391D0`) finds the bank and asks the engine for the index.
+
+Built:
+- `kh2_formats::scd_merge`: KH2's bank with sounds of another added after its own: KH2's blocks kept
+  byte for byte (moved down by the bigger tables); each added sound a KH2 v4 record (made on KH2's own
+  one-track record, with KH1's volume and bus, its index as id and name) with KH1's track script, layout
+  and audio stream copied as they are (MS ADPCM, the codec KH2's effect banks use). Tested on the
+  owner's two banks: every KH2 sound's record, track and audio unchanged; each KH1 sound's audio and
+  track byte for byte.
+- The build (magic = kh1) writes `se/se000.win32.scd` = KH2's with every KH1 spell program's sound
+  (80 of 95..175 that play: KH2 ids 314..), and each of our elements takes its KH1 effect's own sound
+  (none where KH1's has none). KH2's own elements (the Drive Forms') keep KH2's sounds. The bank stays
+  at magic = kh2 (the new spells' files stay and use its ids).
+- **Assumptions:** Panacea serves the loose `se/se000.win32.scd` in place of KH2's at boot (as it
+  serves `magic/` and `obj/` files); KH2's engine takes a v4 bank holding v3-made track scripts and
+  layouts (the same reader reads both, the sister project's notes); the bigger bank (+4.4 MB) fits KH2's
+  sound memory. If a spell file is played before the new bank is loaded (the first launch after the
+  build), its new ids fail through `SslSeCreate`'s own error path (silent).
+- **Not done:** KH1's spell voice at the command (`0x1402A3600`: voice group 7 + the spell, Sora's
+  "Fire!"): KH2's cast motions still play KH2's own voice triggers.

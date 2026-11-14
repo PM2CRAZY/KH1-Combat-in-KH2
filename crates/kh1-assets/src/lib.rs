@@ -568,15 +568,57 @@ pub fn build_kh1_model(root: impl AsRef<Path>, kh1_swings: bool) -> Result<(Vec<
 /// else in the build depends on it (t75's whole build stopped on one unreadable archive entry).
 /// KH2's English system text with the names of Gravity, Stop and Aero (`spell_names`).
 pub const SPELL_NAMES_FILE: &str = "msg/us/sys.bar";
+/// KH2's system sound bank (bank 0: its spells' sounds; loaded at boot, Checked (exe): the path in
+/// `0x1401DC770`), built with KH1's spell sounds added (`kh2_formats::scd_merge`). It stays at
+/// magic = kh2 (KH1's new spells' files stay too and play its ids).
+pub const SOUND_BANK: &str = "se/se000.win32.scd";
+/// KH1's system bank: the HD asset of `amusic/se000.dat` (Checked (files): `se000.win32.scd`,
+/// SEDBSSCF v3, 184 sounds; every spell program's sound, 95..175, is one of them).
+const KH1_SOUND_FILE: &str = "amusic/se000.dat";
+const KH1_SOUND_ASSET: &str = "se000.win32.scd";
+
+/// KH2's bank with every KH1 spell's program sounds added; (KH1 id, KH2 id) for each.
+fn spell_sounds(kh1: &Kh1Install, kh2: &Kh2Install) -> Result<(Vec<u8>, Vec<(u16, usize)>)> {
+    let mut ids: Vec<u16> = Vec::new();
+    for (kh1_name, ..) in spells::SPELLS {
+        let src = kh1.read(Source::Original, kh1_name)?;
+        ids.extend(spells::program_sounds(&src).unwrap_or_default().into_iter().map(|x| x.1));
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    let kh1_bank = kh1
+        .read_remastered_all(Source::Original, KH1_SOUND_FILE)?
+        .into_iter()
+        .find(|a| a.name == KH1_SOUND_ASSET)
+        .ok_or_else(|| Error::NotFound(format!("{KH1_SOUND_FILE}: {KH1_SOUND_ASSET}")))?
+        .data;
+    let own = kh2.read(SOUND_BANK)?;
+    let want: Vec<usize> = ids.iter().map(|&i| i as usize).collect();
+    let (bank, idx) = kh2_formats::scd_merge::merge(&own, &kh1_bank, &want)?;
+    Ok((bank, ids.iter().zip(idx).filter_map(|(&k, n)| n.map(|n| (k, n))).collect()))
+}
 
 fn build_spells(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, files: &mut Vec<(std::path::PathBuf, Vec<u8>)>, notes: &mut Vec<String>) {
     match kh2.read(SPELL_NAMES_FILE).ok().and_then(|b| spell_names::add_to_bar(&b)) {
         Some(b) => files.push((mod_dir.join(SPELL_NAMES_FILE), b)),
         None => notes.push(format!("{SPELL_NAMES_FILE}: not read or not one we know; Gravity, Stop and Aero have no names")),
     }
+    let sounds = match spell_sounds(kh1, kh2) {
+        Ok((bank, map)) => {
+            notes.push(format!("{SOUND_BANK}: KH2's with KH1's {} spell sounds added ({} bytes)", map.len(), bank.len()));
+            files.push((mod_dir.join(SOUND_BANK), bank));
+            Some(map)
+        }
+        Err(e) => {
+            notes.push(format!("{SOUND_BANK}: KH1's spell sounds not added ({e}); KH2's stand in"));
+            None
+        }
+    };
     for (kh1_name, kh2_name, kind, level) in spells::SPELLS {
         let mut one = Vec::new();
-        match build_spell(kh1, kh2, mod_dir, kh1_name, kh2_name, kind, level, &mut one, notes) {
+        let map = sounds.as_ref().map(|m| move |id: u16| m.iter().find(|x| x.0 == id).map(|x| x.1 as i32));
+        let map_ref: Option<&dyn Fn(u16) -> Option<i32>> = map.as_ref().map(|f| f as &dyn Fn(u16) -> Option<i32>);
+        match build_spell(kh1, kh2, mod_dir, kh1_name, kh2_name, kind, level, map_ref, &mut one, notes) {
             Ok(()) => files.extend(one),
             Err(e) => notes.push(format!("{kh2_name}: KH1's {kh1_name} not built ({e}); KH2's own kept")),
         }
@@ -584,12 +626,12 @@ fn build_spells(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, files: &mut 
 }
 
 #[allow(clippy::too_many_arguments)]
-fn build_spell(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, kh1_name: &str, kh2_name: &str, kind: spells::Kind, level: usize, files: &mut Vec<(std::path::PathBuf, Vec<u8>)>, notes: &mut Vec<String>) -> Result<()> {
+fn build_spell(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, kh1_name: &str, kh2_name: &str, kind: spells::Kind, level: usize, sounds: Option<&dyn Fn(u16) -> Option<i32>>, files: &mut Vec<(std::path::PathBuf, Vec<u8>)>, notes: &mut Vec<String>) -> Result<()> {
     {
         let src = kh1.read(Source::Original, kh1_name)?;
         let set = spells::kh1_effect_set(&src).ok_or_else(|| Error::Format(format!("{kh1_name}: no effect set")))?;
         let own = kh2.read(&spells::kh2_base(kh2_name))?;
-        let merged = spells::kh1_mag(kind, level, &own, &src).ok_or_else(|| Error::Format(format!("{kh2_name}: not a spell file we know")))?;
+        let merged = spells::kh1_mag(kind, level, &own, &src, sounds).ok_or_else(|| Error::Format(format!("{kh2_name}: not a spell file we know")))?;
         files.push((mod_dir.join(kh2_name), merged));
         let dpd_at = u32::from_le_bytes(set[16..20].try_into().unwrap()) as usize;
         let textures = kh2_formats::dpd::Dpd::parse(&set[dpd_at..]).map(|d| d.textures.len()).unwrap_or(0);
