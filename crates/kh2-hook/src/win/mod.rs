@@ -14,6 +14,7 @@ mod prty;
 mod menu_rows;
 mod gravity;
 mod held_hits;
+mod damage;
 mod squash;
 mod mp;
 mod reactions;
@@ -271,6 +272,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         combo_tables::install(base, model);
         menu_rows::install(base);
         gravity::install(base);
+        damage::load(base, exe_dir());
         held_hits::install(base);
         squash::install(base);
     }

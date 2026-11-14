@@ -16,6 +16,7 @@ pub mod player_model;
 pub mod swing_triggers;
 pub mod spells;
 pub mod spell_names;
+pub mod kh1_records;
 
 use kh1_data::{Kh1Install, Source};
 use kh2_formats::bar::Bar;

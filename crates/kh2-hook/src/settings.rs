@@ -14,8 +14,9 @@ pub const MAGIC: usize = 4;
 pub const ABILITIES: usize = 5;
 pub const CAMERA: usize = 6;
 pub const MODEL: usize = 7;
+pub const DAMAGE: usize = 8;
 
-static LIVE: [AtomicBool; 8] = [const { AtomicBool::new(false) }; 8];
+static LIVE: [AtomicBool; 9] = [const { AtomicBool::new(false) }; 9];
 
 /// Whether system `i` (`SYSTEMS` order) plays like KH1 now.
 #[inline]
@@ -67,6 +68,7 @@ pub const SYSTEMS: &[(&str, &str)] = &[
     ("abilities", "Sonic Blade, Ars Arcanum, Strike Raid, Ragnarok and the rest"),
     ("camera", "Field camera and lock-on"),
     ("model", "Sora's player model: KH1 Sora's own model, skeleton and textures"),
+    ("damage", "KH1's damage formula for Sora's swings and spells (enemies keep KH2's HP)"),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]

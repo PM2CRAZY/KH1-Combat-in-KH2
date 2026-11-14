@@ -1,3 +1,8 @@
+### 2026-11-14: Stage 89 (testing branch: Damage = KH1: KH1's formula on Sora's swings and spells)
+- **Ask** (owner, 2026-11-14): "Make these all 1:1"; spell damage: "(a) KH1's damage, new toggle"; Sora's Strength = KH2's own; enemies keep KH2's HP; damage taken stays KH2's.
+- **Change**: Config row `damage` (10th on the mod page). `kh1dmg`: KH1's damage function `0x1402BFA80` and KH1's rows for base Sora's swings, finishers, Fire, Blizzard, Thunder, Cure, Gravity and Aero's wind. `kh1_assets::kh1_records`: KH1's enemy records read from the player's .mdls AI scripts (KH1-in-ReCom's reader). `win/damage.rs` in KH2's damage function: base Sora's mapped attacks take KH1's number against the enemy's KH1 twin record (Shadow / Soldier / Large Body) or the ordinary stand-in nearest its level; Cure heals KH1's power + max MP.
+- **Checked (files)**: Sora's KH1 rows and the curve from the owner's btltbl. **Checked (decomp)**: KH1's damage function; KH2's status, enmp and lvpm fields. **Assumption**: KH2 ids 1000..1002 are Shadow / Soldier / Large Body; KH2's Keyblades take the Kingdom Key's crit; stand-ins by level, not world (to confirm).
+
 ### 2026-11-14: Stage 88 (testing branch: KH1's spell sounds in KH2's sound bank)
 - **Ask** (owner, 2026-11-14): "Make these all 1:1" (KH1's sounds for the spells).
 - **Change**: `kh2_formats::scd_merge` adds sounds of one SEDBSSCF bank to another; the build writes `se/se000.win32.scd` = KH2's system bank + KH1's spell sounds (from KH1's `amusic/se000.dat` HD asset), and each of our spell elements plays its KH1 effect's own program sound (`+0xFC`), by KH2 id 0 x 1000 + its new index. KH2's elements keep KH2's.

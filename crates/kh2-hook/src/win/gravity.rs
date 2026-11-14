@@ -35,6 +35,14 @@ static O_DAMAGE: AtomicUsize = AtomicUsize::new(0);
 static LOGGED: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "system" fn damage(status: *const i32, attack: usize, atkp: *const u8, which: i32) -> i32 {
+    // `damage = kh1`: KH1's formula for base Sora's hits (`win/damage.rs`).
+    let original = || {
+        let o: unsafe extern "system" fn(*const i32, usize, *const u8, i32) -> i32 = std::mem::transmute(O_DAMAGE.load(Ordering::Acquire));
+        o(status, attack, atkp, which)
+    };
+    if let Some(d) = super::damage::kh1(status, attack, atkp, || original()) {
+        return d;
+    }
     if !atkp.is_null() && *atkp.add(4) == crate::magic_rows::GRAVITY_TYPE {
         let hp = *status;
         let power = u16::from_le_bytes([*atkp.add(6), *atkp.add(7)]) as i32;

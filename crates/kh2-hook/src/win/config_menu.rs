@@ -12,9 +12,9 @@
 //!   and `+0x90`). Those all point at a 9-row copy of ours instead (KH2's 8 rows, then ours).
 //! - its list widget (pointer at `0x140BEECD8`): `+0` the cursor, `+0x12` the scroll, `+0x16` the
 //!   row count (`0x1402F8F10`; `0x1402F7FB0` wraps at it), `+0x1C` the rows on screen (8). Our page
-//!   has 9 rows (the list scrolls: KH2's draw `0x140365A20` reads the table at scroll + n).
+//!   has 10 rows (the list scrolls: KH2's draw `0x140365A20` reads the table at scroll + n).
 //! - the row values are a byte each in an array (`0x140365390`: `mov ecx, 8` before `new`): 16
-//!   bytes now, for our 9.
+//!   bytes now, for our 10.
 //! - row 7 is drawn as one value (KH2's draw tests the row's table address, `+0x90`), so on our
 //!   page row 7 is a line of help with one value, the systems on rows 0..6 and 8.
 //! - left / right in its input step `0x140364D70` cycle the current row's value; on row 5 KH2 also
@@ -69,7 +69,8 @@ const L1: u64 = 0x400;
 const R1: u64 = 0x800;
 
 /// Our page: (setting key, row label) in row order; row 7 is the help line.
-const PAGE: [Option<(&str, &str)>; 9] = [
+const PAGE_ROWS: usize = 10;
+const PAGE: [Option<(&str, &str)>; PAGE_ROWS] = [
     Some(("movement", "Movement")),
     Some(("combos", "Combos")),
     Some(("defence", "Defence")),
@@ -79,6 +80,7 @@ const PAGE: [Option<(&str, &str)>; 9] = [
     Some(("camera", "Camera")),
     None,
     Some(("model", "Player Model")),
+    Some(("damage", "Damage")),
 ];
 
 /// Our text ids (0x8000 set in the table, as KH2's system texts).
@@ -102,10 +104,10 @@ struct State {
     /// KH2's values while our page is up.
     kh2_values: [u8; ROWS],
     /// Our page's values (0 KH2, 1 KH1), from the ini when the screen opens.
-    mod_values: [u8; 9],
+    mod_values: [u8; PAGE_ROWS],
     pad: u64,
 }
-static STATE: std::sync::Mutex<State> = std::sync::Mutex::new(State { ours: false, kh2_values: [0; ROWS], mod_values: [0; 9], pad: 0 });
+static STATE: std::sync::Mutex<State> = std::sync::Mutex::new(State { ours: false, kh2_values: [0; ROWS], mod_values: [0; PAGE_ROWS], pad: 0 });
 
 /// `s` in KH2's text encoding, ended with 0. Characters it has no code for are left out.
 pub fn encode(s: &str) -> Vec<u8> {
@@ -153,8 +155,8 @@ fn texts() -> &'static [(u16, Vec<u8>)] {
 }
 
 /// Our page's table rows.
-fn page_rows() -> [[u8; ROW]; 9] {
-    let mut rows = [[0u8; ROW]; 9];
+fn page_rows() -> [[u8; ROW]; PAGE_ROWS] {
+    let mut rows = [[0u8; ROW]; PAGE_ROWS];
     for (i, r) in rows.iter_mut().enumerate() {
         let mut put = |o: usize, v: u16| r[o..o + 2].copy_from_slice(&v.to_le_bytes());
         if PAGE[i].is_some() {
@@ -210,17 +212,17 @@ unsafe fn show(ours: bool) {
     }
     let l = list();
     if l != 0 {
-        *((l + 0x16) as *mut i16) = if ours { 9 } else { ROWS as i16 };
+        *((l + 0x16) as *mut i16) = if ours { PAGE_ROWS as i16 } else { ROWS as i16 };
         *(l as *mut i16) = 0;
         *((l + 0x12) as *mut i16) = 0;
     }
 }
 
 /// The ini's current choices on our page.
-fn read_ini() -> [u8; 9] {
+fn read_ini() -> [u8; PAGE_ROWS] {
     let path = format!("{}\\kh2-kh1.ini", super::exe_dir());
     let s = std::fs::read_to_string(&path).map(|t| crate::settings::Settings::parse(&t)).unwrap_or_default();
-    let mut v = [0u8; 9];
+    let mut v = [0u8; PAGE_ROWS];
     for (i, row) in PAGE.iter().enumerate() {
         if let Some((key, _)) = row {
             v[i] = (s.style(key) == crate::settings::Style::Kh1) as u8;
@@ -229,7 +231,7 @@ fn read_ini() -> [u8; 9] {
     v
 }
 
-fn write_ini(v: &[u8; 9]) {
+fn write_ini(v: &[u8; PAGE_ROWS]) {
     let path = format!("{}\\kh2-kh1.ini", super::exe_dir());
     let mut s = std::fs::read_to_string(&path).map(|t| crate::settings::Settings::parse(&t)).unwrap_or_default();
     for (i, row) in PAGE.iter().enumerate() {
@@ -252,9 +254,9 @@ unsafe fn flip(st: &mut State) {
     }
     if !st.ours {
         std::ptr::copy_nonoverlapping(v as *const u8, st.kh2_values.as_mut_ptr(), ROWS);
-        std::ptr::copy_nonoverlapping(st.mod_values.as_ptr(), v as *mut u8, 9);
+        std::ptr::copy_nonoverlapping(st.mod_values.as_ptr(), v as *mut u8, PAGE_ROWS);
     } else {
-        std::ptr::copy_nonoverlapping(v as *const u8, st.mod_values.as_mut_ptr(), 9);
+        std::ptr::copy_nonoverlapping(v as *const u8, st.mod_values.as_mut_ptr(), PAGE_ROWS);
         std::ptr::copy_nonoverlapping(st.kh2_values.as_ptr(), v as *mut u8, ROWS);
     }
     st.ours = !st.ours;
@@ -270,7 +272,7 @@ unsafe fn leave(st: &mut State) {
     }
     let v = values();
     if v != 0 {
-        std::ptr::copy_nonoverlapping(v as *const u8, st.mod_values.as_mut_ptr(), 9);
+        std::ptr::copy_nonoverlapping(v as *const u8, st.mod_values.as_mut_ptr(), PAGE_ROWS);
         std::ptr::copy_nonoverlapping(st.kh2_values.as_ptr(), v as *mut u8, ROWS);
     }
     st.ours = false;
@@ -298,15 +300,15 @@ unsafe fn pad_word() -> u64 {
     }
 }
 
-/// Our page's 9 values while it is shown.
-unsafe fn page_values() -> Option<[u8; 9]> {
+/// Our page's values while it is shown.
+unsafe fn page_values() -> Option<[u8; PAGE_ROWS]> {
     let ours = STATE.lock().map(|st| st.ours).unwrap_or(false);
     let v = values();
     if !ours || v == 0 {
         return None;
     }
-    let mut out = [0u8; 9];
-    std::ptr::copy_nonoverlapping(v as *const u8, out.as_mut_ptr(), 9);
+    let mut out = [0u8; PAGE_ROWS];
+    std::ptr::copy_nonoverlapping(v as *const u8, out.as_mut_ptr(), PAGE_ROWS);
     Some(out)
 }
 
