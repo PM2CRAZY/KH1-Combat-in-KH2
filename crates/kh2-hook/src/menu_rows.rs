@@ -1,0 +1,591 @@
+//! KH2's command menu with room for 12 rows a submenu (owner's choice (a1), 2026-11-14;
+//! `docs/command-menu-rows.md`).
+//!
+//! KH2's one `YS::PLAYER_COMMAND` (Steam `0x142A10620`) keeps its 19 submenus inline, `0x80`
+//! bytes each: a header (`+0x00` kind, `+0x08` owner, `+0x10` row count), 8 rows of 12 bytes at
+//! `+0x14`, then the cursor row (`+0x74`) and cursor command (`+0x78`). Here they move into a
+//! block of ours with 12 rows each and the two cursor fields just *before* the header
+//! (`-0x0C`, `-0x08`), so every cursor access keeps its 8-bit displacement (`0x74` -> `0xF4`,
+//! `0x78` -> `0xF8`) and every row keeps its offset. Each place KH2 makes a submenu's address
+//! from the object is pointed at the block: in place where the instruction has a 32-bit
+//! displacement, through a short jump out and back where it doesn't. KH2's own code then runs the
+//! menu as before; nothing of ours runs per frame. Checked (exe: every site's bytes, read from the
+//! Steam exe; decomp: each function read).
+//!
+//! This module only computes the bytes (so it can be tested anywhere); `win::menu_rows` writes them.
+
+/// The `YS::PLAYER_COMMAND` object (Steam RVA).
+pub const PC_RVA: u32 = 0x2A1_0620;
+/// The `YS::FIELD_COMMAND` vtable KH2's static init puts in the object after its ctor: the
+/// object is built once this is there.
+pub const BUILT_VTABLE_RVA: u32 = 0x5C_4C68;
+/// The static init's `call` of the object's ctor (`0x1403B1C70`).
+pub const CTOR_CALL_RVA: u32 = 0x2_4571;
+pub const CTOR_RVA: u32 = 0x3B_1C70;
+pub const SUBMENUS: usize = 19;
+pub const OLD_ROWS: usize = 8;
+pub const ROWS: usize = 12;
+pub const ROW: usize = 12;
+/// Where submenu `n` is inside the object (KH2's layout).
+pub const OLD_FIRST: usize = 0x28;
+pub const OLD_STRIDE: usize = 0x80;
+/// Old cursor fields.
+pub const OLD_CURSOR_ROW: usize = 0x74;
+pub const OLD_CURSOR_CMD: usize = 0x78;
+/// A slot of the block: the header sits at `HEADER` (so a header has the same alignment, 8 mod 16,
+/// as KH2's), the cursor row at `HEADER - 0x0C`, the cursor command at `HEADER - 0x08`.
+pub const SLOT: usize = 0xC0;
+pub const HEADER: usize = 0x18;
+pub const CURSOR_ROW: i8 = -0x0C;
+pub const CURSOR_CMD: i8 = -0x08;
+pub const BLOCK: usize = SUBMENUS * SLOT;
+/// The jumps out start here in our memory (after the block).
+pub const CAVES: usize = 0xE40;
+/// Our memory: the block, then the jumps out.
+pub const MEM: usize = 0x2000;
+/// The submenu stack: pointers at `+0xAF0` (15), top pointer at `+0x9A8`.
+pub const STACK: usize = 0xAF0;
+pub const STACK_LEN: usize = 15;
+pub const STACK_TOP: usize = 0x9A8;
+
+const _: () = assert!(HEADER as i32 + CURSOR_ROW as i32 >= 0 && HEADER + 0x14 + ROWS * ROW <= SLOT && BLOCK <= CAVES && SLOT % 16 == 0);
+
+/// A cursor access on a submenu pointer: (RVA, the instruction's bytes, where its 8-bit
+/// displacement `0x74` / `0x78` is).
+pub const CURSOR_SITES: &[(u32, &[u8], usize)] = &[
+    (0x015b833, &[57, 126, 116], 2),  // cmp dword ptr [rsi + 0x74], edi
+    (0x015b977, &[72, 99, 70, 116], 3),  // movsxd rax, dword ptr [rsi + 0x74]
+    (0x015ba19, &[68, 139, 82, 116], 3),  // mov r10d, dword ptr [rdx + 0x74]
+    (0x03b1140, &[72, 99, 65, 116], 3),  // movsxd rax, dword ptr [rcx + 0x74]
+    (0x03b1154, &[68, 139, 81, 120], 3),  // mov r10d, dword ptr [rcx + 0x78]
+    (0x03b1185, &[69, 137, 88, 120], 3),  // mov dword ptr [r8 + 0x78], r11d
+    (0x03b1192, &[65, 137, 72, 116], 3),  // mov dword ptr [r8 + 0x74], ecx
+    (0x03b11a0, &[65, 137, 64, 120], 3),  // mov dword ptr [r8 + 0x78], eax
+    (0x03b11aa, &[65, 199, 64, 116, 0, 0, 0, 0], 3),  // mov dword ptr [r8 + 0x74], 0
+    (0x03b11b2, &[65, 137, 64, 120], 3),  // mov dword ptr [r8 + 0x78], eax
+    (0x03b11bc, &[199, 65, 116, 0, 0, 0, 0], 2),  // mov dword ptr [rcx + 0x74], 0
+    (0x03b11c3, &[137, 65, 120], 2),  // mov dword ptr [rcx + 0x78], eax
+    (0x03b1260, &[137, 120, 116], 2),  // mov dword ptr [rax + 0x74], edi
+    (0x03b1263, &[137, 112, 120], 2),  // mov dword ptr [rax + 0x78], esi
+    (0x03b12ac, &[137, 115, 116], 2),  // mov dword ptr [rbx + 0x74], esi
+    (0x03b12ed, &[137, 123, 116], 2),  // mov dword ptr [rbx + 0x74], edi
+    (0x03b1341, &[72, 99, 67, 116], 3),  // movsxd rax, dword ptr [rbx + 0x74]
+    (0x03b1352, &[68, 139, 83, 120], 3),  // mov r10d, dword ptr [rbx + 0x78]
+    (0x03b1383, &[68, 137, 91, 120], 3),  // mov dword ptr [rbx + 0x78], r11d
+    (0x03b1391, &[137, 75, 116], 2),  // mov dword ptr [rbx + 0x74], ecx
+    (0x03b139d, &[137, 67, 120], 2),  // mov dword ptr [rbx + 0x78], eax
+    (0x03b13a4, &[137, 123, 116], 2),  // mov dword ptr [rbx + 0x74], edi
+    (0x03b13a7, &[137, 67, 120], 2),  // mov dword ptr [rbx + 0x78], eax
+    (0x03b13ac, &[137, 123, 116], 2),  // mov dword ptr [rbx + 0x74], edi
+    (0x03b13af, &[137, 115, 120], 2),  // mov dword ptr [rbx + 0x78], esi
+    (0x03b1421, &[137, 122, 116], 2),  // mov dword ptr [rdx + 0x74], edi
+    (0x03b1424, &[137, 114, 120], 2),  // mov dword ptr [rdx + 0x78], esi
+    (0x03b1462, &[72, 99, 75, 116], 3),  // movsxd rcx, dword ptr [rbx + 0x74]
+    (0x03b1475, &[137, 83, 116], 2),  // mov dword ptr [rbx + 0x74], edx
+    (0x03b1486, &[137, 115, 120], 2),  // mov dword ptr [rbx + 0x78], esi
+    (0x03b149d, &[137, 75, 116], 2),  // mov dword ptr [rbx + 0x74], ecx
+    (0x03b14ab, &[137, 115, 120], 2),  // mov dword ptr [rbx + 0x78], esi
+    (0x03b14bd, &[137, 123, 116], 2),  // mov dword ptr [rbx + 0x74], edi
+    (0x03b14c0, &[137, 115, 120], 2),  // mov dword ptr [rbx + 0x78], esi
+    (0x03b14da, &[72, 99, 83, 116], 3),  // movsxd rdx, dword ptr [rbx + 0x74]
+    (0x03b14ec, &[137, 67, 116], 2),  // mov dword ptr [rbx + 0x74], eax
+    (0x03b14fd, &[137, 115, 120], 2),  // mov dword ptr [rbx + 0x78], esi
+    (0x03b150c, &[137, 123, 116], 2),  // mov dword ptr [rbx + 0x74], edi
+    (0x03b150f, &[137, 115, 120], 2),  // mov dword ptr [rbx + 0x78], esi
+    (0x03b151c, &[137, 123, 116], 2),  // mov dword ptr [rbx + 0x74], edi
+    (0x03b1529, &[137, 115, 120], 2),  // mov dword ptr [rbx + 0x78], esi
+    (0x03b153d, &[72, 99, 67, 116], 3),  // movsxd rax, dword ptr [rbx + 0x74]
+    (0x03b1b70, &[199, 65, 116, 0, 0, 0, 0], 2),  // mov dword ptr [rcx + 0x74], 0
+    (0x03b1b77, &[199, 65, 120, 255, 255, 255, 255], 2),  // mov dword ptr [rcx + 0x78], 0xffffffff
+    (0x03b1b85, &[137, 81, 116], 2),  // mov dword ptr [rcx + 0x74], edx
+    (0x03b1b94, &[137, 65, 120], 2),  // mov dword ptr [rcx + 0x78], eax
+    (0x03b1b98, &[199, 65, 116, 0, 0, 0, 0], 2),  // mov dword ptr [rcx + 0x74], 0
+    (0x03b1b9f, &[199, 65, 120, 255, 255, 255, 255], 2),  // mov dword ptr [rcx + 0x78], 0xffffffff
+    (0x03b21e3, &[73, 99, 64, 116], 3),  // movsxd rax, dword ptr [r8 + 0x74]
+    (0x03f232e, &[72, 99, 67, 116], 3),  // movsxd rax, dword ptr [rbx + 0x74]
+    (0x03f2360, &[72, 99, 67, 116], 3),  // movsxd rax, dword ptr [rbx + 0x74]
+    (0x03f2376, &[72, 99, 67, 116], 3),  // movsxd rax, dword ptr [rbx + 0x74]
+    (0x03f23a6, &[72, 99, 66, 116], 3),  // movsxd rax, dword ptr [rdx + 0x74]
+    (0x03f23c0, &[72, 99, 67, 116], 3),  // movsxd rax, dword ptr [rbx + 0x74]
+    (0x03f2415, &[72, 99, 66, 116], 3),  // movsxd rax, dword ptr [rdx + 0x74]
+    (0x03f2427, &[72, 99, 83, 116], 3),  // movsxd rdx, dword ptr [rbx + 0x74]
+    (0x03f25ab, &[139, 82, 116], 2),  // mov edx, dword ptr [rdx + 0x74]
+    (0x03f3b1b, &[139, 82, 116], 2),  // mov edx, dword ptr [rdx + 0x74]
+];
+
+/// An address of submenu `n` (or one of its fields) made as `object + disp32`: (RVA, the
+/// instruction's bytes, where the 32-bit displacement or immediate is). KH2's value is
+/// `0x28 + 0x80 n + field`.
+pub const NUMBER_SITES: &[(u32, &[u8], usize)] = &[
+    (0x03b26d5, &[72, 129, 193, 168, 5, 0, 0], 3),  // add rcx, 0x5a8  (submenu 11, +0x0)
+    (0x03b26ed, &[72, 141, 139, 168, 5, 0, 0], 3),  // lea rcx, [rbx + 0x5a8]  (submenu 11, +0x0)
+    (0x03b2b02, &[72, 141, 179, 40, 7, 0, 0], 3),  // lea rsi, [rbx + 0x728]  (submenu 14, +0x0)
+    (0x03f27fb, &[72, 141, 141, 40, 3, 0, 0], 3),  // lea rcx, [rbp + 0x328]  (submenu 6, +0x0)
+    (0x03f29ff, &[72, 129, 193, 40, 5, 0, 0], 3),  // add rcx, 0x528  (submenu 10, +0x0)
+    (0x03f2a2a, &[72, 129, 193, 40, 2, 0, 0], 3),  // add rcx, 0x228  (submenu 4, +0x0)
+    (0x03f2a84, &[72, 99, 135, 56, 2, 0, 0], 3),  // movsxd rax, dword ptr [rdi + 0x238]  (submenu 4, +0x10)
+    (0x03f2aa4, &[72, 141, 143, 40, 2, 0, 0], 3),  // lea rcx, [rdi + 0x228]  (submenu 4, +0x0)
+    (0x03f2ac5, &[72, 141, 143, 40, 4, 0, 0], 3),  // lea rcx, [rdi + 0x428]  (submenu 8, +0x0)
+    (0x03f2b16, &[76, 99, 183, 56, 4, 0, 0], 3),  // movsxd r14, dword ptr [rdi + 0x438]  (submenu 8, +0x10)
+    (0x03f2b4d, &[72, 141, 143, 40, 4, 0, 0], 3),  // lea rcx, [rdi + 0x428]  (submenu 8, +0x0)
+    (0x03f2b70, &[198, 132, 135, 65, 4, 0, 0, 5], 3),  // mov byte ptr [rdi + rax*4 + 0x441], 5  (submenu 8, +0x19)
+    (0x03f2b83, &[72, 141, 143, 168, 0, 0, 0], 3),  // lea rcx, [rdi + 0xa8]  (submenu 1, +0x0)
+    (0x03f2b96, &[72, 141, 143, 168, 0, 0, 0], 3),  // lea rcx, [rdi + 0xa8]  (submenu 1, +0x0)
+    (0x03f2ba2, &[72, 141, 159, 40, 1, 0, 0], 3),  // lea rbx, [rdi + 0x128]  (submenu 2, +0x0)
+    (0x03f2c9c, &[72, 141, 143, 168, 1, 0, 0], 3),  // lea rcx, [rdi + 0x1a8]  (submenu 3, +0x0)
+    (0x03f2d33, &[72, 141, 143, 168, 1, 0, 0], 3),  // lea rcx, [rdi + 0x1a8]  (submenu 3, +0x0)
+    (0x03f2d5c, &[72, 141, 143, 168, 4, 0, 0], 3),  // lea rcx, [rdi + 0x4a8]  (submenu 9, +0x0)
+    (0x03f2d84, &[72, 141, 143, 168, 3, 0, 0], 3),  // lea rcx, [rdi + 0x3a8]  (submenu 7, +0x0)
+    (0x03f2d97, &[72, 141, 143, 168, 3, 0, 0], 3),  // lea rcx, [rdi + 0x3a8]  (submenu 7, +0x0)
+    (0x03f2e0e, &[72, 141, 143, 40, 6, 0, 0], 3),  // lea rcx, [rdi + 0x628]  (submenu 12, +0x0)
+    (0x03f2e21, &[72, 141, 143, 40, 6, 0, 0], 3),  // lea rcx, [rdi + 0x628]  (submenu 12, +0x0)
+    (0x03f2f0a, &[72, 141, 143, 168, 2, 0, 0], 3),  // lea rcx, [rdi + 0x2a8]  (submenu 5, +0x0)
+    (0x03f2faf, &[72, 141, 143, 168, 2, 0, 0], 3),  // lea rcx, [rdi + 0x2a8]  (submenu 5, +0x0)
+    (0x03f387a, &[72, 141, 177, 40, 3, 0, 0], 3),  // lea rsi, [rcx + 0x328]  (submenu 6, +0x0)
+    (0x03f38ea, &[57, 135, 184, 3, 0, 0], 2),  // cmp dword ptr [rdi + 0x3b8], eax  (submenu 7, +0x10)
+    (0x03f395c, &[72, 141, 143, 168, 1, 0, 0], 3),  // lea rcx, [rdi + 0x1a8]  (submenu 3, +0x0)
+    (0x03f3999, &[72, 141, 143, 168, 1, 0, 0], 3),  // lea rcx, [rdi + 0x1a8]  (submenu 3, +0x0)
+    (0x03947b4, &[72, 141, 139, 40, 5, 0, 0], 3),  // lea rcx, [rbx + 0x528]  (submenu 10, +0x0)
+    (0x03947d2, &[72, 141, 139, 40, 5, 0, 0], 3),  // lea rcx, [rbx + 0x528]  (submenu 10, +0x0)
+    (0x0403f38, &[72, 141, 139, 40, 7, 0, 0], 3),  // lea rcx, [rbx + 0x728]  (submenu 14, +0x0)
+    (0x0403f4a, &[72, 141, 139, 40, 7, 0, 0], 3),  // lea rcx, [rbx + 0x728]  (submenu 14, +0x0)
+];
+
+/// The places too short for a 32-bit displacement: (RVA, KH2's bytes there). Each becomes a
+/// jump to a stub that does the same with the block, then jumps back (`stub`).
+pub const SHORT_SITES: &[(u32, &[u8])] = &[
+    (0x3f27f2, &[0x48, 0x8D, 0x4D, 0x28, 0xE8, 0x75, 0xF3, 0xFB, 0xFF]), // lea rcx,[rbp+0x28]; call 0x1403b1b70
+    (0x3f28d2, &[0x48, 0x8D, 0x59, 0x28, 0xBF, 0x13, 0, 0, 0]), // lea rbx,[rcx+0x28]; mov edi,0x13
+    (0x3f28e8, &[0x48, 0x83, 0xEB, 0x80, 0x48, 0x83, 0xEF, 0x01]), // sub rbx,-0x80; sub rdi,1
+    (0x3f2dab, &[0x48, 0x8D, 0x4F, 0x28, 0x0F, 0xB6, 0xD8]), // lea rcx,[rdi+0x28]; movzx ebx,al
+    (0x3f2dcb, &[0x48, 0x8D, 0x4F, 0x28, 0x44, 0x0F, 0xB6, 0x48, 0x04]), // lea rcx,[rdi+0x28]; movzx r9d,byte [rax+4]
+    (0x3f2ded, &[0x48, 0x8D, 0x57, 0x28, 0x48, 0x8B, 0xCF]), // lea rdx,[rdi+0x28]; mov rcx,rdi
+    (0x3f2e4c, &[0x48, 0x8D, 0x4F, 0x28, 0x45, 0x33, 0xC0]), // lea rcx,[rdi+0x28]; xor r8d,r8d
+    (0x3f2e62, &[0x48, 0x8D, 0x4F, 0x28, 0xBA, 0x03, 0, 0, 0]), // lea rcx,[rdi+0x28]; mov edx,3
+    (0x3f2e8c, &[0x48, 0x8D, 0x4F, 0x28, 0x45, 0x33, 0xC0]), // lea rcx,[rdi+0x28]; xor r8d,r8d
+    (0x3f2eab, &[0x48, 0x8D, 0x4F, 0x28, 0x41, 0xB9, 0x01, 0, 0, 0]), // lea rcx,[rdi+0x28]; mov r9d,1
+    (0x3f3b0a, &[0x48, 0x83, 0xC1, 0x28, 0x48, 0x8B, 0x10, 0x49, 0x8B, 0xC0, 0x48, 0xC1, 0xE0, 0x07, 0x48, 0x03, 0xC8]), // add rcx,0x28; mov rdx,[rax]; mov rax,r8; shl rax,7; add rcx,rax
+    (0x3f259d, &[0x48, 0xC1, 0xE1, 0x07, 0x48, 0x8B, 0x10, 0x48, 0x83, 0xC1, 0x28, 0x48, 0x03, 0xCB]), // shl rcx,7; mov rdx,[rax]; add rcx,0x28; add rcx,rbx
+    (0x3b1f7f, &[0x48, 0xC1, 0xE0, 0x07, 0x48, 0x83, 0xC0, 0x28, 0x4C, 0x89, 0x81, 0xA8, 0x09, 0, 0, 0x48, 0x03, 0xC1]), // shl rax,7; add rax,0x28; mov [rcx+0x9a8],r8; add rax,rcx
+    (0x3b281c, &[0x48, 0xC1, 0xE0, 0x07, 0x48, 0x83, 0xC0, 0x28, 0x4C, 0x89, 0x89, 0xA8, 0x09, 0, 0, 0x48, 0x03, 0xC1]), // shl rax,7; add rax,0x28; mov [rcx+0x9a8],r9; add rax,rcx
+    (0x3b1002, &[0x48, 0xC1, 0xE0, 0x07, 0x48, 0x03, 0x43, 0x08]), // shl rax,7; add rax,[rbx+8]
+    (0x3b193a, &[0x48, 0xC1, 0xE0, 0x07, 0x48, 0x03, 0x43, 0x08]), // shl rax,7; add rax,[rbx+8]
+    (0x3b1acd, &[0x48, 0xC1, 0xE0, 0x07, 0x48, 0x03, 0x43, 0x08]), // shl rax,7; add rax,[rbx+8]
+];
+
+/// `object + D0` is submenu 0's header in the block.
+fn d0(pc: u64, mem: u64) -> Result<i32, String> {
+    i32::try_from(header(mem, 0) as i64 - pc as i64).map_err(|_| format!("our memory {mem:#x} is more than 2 GB from the menu {pc:#x}"))
+}
+
+/// Submenu `n`'s header in our memory at `mem`.
+pub fn header(mem: u64, n: usize) -> u64 {
+    mem + (n * SLOT + HEADER) as u64
+}
+
+/// A small x86-64 encoder: only what the stubs need.
+pub mod x86 {
+    pub const RAX: u8 = 0;
+    pub const RCX: u8 = 1;
+    pub const RDX: u8 = 2;
+    pub const RBX: u8 = 3;
+    pub const RBP: u8 = 5;
+    pub const RDI: u8 = 7;
+    fn rex(reg: u8, index: u8, base: u8) -> u8 {
+        0x48 | ((reg >> 3) << 2) | ((index >> 3) << 1) | (base >> 3)
+    }
+    /// `lea reg, [base + disp32]` (base not rsp / r12).
+    pub fn lea(reg: u8, base: u8, disp: i32) -> Vec<u8> {
+        assert!(base & 7 != 4);
+        let mut v = vec![rex(reg, 0, base), 0x8D, 0x80 | ((reg & 7) << 3) | (base & 7)];
+        v.extend_from_slice(&disp.to_le_bytes());
+        v
+    }
+    /// `lea reg, [base + index + disp32]` (index not rsp).
+    pub fn lea_bi(reg: u8, base: u8, index: u8, disp: i32) -> Vec<u8> {
+        assert!(index & 7 != 4 || index == 12);
+        let mut v = vec![rex(reg, index, base), 0x8D, 0x84 | ((reg & 7) << 3), ((index & 7) << 3) | (base & 7)];
+        v.extend_from_slice(&disp.to_le_bytes());
+        v
+    }
+    /// `imul reg, src, imm32`.
+    pub fn imul(reg: u8, src: u8, imm: i32) -> Vec<u8> {
+        let mut v = vec![rex(reg, 0, src), 0x69, 0xC0 | ((reg & 7) << 3) | (src & 7)];
+        v.extend_from_slice(&imm.to_le_bytes());
+        v
+    }
+    /// `add reg, imm32`.
+    pub fn add(reg: u8, imm: i32) -> Vec<u8> {
+        let mut v = vec![rex(0, 0, reg), 0x81, 0xC0 | (reg & 7)];
+        v.extend_from_slice(&imm.to_le_bytes());
+        v
+    }
+    /// `jmp` / `call rel32` at `at` to `to`.
+    pub fn rel(op: u8, at: u64, to: u64) -> Result<Vec<u8>, String> {
+        let d = i32::try_from(to as i64 - (at as i64 + 5)).map_err(|_| format!("{at:#x} -> {to:#x}: more than 2 GB"))?;
+        let mut v = vec![op];
+        v.extend_from_slice(&d.to_le_bytes());
+        Ok(v)
+    }
+    pub const JMP: u8 = 0xE9;
+    pub const CALL: u8 = 0xE8;
+}
+
+/// What a stub does in place of KH2's bytes at a short site (then it jumps back to the
+/// instruction after them). `at` is where the stub starts; `base` is KH2's image.
+fn stub(rva: u32, base: u64, at: u64, d0: i32) -> Result<Vec<u8>, String> {
+    use x86::*;
+    let slot = SLOT as i32;
+    let mut v: Vec<u8> = Vec::new();
+    let site = |r: u32| base + r as u64;
+    match rva {
+        // lea rcx,[rbp+sub0]; call 0x1403B1B70 (reset the cursor)
+        0x3f27f2 => {
+            v.extend(lea(RCX, RBP, d0));
+            v.extend(rel(CALL, at + v.len() as u64, site(0x3b1b70))?);
+        }
+        // the loop over the 19 submenus (`0x1403F28C0`): start, and step
+        0x3f28d2 => {
+            v.extend(lea(RBX, RCX, d0));
+            v.extend([0xBF, 0x13, 0, 0, 0]);
+        }
+        0x3f28e8 => {
+            v.extend(add(RBX, slot));
+            v.extend([0x48, 0x83, 0xEF, 0x01]);
+        }
+        // submenu 0 in `0x1403F29E0`, with the instruction after it
+        0x3f2dab => {
+            v.extend(lea(RCX, RDI, d0));
+            v.extend([0x0F, 0xB6, 0xD8]);
+        }
+        0x3f2dcb => {
+            v.extend(lea(RCX, RDI, d0));
+            v.extend([0x44, 0x0F, 0xB6, 0x48, 0x04]);
+        }
+        0x3f2ded => {
+            v.extend(lea(RDX, RDI, d0));
+            v.extend([0x48, 0x8B, 0xCF]);
+        }
+        0x3f2e4c | 0x3f2e8c => {
+            v.extend(lea(RCX, RDI, d0));
+            v.extend([0x45, 0x33, 0xC0]);
+        }
+        0x3f2e62 => {
+            v.extend(lea(RCX, RDI, d0));
+            v.extend([0xBA, 0x03, 0, 0, 0]);
+        }
+        0x3f2eab => {
+            v.extend(lea(RCX, RDI, d0));
+            v.extend([0x41, 0xB9, 0x01, 0, 0, 0]);
+        }
+        // submenu r8 of the object rcx (`0x1403F3AF0`)
+        0x3f3b0a => {
+            v.extend([0x48, 0x8B, 0x10, 0x49, 0x8B, 0xC0]); // mov rdx,[rax]; mov rax,r8
+            v.extend(imul(RAX, RAX, slot));
+            v.extend(lea_bi(RCX, RCX, RAX, d0));
+        }
+        // submenu rcx of the object rbx (`0x1403F2470`)
+        0x3f259d => {
+            v.extend(imul(RCX, RCX, slot));
+            v.extend([0x48, 0x8B, 0x10]); // mov rdx,[rax]
+            v.extend(lea_bi(RCX, RCX, RBX, d0));
+        }
+        // push submenu rax of the object rcx (`0x1403B1F30`, `0x1403B2800`)
+        0x3b1f7f => {
+            v.extend(imul(RAX, RAX, slot));
+            v.extend([0x4C, 0x89, 0x81, 0xA8, 0x09, 0, 0]); // mov [rcx+0x9a8],r8
+            v.extend(lea_bi(RAX, RAX, RCX, d0));
+        }
+        0x3b281c => {
+            v.extend(imul(RAX, RAX, slot));
+            v.extend([0x4C, 0x89, 0x89, 0xA8, 0x09, 0, 0]); // mov [rcx+0x9a8],r9
+            v.extend(lea_bi(RAX, RAX, RCX, d0));
+        }
+        // submenu rax of a submenu's owner, less 0x28 (the code reads +0x38 count, +0x41 rows)
+        0x3b1002 | 0x3b193a | 0x3b1acd => {
+            v.extend(imul(RAX, RAX, slot));
+            v.extend([0x48, 0x03, 0x43, 0x08]); // add rax,[rbx+8]
+            v.extend(add(RAX, d0 - OLD_FIRST as i32));
+        }
+        _ => return Err(format!("no stub for {rva:#x}")),
+    }
+    Ok(v)
+}
+
+/// One write into KH2's code: `new` over `expect` at `rva`.
+#[derive(Debug, Clone)]
+pub struct Patch {
+    pub rva: u32,
+    pub expect: &'static [u8],
+    pub new: Vec<u8>,
+}
+
+/// Everything to write: KH2's code, and the stubs (for our memory at `mem + CAVES`).
+#[derive(Debug, Clone)]
+pub struct Plan {
+    pub patches: Vec<Patch>,
+    pub stubs: Vec<u8>,
+}
+
+/// The writes for KH2 at `base` with our memory at `mem`.
+pub fn plan(base: u64, mem: u64) -> Result<Plan, String> {
+    let pc = base + PC_RVA as u64;
+    let d0 = d0(pc, mem)?;
+    let mut patches = Vec::new();
+    for &(rva, bytes, at) in CURSOR_SITES {
+        let mut new = bytes.to_vec();
+        new[at] = match bytes[at] as usize {
+            OLD_CURSOR_ROW => CURSOR_ROW as u8,
+            OLD_CURSOR_CMD => CURSOR_CMD as u8,
+            b => return Err(format!("{rva:#x}: displacement {b:#x}")),
+        };
+        patches.push(Patch { rva, expect: bytes, new });
+    }
+    for &(rva, bytes, at) in NUMBER_SITES {
+        let old = i32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as i64 - OLD_FIRST as i64;
+        let (n, field) = (old / OLD_STRIDE as i64, old % OLD_STRIDE as i64);
+        if old < 0 || n >= SUBMENUS as i64 || field >= OLD_CURSOR_ROW as i64 {
+            return Err(format!("{rva:#x}: {old:#x} is not a submenu's header or row"));
+        }
+        let disp = d0 as i64 + n * SLOT as i64 + field;
+        let mut new = bytes.to_vec();
+        new[at..at + 4].copy_from_slice(&i32::try_from(disp).map_err(|_| "displacement".to_string())?.to_le_bytes());
+        patches.push(Patch { rva, expect: bytes, new });
+    }
+    let mut stubs = Vec::new();
+    for &(rva, bytes) in SHORT_SITES {
+        let at = mem + CAVES as u64 + stubs.len() as u64;
+        let mut s = stub(rva, base, at, d0)?;
+        let back = base + rva as u64 + bytes.len() as u64;
+        s.extend(x86::rel(x86::JMP, at + s.len() as u64, back)?);
+        while s.len() % 16 != 0 {
+            s.push(0xCC);
+        }
+        let mut new = x86::rel(x86::JMP, base + rva as u64, at)?;
+        new.resize(bytes.len(), 0x90);
+        patches.push(Patch { rva, expect: bytes, new });
+        stubs.extend(s);
+    }
+    if CAVES + stubs.len() > MEM {
+        return Err(format!("stubs need {:#x} bytes", stubs.len()));
+    }
+    Ok(Plan { patches, stubs })
+}
+
+/// Moves the submenus from KH2's object (`object`, its first `0xC00` bytes, at address `pc`) into
+/// the block (`block`, `BLOCK` bytes at address `mem`): header, the 8 rows and the cursor; rows
+/// 8 to 11 as KH2's ctor makes a row (`0x1404020E0`: `+4` = `0x500`, the rest 0). Stack entries
+/// pointing at an old submenu are pointed at the new one. Runs once, after KH2's ctor built the
+/// object and before any site is changed.
+pub fn migrate(object: &mut [u8], pc: u64, block: &mut [u8], mem: u64) {
+    for n in 0..SUBMENUS {
+        let old = OLD_FIRST + n * OLD_STRIDE;
+        let h = n * SLOT + HEADER;
+        block[h..h + 0x14 + OLD_ROWS * ROW].copy_from_slice(&object[old..old + 0x14 + OLD_ROWS * ROW]);
+        for r in OLD_ROWS..ROWS {
+            let row = &mut block[h + 0x14 + r * ROW..h + 0x14 + (r + 1) * ROW];
+            row.fill(0);
+            row[4..6].copy_from_slice(&0x500u16.to_le_bytes());
+        }
+        let row = u32::from_le_bytes(object[old + OLD_CURSOR_ROW..][..4].try_into().unwrap());
+        let cmd = u32::from_le_bytes(object[old + OLD_CURSOR_CMD..][..4].try_into().unwrap());
+        let c = (h as isize + CURSOR_ROW as isize) as usize;
+        block[c..c + 4].copy_from_slice(&row.to_le_bytes());
+        let c = (h as isize + CURSOR_CMD as isize) as usize;
+        block[c..c + 4].copy_from_slice(&cmd.to_le_bytes());
+    }
+    for k in 0..STACK_LEN {
+        let e = STACK + 8 * k;
+        let v = u64::from_le_bytes(object[e..e + 8].try_into().unwrap());
+        let rel = v.wrapping_sub(pc) as usize;
+        if v >= pc && rel >= OLD_FIRST && rel < OLD_FIRST + SUBMENUS * OLD_STRIDE && (rel - OLD_FIRST) % OLD_STRIDE == 0 {
+            let n = (rel - OLD_FIRST) / OLD_STRIDE;
+            object[e..e + 8].copy_from_slice(&header(mem, n).to_le_bytes());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const BASE: u64 = 0x1_4000_0000;
+    const MEMAT: u64 = 0x1_3000_0000;
+
+    #[test]
+    fn layout_keeps_kh2s_alignment_and_reach() {
+        let pc = BASE + PC_RVA as u64;
+        for n in 0..SUBMENUS {
+            assert_eq!(header(MEMAT, n) % 16, (pc + (OLD_FIRST + n * OLD_STRIDE) as u64) % 16);
+        }
+        assert!(d0(pc, MEMAT).is_ok());
+        assert!(d0(pc, 0x7000_0000).is_err());
+    }
+
+    #[test]
+    fn plan_covers_every_site_once() {
+        let p = plan(BASE, MEMAT).unwrap();
+        assert_eq!(p.patches.len(), CURSOR_SITES.len() + NUMBER_SITES.len() + SHORT_SITES.len());
+        assert_eq!((CURSOR_SITES.len(), NUMBER_SITES.len(), SHORT_SITES.len()), (58, 32, 17));
+        let mut spans: Vec<(u32, u32)> = p.patches.iter().map(|x| (x.rva, x.rva + x.expect.len() as u32)).collect();
+        spans.sort();
+        for w in spans.windows(2) {
+            assert!(w[0].1 <= w[1].0, "{:#x} overlaps {:#x}", w[0].0, w[1].0);
+        }
+        for x in &p.patches {
+            assert_eq!(x.new.len(), x.expect.len());
+        }
+    }
+
+    #[test]
+    fn cursor_bytes_go_before_the_header() {
+        let p = plan(BASE, MEMAT).unwrap();
+        let x = p.patches.iter().find(|x| x.rva == 0x3b1b70).unwrap();
+        // mov dword [rcx+0x74], 0  ->  mov dword [rcx-0x0c], 0
+        assert_eq!(x.expect, &[0xC7, 0x41, 0x74, 0, 0, 0, 0]);
+        assert_eq!(x.new, vec![0xC7, 0x41, 0xF4, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn number_sites_point_at_the_block() {
+        let p = plan(BASE, MEMAT).unwrap();
+        let pc = BASE + PC_RVA as u64;
+        // lea rcx,[rdi+0xa8] (Magic, submenu 1)
+        let x = p.patches.iter().find(|x| x.rva == 0x3f2b83).unwrap();
+        let disp = i32::from_le_bytes(x.new[3..7].try_into().unwrap());
+        assert_eq!(pc.wrapping_add(disp as i64 as u64), header(MEMAT, 1));
+        // mov byte [rdi+rax*4+0x441], 5: submenu 8's row state
+        let x = p.patches.iter().find(|x| x.rva == 0x3f2b70).unwrap();
+        let disp = i32::from_le_bytes(x.new[3..7].try_into().unwrap());
+        assert_eq!(pc.wrapping_add(disp as i64 as u64), header(MEMAT, 8) + 0x19);
+    }
+
+    /// A tiny interpreter for the stubs' own instructions: checks each stub gives what KH2's
+    /// bytes gave, moved to the block.
+    #[test]
+    fn stubs_compute_the_blocks_addresses() {
+        let p = plan(BASE, MEMAT).unwrap();
+        let pc = BASE + PC_RVA as u64;
+        let stub_at = |rva: u32| {
+            let x = p.patches.iter().find(|x| x.rva == rva).unwrap();
+            assert_eq!(x.new[0], 0xE9);
+            let to = (BASE + rva as u64 + 5).wrapping_add(i32::from_le_bytes(x.new[1..5].try_into().unwrap()) as i64 as u64);
+            (to - MEMAT - CAVES as u64) as usize
+        };
+        // Owner by number: rax = n -> rax = header(n) - 0x28.
+        let s = &p.stubs[stub_at(0x3b1002)..];
+        assert_eq!(&s[..3], &[0x48, 0x69, 0xC0]);
+        let imul = i32::from_le_bytes(s[3..7].try_into().unwrap()) as u64;
+        assert_eq!(&s[7..11], &[0x48, 0x03, 0x43, 0x08]);
+        assert_eq!(&s[11..14], &[0x48, 0x81, 0xC0]);
+        let add = i32::from_le_bytes(s[14..18].try_into().unwrap()) as i64 as u64;
+        for n in 0..SUBMENUS as u64 {
+            assert_eq!((n * imul).wrapping_add(pc).wrapping_add(add), header(MEMAT, n as usize) - OLD_FIRST as u64);
+        }
+        // and jumps back after KH2's 8 bytes
+        let back = (MEMAT + CAVES as u64 + stub_at(0x3b1002) as u64 + 23).wrapping_add(i32::from_le_bytes(s[19..23].try_into().unwrap()) as i64 as u64);
+        assert_eq!(s[18], 0xE9);
+        assert_eq!(back, BASE + 0x3b100a);
+        // lea rcx,[rbp+sub0]: the call is re-aimed at 0x1403B1B70
+        let o = stub_at(0x3f27f2);
+        let s = &p.stubs[o..];
+        assert_eq!(&s[..3], &[0x48, 0x8D, 0x8D]);
+        assert_eq!(pc.wrapping_add(i32::from_le_bytes(s[3..7].try_into().unwrap()) as i64 as u64), header(MEMAT, 0));
+        let call_at = MEMAT + CAVES as u64 + o as u64 + 7;
+        assert_eq!((call_at + 5).wrapping_add(i32::from_le_bytes(s[8..12].try_into().unwrap()) as i64 as u64), BASE + 0x3b1b70);
+    }
+
+    #[test]
+    fn x86_encodings() {
+        use x86::*;
+        assert_eq!(lea(RCX, RDI, 0x28), vec![0x48, 0x8D, 0x8F, 0x28, 0, 0, 0]);
+        assert_eq!(lea(RDX, RDI, 0x28), vec![0x48, 0x8D, 0x97, 0x28, 0, 0, 0]);
+        assert_eq!(lea(RBX, RCX, 0x28), vec![0x48, 0x8D, 0x99, 0x28, 0, 0, 0]);
+        assert_eq!(lea(RCX, RBP, 0x328), vec![0x48, 0x8D, 0x8D, 0x28, 3, 0, 0]);
+        // lea rcx,[rcx+rax+0x28]: 48 8D 8C 01 28 00 00 00
+        assert_eq!(lea_bi(RCX, RCX, RAX, 0x28), vec![0x48, 0x8D, 0x8C, 0x01, 0x28, 0, 0, 0]);
+        // lea rcx,[rcx+rbx+0x28]: 48 8D 8C 19 ...
+        assert_eq!(lea_bi(RCX, RCX, RBX, 0x28), vec![0x48, 0x8D, 0x8C, 0x19, 0x28, 0, 0, 0]);
+        // lea rax,[rax+rcx+0x28]: 48 8D 84 08 ...
+        assert_eq!(lea_bi(RAX, RAX, RCX, 0x28), vec![0x48, 0x8D, 0x84, 0x08, 0x28, 0, 0, 0]);
+        // imul rax,rax,0xc0: 48 69 C0 C0 00 00 00
+        assert_eq!(imul(RAX, RAX, 0xC0), vec![0x48, 0x69, 0xC0, 0xC0, 0, 0, 0]);
+        assert_eq!(imul(RCX, RCX, 0xC0), vec![0x48, 0x69, 0xC9, 0xC0, 0, 0, 0]);
+        // add rbx,0xc0: 48 81 C3 C0 00 00 00
+        assert_eq!(add(RBX, 0xC0), vec![0x48, 0x81, 0xC3, 0xC0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn migrate_moves_headers_rows_cursors_and_the_stack() {
+        let pc = BASE + PC_RVA as u64;
+        let mut object = vec![0u8; 0xC00];
+        for n in 0..SUBMENUS {
+            let o = OLD_FIRST + n * OLD_STRIDE;
+            object[o] = n as u8; // kind
+            object[o + 8..o + 16].copy_from_slice(&pc.to_le_bytes()); // owner
+            object[o + 0x10] = 3; // count
+            object[o + 0x14 + 2] = 0x40 + n as u8; // row 0's command
+            object[o + 0x14 + 7 * ROW + 2] = 0x80 + n as u8; // row 7's command
+            object[o + OLD_CURSOR_ROW] = 2;
+            object[o + OLD_CURSOR_CMD] = 0x41;
+        }
+        let sub1 = pc + (OLD_FIRST + OLD_STRIDE) as u64;
+        object[STACK..STACK + 8].copy_from_slice(&(pc + OLD_FIRST as u64).to_le_bytes());
+        object[STACK + 8..STACK + 16].copy_from_slice(&sub1.to_le_bytes());
+        object[STACK + 16..STACK + 24].copy_from_slice(&0x1234u64.to_le_bytes());
+        let mut block = vec![0xAAu8; BLOCK];
+        migrate(&mut object, pc, &mut block, MEMAT);
+        for n in 0..SUBMENUS {
+            let h = n * SLOT + HEADER;
+            assert_eq!(block[h], n as u8);
+            assert_eq!(u64::from_le_bytes(block[h + 8..h + 16].try_into().unwrap()), pc);
+            assert_eq!(block[h + 0x10], 3);
+            assert_eq!(block[h + 0x14 + 2], 0x40 + n as u8);
+            assert_eq!(block[h + 0x14 + 7 * ROW + 2], 0x80 + n as u8);
+            assert_eq!(&block[h + 0x14 + 8 * ROW..h + 0x14 + 9 * ROW], &[0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0]);
+            assert_eq!(block[h - 0x0C], 2);
+            assert_eq!(block[h - 0x08], 0x41);
+        }
+        assert_eq!(u64::from_le_bytes(object[STACK..STACK + 8].try_into().unwrap()), header(MEMAT, 0));
+        assert_eq!(u64::from_le_bytes(object[STACK + 8..STACK + 16].try_into().unwrap()), header(MEMAT, 1));
+        assert_eq!(u64::from_le_bytes(object[STACK + 16..STACK + 24].try_into().unwrap()), 0x1234);
+    }
+
+    /// `MENU_DUMP=<file>`: writes the plan (for checking the stubs in an emulator).
+    #[test]
+    fn dump_for_the_emulator() {
+        let Ok(path) = std::env::var("MENU_DUMP") else { return };
+        let p = plan(BASE, MEMAT).unwrap();
+        let mut out = format!("stubs {}\n", p.stubs.iter().map(|b| format!("{b:02x}")).collect::<String>());
+        for x in p.patches {
+            out += &format!("patch {:x} {}\n", x.rva, x.new.iter().map(|b| format!("{b:02x}")).collect::<String>());
+        }
+        std::fs::write(path, out).unwrap();
+    }
+
+    /// With the Steam exe at hand (`KH2_EXE`), every site's bytes are KH2's.
+    #[test]
+    fn sites_match_the_steam_exe() {
+        let Ok(path) = std::env::var("KH2_EXE") else { return };
+        let exe = std::fs::read(path).unwrap();
+        let rva_to_off = |rva: u32| -> usize {
+            let pe = u32::from_le_bytes(exe[0x3C..0x40].try_into().unwrap()) as usize;
+            let n = u16::from_le_bytes(exe[pe + 6..pe + 8].try_into().unwrap()) as usize;
+            let opt = u16::from_le_bytes(exe[pe + 20..pe + 22].try_into().unwrap()) as usize;
+            let sec = pe + 24 + opt;
+            for i in 0..n {
+                let s = &exe[sec + 40 * i..sec + 40 * (i + 1)];
+                let va = u32::from_le_bytes(s[12..16].try_into().unwrap());
+                let size = u32::from_le_bytes(s[8..12].try_into().unwrap());
+                let raw = u32::from_le_bytes(s[20..24].try_into().unwrap());
+                if rva >= va && rva < va + size {
+                    return (rva - va + raw) as usize;
+                }
+            }
+            panic!("{rva:#x}");
+        };
+        for x in plan(BASE, MEMAT).unwrap().patches {
+            let o = rva_to_off(x.rva);
+            assert_eq!(&exe[o..o + x.expect.len()], x.expect, "{:#x}", x.rva);
+        }
+    }
+}
