@@ -111,6 +111,27 @@ const STOP_ATKP_TEMPLATE: u16 = 250;
 /// then skips its think and motion). KH1's Stop gets an id of its own (`STOP_ID`) with flag 1.
 pub const STOP_ID: u16 = 0x20;
 pub const STOP_FLAGS: u16 = 1;
+/// KH1's Aero barrier: a kind with no flags, so KH2 only counts it down on Sora (his damage
+/// taken is halved while it runs, `aero_halve`).
+pub const AERO_ID: u16 = 0x21;
+/// Aero's barrier strike (Cure's 708 rows: type `AERO_TYPE` of ours, nothing else) and its wind
+/// (Thunder's burst rows 250: KH2's damage, no element; KH1's power not ported yet, as the other
+/// spells').
+pub const AERO_ATKP: u16 = kh1_assets::spells::aero::ATKP as u16;
+pub const AERO_TYPE: u8 = 9;
+pub const WIND_ATKP: u16 = kh1_assets::spells::aero::WIND_ATKP as u16;
+const AERO_ATKP_TEMPLATE: u16 = 708;
+
+/// KH1's Aero barrier in KH2 frames ((18 + max MP bars) × 60, every level).
+pub fn aero_frames(bars: i32) -> f32 {
+    ((18 + bars) * 60) as f32
+}
+
+/// KH1's halving while the barrier runs (after the rest, `0x1402BFA80`): ÷ 2, at least 1, 0
+/// stays 0.
+pub fn aero_halve(d: i32) -> i32 {
+    if d > 0 { (d / 2).max(1) } else { d }
+}
 
 /// KH2's `atkp` table with Gravity's rows added.
 pub fn extend_atkp(t: &[u8]) -> Option<Vec<u8>> {
@@ -136,16 +157,20 @@ pub fn extend_atkp(t: &[u8]) -> Option<Vec<u8>> {
         out.extend_from_slice(&g);
         added += 1;
     }
-    for r in rows.iter().filter(|r| id(r) == STOP_ATKP_TEMPLATE) {
-        let mut g = r.to_vec();
-        g[2..4].copy_from_slice(&STOP_ATKP.to_le_bytes());
-        g[4] = STOP_TYPE;
-        g[6..8].copy_from_slice(&0u16.to_le_bytes());
-        g[9] = 0;
-        g[0x0A] = 0;
-        g[0x0B] = kh1_assets::spells::HIT_GROUP;
-        out.extend_from_slice(&g);
-        added += 1;
+    for (template, new, kind) in [(STOP_ATKP_TEMPLATE, STOP_ATKP, Some(STOP_TYPE)), (AERO_ATKP_TEMPLATE, AERO_ATKP, Some(AERO_TYPE)), (STOP_ATKP_TEMPLATE, WIND_ATKP, None)] {
+        for r in rows.iter().filter(|r| id(r) == template) {
+            let mut g = r.to_vec();
+            g[2..4].copy_from_slice(&new.to_le_bytes());
+            if let Some(k) = kind {
+                g[4] = k;
+                g[6..8].copy_from_slice(&0u16.to_le_bytes());
+                g[0x0A] = 0;
+            }
+            g[9] = 0;
+            g[0x0B] = kh1_assets::spells::HIT_GROUP;
+            out.extend_from_slice(&g);
+            added += 1;
+        }
     }
     if added == 0 {
         return None;
@@ -184,9 +209,11 @@ pub fn extend_stop(t: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let mut out = t[..8 + n * 4].to_vec();
-    out.extend_from_slice(&STOP_ID.to_le_bytes());
-    out.extend_from_slice(&STOP_FLAGS.to_le_bytes());
-    out[4..8].copy_from_slice(&((n + 1) as u32).to_le_bytes());
+    for (id, flags) in [(STOP_ID, STOP_FLAGS), (AERO_ID, 0)] {
+        out.extend_from_slice(&id.to_le_bytes());
+        out.extend_from_slice(&flags.to_le_bytes());
+    }
+    out[4..8].copy_from_slice(&((n + 2) as u32).to_le_bytes());
     Some(out)
 }
 
@@ -199,7 +226,7 @@ pub const MAGC_ROW: usize = 0x38;
 /// The KH2 spell whose cast rows a new one takes (KH1 casts Gravity on Blizzard's motions, Stop
 /// on Thunder's).
 pub fn cast_like(element: u8) -> u8 {
-    if element == STOP { 2 } else { 1 }
+    if element == STOP || element == AERO { 2 } else { 1 }
 }
 
 pub fn extend_magc(t: &[u8], element: u8, file: &str, k: usize) -> Option<Vec<u8>> {
@@ -237,6 +264,12 @@ mod tests {
             t.extend(r);
         }
         t
+    }
+
+    #[test]
+    fn aero_as_kh1s() {
+        assert_eq!(aero_frames(3), 1260.0);
+        assert_eq!((aero_halve(30), aero_halve(1), aero_halve(0)), (15, 1, 0));
     }
 
     #[test]
@@ -288,7 +321,9 @@ mod tests {
         let st: Vec<_> = (0..count(&a).unwrap()).map(|i| &a[8 + i * 0x30..8 + (i + 1) * 0x30]).filter(|r| u16::from_le_bytes([r[2], r[3]]) == STOP_ATKP).collect();
         assert!(!st.is_empty() && st.iter().all(|r| r[4] == STOP_TYPE && r[0x0A] == 0));
         let sp = extend_stop(&bget("stop")).unwrap();
-        assert_eq!(count(&sp), Some(16));
+        assert_eq!(count(&sp), Some(17));
+        let ids: Vec<u16> = (0..count(&a).unwrap()).map(|i| u16::from_le_bytes([a[8 + i * 0x30 + 2], a[8 + i * 0x30 + 3]])).collect();
+        assert!(ids.contains(&AERO_ATKP) && ids.contains(&WIND_ATKP) && ids.windows(2).all(|w| w[0] <= w[1]));
         let m2 = extend_magc(&extend_magc(&bget("magc"), GRAVITY, "GRAVITY", 0).unwrap(), STOP, "STOP", 1).unwrap();
         let last = &m2[8 + 41 * MAGC_ROW..8 + 42 * MAGC_ROW];
         assert_eq!((last[0], last[1], u16::from_le_bytes([last[0x24], last[0x25]]), u16::from_le_bytes([last[0x26], last[0x27]]), i16::from_le_bytes([last[0x28], last[0x29]])), (7, 3, 85, 802, 62));

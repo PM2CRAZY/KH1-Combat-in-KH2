@@ -11,6 +11,24 @@ const DAMAGE: usize = 0x3C_12F0;
 /// frames)`, the time in `xmm2`: `0x1403B4383`; Checked (decomp + exe)).
 const FROM_HANDLE: usize = 0x4A_D270;
 const STOP_OBJECT: usize = 0x3B_6730;
+/// An object's stop block (`+0x64C`: flags, then 4 (kind, frames left) slots) and KH2's "add a
+/// kind for a time" on it (`0x14040A920(block, kind, frames)`, time in `xmm2`).
+const STOP_BLOCK: usize = 0x64C;
+const STOP_ADD: usize = 0x40_A920;
+static AERO_LOGGED: AtomicBool = AtomicBool::new(false);
+static HALVE_LOGGED: AtomicBool = AtomicBool::new(false);
+
+/// The object a status belongs to (`+0x268`, its handle).
+unsafe fn owner(status: *const i32) -> usize {
+    let obj: extern "system" fn(u32) -> usize = std::mem::transmute(BASE.load(Ordering::Relaxed) + FROM_HANDLE);
+    obj(*status.add(0x9A) as u32)
+}
+
+/// Whether KH2 still counts down KH1's Aero barrier on `obj`.
+unsafe fn barrier_on(obj: usize) -> bool {
+    let block = obj + STOP_BLOCK;
+    (0..4).any(|i| *((block + 4 + 8 * i) as *const i32) == crate::magic_rows::AERO_ID as i32 && *((block + 8 + 8 * i) as *const f32) > 0.0)
+}
 static BASE: AtomicUsize = AtomicUsize::new(0);
 static STOP_LOGGED: AtomicBool = AtomicBool::new(false);
 static O_DAMAGE: AtomicUsize = AtomicUsize::new(0);
@@ -43,8 +61,37 @@ unsafe extern "system" fn damage(status: *const i32, attack: usize, atkp: *const
         }
         return 0;
     }
+    if !atkp.is_null() && *atkp.add(4) == crate::magic_rows::AERO_TYPE {
+        // KH1's Aero on the struck one (Sora): KH2 counts the barrier down on him; his bars left
+        // in the attack (`+0xB0`, the script reads them back for the look and the wind).
+        let o = owner(status);
+        let bars = super::mp::max_bars();
+        if o != 0 {
+            let frames = crate::magic_rows::aero_frames(bars);
+            let add: extern "system" fn(usize, i32, f32) = std::mem::transmute(BASE.load(Ordering::Relaxed) + STOP_ADD);
+            add(o + STOP_BLOCK, crate::magic_rows::AERO_ID as i32, frames);
+            if !AERO_LOGGED.swap(true, Ordering::Relaxed) {
+                log!("magic: KH1's Aero barrier on {o:#x} for {frames} frames: damage taken halved");
+            }
+        }
+        if attack != 0 {
+            *((attack + 0xB0) as *mut u8) = bars.clamp(0, 255) as u8;
+        }
+        return 0;
+    }
     let o: unsafe extern "system" fn(*const i32, usize, *const u8, i32) -> i32 = std::mem::transmute(O_DAMAGE.load(Ordering::Acquire));
-    o(status, attack, atkp, which)
+    let d = o(status, attack, atkp, which);
+    if d > 0 && !atkp.is_null() && !matches!(*atkp.add(4), 5 | 6) {
+        let obj = owner(status);
+        if obj != 0 && barrier_on(obj) {
+            let h = crate::magic_rows::aero_halve(d);
+            if !HALVE_LOGGED.swap(true, Ordering::Relaxed) {
+                log!("magic: KH1's Aero barrier: a hit {d} -> {h}");
+            }
+            return h;
+        }
+    }
+    d
 }
 
 pub unsafe fn install(base: usize) {

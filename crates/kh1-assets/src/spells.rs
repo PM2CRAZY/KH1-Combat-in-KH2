@@ -135,7 +135,7 @@ pub fn mag(name: &[u8; 4], pax: &[u8], bdx: &[u8]) -> Vec<u8> {
 /// KH2's `magic/<SPELL>_n.mag` is level n (its MAGC rows; the Drive Forms cast the same files,
 /// the sister's `drive-model.md`); KH1's `xm_<spell>0n.mag` likewise (Checked (files): the scripts
 /// differ only in the level's numbers, Blizzard's shard speed 20 / 30 / 40).
-pub const SPELLS: [(&str, &str, Kind, usize); 18] = [
+pub const SPELLS: [(&str, &str, Kind, usize); 21] = [
     ("xm_fire01.mag", "magic/FIRE_1.mag", Kind::Fire, 0),
     ("xm_fire02.mag", "magic/FIRE_2.mag", Kind::Fire, 1),
     ("xm_fire03.mag", "magic/FIRE_3.mag", Kind::Fire, 2),
@@ -154,18 +154,22 @@ pub const SPELLS: [(&str, &str, Kind, usize); 18] = [
     ("xm_stop01.mag", "magic/STOP_1.mag", Kind::Stop, 0),
     ("xm_stop02.mag", "magic/STOP_2.mag", Kind::Stop, 1),
     ("xm_stop03.mag", "magic/STOP_3.mag", Kind::Stop, 2),
+    // KH1 has one Aero file for the three levels (the level is the command's).
+    ("xm_air01.mag", "magic/AERO_1.mag", Kind::Aero, 0),
+    ("xm_air01.mag", "magic/AERO_2.mag", Kind::Aero, 1),
+    ("xm_air01.mag", "magic/AERO_3.mag", Kind::Aero, 2),
 ];
 
 /// The KH2 file a spell's file is built on: its own, or for a spell KH2 doesn't have, the KH2
 /// spell cast on the same motions (Gravity: Blizzard's, KH1's 55 / 80), whose script, elements and
 /// effects stay in the file unused (our script takes every sub).
 pub fn kh2_base(kh2_name: &str) -> String {
-    kh2_name.replace("GRAVITY", "BLIZZARD").replace("STOP", "THUNDER")
+    kh2_name.replace("GRAVITY", "BLIZZARD").replace("STOP", "THUNDER").replace("AERO", "THUNDER")
 }
 
 /// A spell KH2 doesn't have: our script for every sub, the Drive Forms too (owner, 2026-11-14).
 pub fn kh1_only(kind: Kind) -> bool {
-    matches!(kind, Kind::Gravity | Kind::Stop)
+    matches!(kind, Kind::Gravity | Kind::Stop | Kind::Aero)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,6 +180,7 @@ pub enum Kind {
     Cure,
     Gravity,
     Stop,
+    Aero,
 }
 
 /// KH2's own spell file (`kh2`, `magic/<SPELL>_n.mag`) with KH1's spell added (`kh1`, the matching
@@ -319,6 +324,24 @@ pub mod stop {
     pub const LOOK_FROM: f32 = 2.0;
 }
 
+/// KH1's Aero (`xm_air01.mag`, all levels; KH1-in-ReCom §7.10, Checked (files + decomp) there).
+pub mod aero {
+    /// The cast: up to 30 frames while the cast motion plays, at once when it changes.
+    pub const CAST_FRAMES: f32 = 30.0;
+    /// The lasting barrier look from 24 frames after the cast.
+    pub const LOOK_AFTER: f32 = 24.0;
+    /// The barrier: (18 + max MP bars) × 60 frames (KH1 `0x1402BEEE0` element 12).
+    pub const BASE: f32 = 18.0;
+    /// Aerora / Aeroga's wind: radius 80 (× Sora's size, 1), struck again every 30 frames.
+    pub const WIND_RADIUS: f32 = 80.0;
+    pub const WIND_EVERY: f32 = 30.0;
+    /// The barrier strike on Sora (type 9 of ours: KH2's per-object timer on him; his damage
+    /// taken halved while it runs; the hook leaves his max MP bars in the attack's `+0xB0`,
+    /// read back by `trap_attack_get_reflect_count`) and the wind's attack.
+    pub const ATKP: i32 = 2068;
+    pub const WIND_ATKP: i32 = 2069;
+}
+
 /// KH1's Cure (`xm_cure0n.mag`, the same in all three files, Checked (files); KH1-in-ReCom §7.7).
 pub mod cure {
     /// KH2's Cure heal on the caster (ATKP 708, kind 6: heals by Magic; rows by the sub; Checked
@@ -382,6 +405,9 @@ pub fn elements(kind: Kind, kh1: u16) -> Vec<Element> {
         // the release (on the Keyblade's tip, Assumption), 2 the look on each stopped enemy
         // (bound to it). Thunder's cast sound stands in.
         Kind::Stop => vec![el(CAST, 0, 0x4001, 0x2A1, 0, 126), el(HAND, 1, 0x4003, 0x2A1, 0, -1), el(MARK, 2, 0, 0x2A1, 0, -1)],
+        // KH1 Aero: 0 the charge, 1 the cast aura at Sora, 2 the lasting barrier and 12 the wind
+        // (both on Sora's body centre: KH1 bone 32770, Assumption).
+        Kind::Aero => vec![el(CAST, 0, 0x4003, 0x2A1, 0, 126), el(POINT, 1, 0, 0, 0, -1), el(SHOT, 2, 0x4001, 0x2A1, 0, -1), el(MARK, 12, 0x4001, 0x2A1, 0, -1)],
     }
 }
 
@@ -464,9 +490,12 @@ fn code(kind: Kind, level: usize, a: &mut Asm) {
     if kind == Kind::Stop {
         return stop_code(level.min(2), a);
     }
+    if kind == Kind::Aero {
+        return aero_code(level.min(2), a);
+    }
     cast_code(a, kind == Kind::Thunder, kind == Kind::Gravity);
     match kind {
-        Kind::Stop => unreachable!(),
+        Kind::Stop | Kind::Aero => unreachable!(),
         Kind::Gravity => gravity_code(level.min(2), a),
         Kind::Fire => fire_code(a),
         Kind::Blizzard => blizzard_code(level.min(2), a),
@@ -1038,6 +1067,83 @@ fn stop_code(level: usize, a: &mut Asm) {
     a.ret();
 }
 
+fn aero_code(level: usize, a: &mut Asm) {
+    use Mode::*;
+    // Trigger 20 (KH1 `0x4C4..0x674`): the charge; up to 30 frames while the cast motion plays;
+    // then (or at once when it changes: never dropped) the cast.
+    a.label("cast").pop(Sp, 0).pop(Sp, 4).pop(Sp, 8).pop(Sp, 12);
+    a.push_v(Sp, 12).memcpy(Wp, 16, W_CASTER);
+    a.push_v(Sp, 8).pop(Wp, W_RES);
+    a.push_v(Sp, 4).pop(Wp, W_SUB);
+    a.push_v(Sp, 0).pop(Wp, W_MAGI);
+    a.push_a(Wp, W_CASTER).push_dpop(4).sys("trap_sysobj_motion_id").pop(Wp, W_MOTION);
+    a.push_v(Wp, W_RES).push_i(CAST).push_a(Wp, W_CASTER).push_i(1).push_i(0).sys("trap_pax_start_bind").pop(Wp, W_CAST_FX);
+    a.push_f(aero::CAST_FRAMES).pop(Sp, 16);
+    a.label("ae_wait").halt();
+    a.push_a(Wp, W_CASTER).push_dpop(4).sys("trap_sysobj_motion_id").push_v(Wp, W_MOTION).bin("sub").un("seqz").beqz("ae_cast");
+    a.push_v(Sp, 16).sys("trap_frametime").bin("sub.s").pop(Sp, 16);
+    a.push_v(Sp, 16).un("sgtz.s").bnez("ae_wait");
+    a.label("ae_cast");
+    // The aura at Sora; the barrier strike on him (KH2 computes the barrier, `kh2-hook`); his
+    // bars back from the attack; the barrier's frames.
+    a.push_v(Wp, W_RES).push_i(POINT).push_i(1).push_i(0).sys("trap_pax_start").pop(Sp, 4);
+    a.push_v(Sp, 4).push_a(Wp, W_CASTER).sys("trap_obj_pos").sys("trap_effect_set_pos");
+    new_block(a);
+    a.push_a(Wp, W_CASTER).push_i(aero::ATKP).push_i(-1).push_v(Wp, W_SUB).sys("trap_attack_new").pop(SpD, B_ATK);
+    a.push_v(SpD, B_ATK).push_a(Wp, W_CASTER).push_i(0).push_i(0).sys("trap_attack_strike");
+    a.push_v(SpD, B_ATK).sys("trap_attack_get_reflect_count").un("cvt.s.w").push_f(aero::BASE).bin("add.s").push_f(60.0).bin("mul.s").pop(SpD, B_SCRATCH);
+    a.push_v(SpD, B_ATK).sys("trap_attack_free");
+    a.push_v(Sp, 0).push_i(B_THREAD as i32).bin("add").push_pc("ae_barrier").push_v(Sp, 0).sys("trap_magic_start_thread").store();
+    a.ret();
+    // KH2's own release event (trigger 21): Aero is cast by the trigger above.
+    a.label("release").ret();
+
+    // The barrier's look (from 24 frames) and, from Aerora, the wind, while it lasts.
+    a.label("ae_barrier").pop(Sp, 0);
+    a.push_i(0).pop(SpD, B_FX).push_i(0).pop(SpD, B_EFFECT).push_i(0).pop(SpD, B_ATK);
+    a.push_f(0.0).pop(SpD, T_ORIGIN).push_f(0.0).pop(SpD, T_ORIGIN + 4);
+    if level > 0 {
+        a.push_v(Wp, W_RES).push_i(MARK).push_a(Wp, W_CASTER).push_i(1).push_i(0).sys("trap_pax_start_bind").pop(SpD, B_EFFECT);
+    }
+    a.label("ae_frame");
+    // The look, once, 24 frames in.
+    a.push_v(SpD, B_FX).bnez("ae_looked");
+    a.push_v(SpD, T_ORIGIN).push_f(aero::LOOK_AFTER).bin("sub.s").un("sltz.s").bnez("ae_looked");
+    a.push_v(Wp, W_RES).push_i(SHOT).push_a(Wp, W_CASTER).push_i(1).push_i(0).sys("trap_pax_start_bind").pop(SpD, B_FX);
+    a.label("ae_looked");
+    if level > 0 {
+        // The wind: a new attack every 30 frames (struck again), at Sora's body centre.
+        a.push_v(SpD, T_ORIGIN + 4).un("sgtz.s").bnez("ae_blow");
+        a.push_v(SpD, B_ATK).beqz("ae_fresh");
+        a.push_v(SpD, B_ATK).sys("trap_attack_free");
+        a.label("ae_fresh");
+        a.push_a(Wp, W_CASTER).push_i(aero::WIND_ATKP).push_i(-1).push_v(Wp, W_SUB).sys("trap_attack_new").pop(SpD, B_ATK);
+        a.push_v(SpD, B_ATK).push_v(Wp, W_RES).sys("trap_attack_set_pax");
+        a.push_v(SpD, B_ATK).push_f(aero::WIND_RADIUS).push_f(aero::WIND_RADIUS).sys("trap_attack_set_radius");
+        a.push_f(aero::WIND_EVERY).pop(SpD, T_ORIGIN + 4);
+        a.label("ae_blow");
+        for (o, v) in [(0, 0.0f32), (4, 0.0), (8, 0.0), (12, 1.0)] {
+            a.push_f(v).pop(SpD, B_DIR + o);
+        }
+        a.push_a(Wp, W_CASTER).push_i(cure::BONE).push_a(SpD, B_DIR).sys("trap_obj_apply_bone_matrix").memcpy(SpD, 16, B_POS);
+        a.push_v(SpD, B_ATK).push_a(SpD, B_POS).sys("trap_attack_set_pos");
+        a.push_v(SpD, T_ORIGIN + 4).sys("trap_frametime").bin("sub.s").pop(SpD, T_ORIGIN + 4);
+    }
+    a.push_v(SpD, T_ORIGIN).sys("trap_frametime").bin("add.s").pop(SpD, T_ORIGIN);
+    a.push_v(SpD, T_ORIGIN).push_v(SpD, B_SCRATCH).bin("sub.s").un("sltz.s").beqz("ae_over");
+    a.halt().b("ae_frame");
+    a.label("ae_over");
+    a.push_v(SpD, B_FX).beqz("ae_no_look");
+    a.push_v(SpD, B_FX).sys("trap_effect_loop_end");
+    a.label("ae_no_look");
+    if level > 0 {
+        a.push_v(SpD, B_EFFECT).sys("trap_effect_loop_end");
+        a.push_v(SpD, B_ATK).sys("trap_attack_free");
+    }
+    a.push_v(Sp, 0).sys("trap_memory_free");
+    a.ret();
+}
+
 fn cure_code(a: &mut Asm) {
     use Mode::*;
     // Trigger 21 (KH1's release, frame 36; `xm_cure01.mag` `0x56`): the heal struck straight onto
@@ -1181,6 +1287,9 @@ mod tests {
         pub(super) scales: Vec<(usize, i32, f32)>,
         /// Stop: each struck enemy stays stopped until this frame (KH2's stop, set by the hook).
         pub(super) stopped_until: HashMap<i32, usize>,
+        /// Attacks made: (frame, ATKP).
+        pub(super) made: Vec<(usize, i32)>,
+        pub(super) bound: Vec<(usize, i32)>,
     }
 
     impl World {
@@ -1211,6 +1320,8 @@ mod tests {
                 light: vec![],
                 scales: vec![],
                 stopped_until: HashMap::new(),
+                made: vec![],
+                bound: vec![],
             }
         }
 
@@ -1246,6 +1357,9 @@ mod tests {
                     self.radius.insert(args[0].i(), args[1].f());
                 }
                 "trap_pax_start_bind" | "trap_pax_start" => {
+                    if name == "trap_pax_start_bind" {
+                        self.bound.push((self.frame, args[1].i()));
+                    }
                     let h = self.handle();
                     self.fx_alive.insert(h, true);
                     self.fx_ids.insert(h, args[1].i());
@@ -1260,6 +1374,7 @@ mod tests {
                     self.fx_pos.insert(h, [p[0], p[1], p[2]]);
                 }
                 "trap_attack_new" => {
+                    self.made.push((self.frame, args[1].i()));
                     let h = self.handle();
                     self.groups.insert(h, h);
                     self.attacks.insert(h, vec![]);
@@ -1408,6 +1523,7 @@ mod tests {
                     self.fx_alive.insert(args[0].i(), false);
                 }
                 "trap_attack_free" => {}
+                "trap_attack_get_reflect_count" => args[0] = Cell::int(3),
                 "trap_obj_is_stop" => {
                     let o = vm.mem.u32(args[0].v + 4).unwrap() as i32;
                     args[0] = Cell::int(self.stopped_until.get(&o).is_some_and(|&u| self.frame < u) as i32)
@@ -1636,6 +1752,34 @@ mod tests {
     }
 
     #[test]
+    fn kh1_aero_barrier_and_wind_as_kh1s() {
+        for level in 0..3 {
+            let mut w = World::new(None, None);
+            w.motion_end = 100;
+            let w = cast_with(&script(Kind::Aero, level), 2 * level as i32, w);
+            // Cast at 30 (the cast motion still playing): the barrier strike on Sora.
+            assert_eq!(w.strikes.len(), 1);
+            assert_eq!(w.strikes[0].0, 30);
+            assert!(w.made.contains(&(30, aero::ATKP)));
+            // The look 24 frames after the cast.
+            assert!(w.bound.contains(&(30 + 24, SHOT)), "{:?}", w.bound);
+            // The wind from Aerora: a fresh attack every 30 frames from the cast, radius 80.
+            let winds: Vec<usize> = w.made.iter().filter(|m| m.1 == aero::WIND_ATKP).map(|m| m.0).collect();
+            if level == 0 {
+                assert!(winds.is_empty());
+            } else {
+                assert_eq!(winds, vec![30, 60, 90], "level {level}");
+                assert!(w.radius.values().all(|&r| r == aero::WIND_RADIUS));
+            }
+        }
+        // The cast motion cut at 12: cast at once (KH1 never drops Aero).
+        let mut w = World::new(None, None);
+        w.motion_end = 12;
+        let w = cast_with(&script(Kind::Aero, 0), 0, w);
+        assert_eq!(w.strikes[0].0, 12);
+    }
+
+    #[test]
     fn kh1_cure_heals_sora_as_kh1s() {
         let mut w = World::new(None, None);
         w.motion_end = 68;
@@ -1661,7 +1805,7 @@ mod tests {
     fn script_avoids_the_games_30_fps_patches() {
         // KH2 replaces some float pushes at fixed code positions (`kh2_bdx::vm::pc_patch`); none of
         // ours may sit there.
-        for kind in [Kind::Fire, Kind::Blizzard, Kind::Thunder, Kind::Cure, Kind::Gravity, Kind::Stop] {
+        for kind in [Kind::Fire, Kind::Blizzard, Kind::Thunder, Kind::Cure, Kind::Gravity, Kind::Stop, Kind::Aero] {
             for level in 0..3 {
                 let p = kh2_bdx::Program::parse(&script(kind, level)).unwrap();
                 let mut pc = (12 + 8 * (p.triggers.len() as u32 + 1)) / 2;

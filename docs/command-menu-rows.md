@@ -227,6 +227,29 @@ share, "(c) Everyone full"):
 - Every enemy KH2 lets be stopped takes KH1's full time (as Gravity: owner, "(c)"). Not yet:
   KH1 holds the hits a stopped enemy takes until Stop ends (KH2 lands them at once); KH1's sounds.
 
+## Step 4e: Aero (t83)
+
+- **KH1** (KH1-in-ReCom §7.10, Checked there; `xm_air01.mag`, one file for the three levels, our
+  disassembly agrees: effects 0 charge, 1 the aura, 2 the lasting barrier, 12 the wind on bone
+  32770): cast on Thunder's motions, up to 30 frames while the cast motion plays, at once when it
+  changes (never dropped); the barrier on Sora for (18 + max MP bars) × 60 frames, his damage
+  taken ÷ 2 (at least 1); the lasting look 24 frames after the cast; from Aerora a wind round his
+  body (radius 80) that strikes again every 30 frames while the barrier lasts.
+- **Built**: the barrier is a KH2 stop kind of ours with no flags (`0x21`): KH2 only counts it
+  down on Sora in his object update (no stop). ATKP 2068 (Cure's 708 rows, type 9 of ours) struck
+  on Sora: the damage function wrapper adds the kind for KH1's time with KH2's `0x14040A920`, deals
+  0, and leaves his max MP bars in the attack's `+0xB0` (KH2's `trap_attack_get_reflect_count`
+  reads it, `0x140432B50`: the script works the barrier's length out from it). Every later hit on
+  an object with the kind running is halved in the same wrapper (heals untouched). The wind: ATKP
+  2069 (Thunder's 250 rows, no element; KH2's damage until KH1's spell damage is ported), radius
+  80 at Sora's body centre each frame, a fresh attack every 30 frames. MAGC rows for element 8 on
+  Thunder's cast rows; `magic/AERO_1..3.mag` on KH2's `THUNDER_n.mag`.
+- Test VM: the cast at 30 (or at 12 when the motion is cut there), the barrier strike, the look 24
+  frames on, the wind every 30 frames from Aerora (none at Aero), radius 80.
+- Assumptions: KH2 resolves a strike's damage inside `trap_attack_strike` (so the bars are in
+  the attack when the script reads them); KH1's bone 32770 as KH2's body centre. Not yet: the
+  wind's KH1 damage (8 + 2 × bars), KH1's sounds.
+
 ## The plan (one step a version)
 
 1. (done, t77) Map every read and write of a submenu's tail (`+0x74`, `+0x78`) and every "submenu by number"
@@ -238,7 +261,7 @@ share, "(c) Everyone full"):
    KH2's ctor is left as it is (it runs once, before the move). The old inline area stays unused (a write there that was missed harms
    nothing). The HUD still takes 8 until step 3, so Magic keeps 8 until then.
 3. (done, t78) The HUD's levels to 16 slots (title + 12 rows + extras); rows past 8 place themselves.
-4. KH2's six magic elements to nine (`0x142A23A80` arrays and their loops: `0x1403C5170`, `0x1403C5440`,
+4. (done, t79–t83) KH2's six magic elements to nine (`0x142A23A80` arrays and their loops: `0x1403C5170`, `0x1403C5440`,
    `0x1403C5750`, `0x1403C5900`, `0x1403C5940`, `0x1403C5A90`, `0x1403C5C50`, `0x1403C5CE0`,
    `0x1403C5DC0`, `0x140025690`; the Magic list `+0xB68`), new MAGC / item / command rows, the
    spells, the menu order.
