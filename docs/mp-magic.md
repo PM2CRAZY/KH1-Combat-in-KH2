@@ -453,3 +453,23 @@ Built:
   part centre for KH1's bodies (as the impact); KH2 enemies have no KH1 get-up motion (0x67), so its
   ease runs until 0.95, then the +0.05 spring; a stop block holds 4 kinds (KH2's own limit).
 - Per frame: a 4-slot read per object tick; the height step only for squashed or flattened enemies.
+
+## t87: KH1's Fire re-picks a target (a ball cast with no target)
+
+KH1 (Checked (files + decomp), KH1-in-ReCom 7.4b; the three `xm_fire0n.mag` the same): each frame a
+ball **cast with no target** picks the best enemy within 500 of the ball (sys 78 → `0x1402B0E90`):
+score `d × (1 + 2 × (1 − cos))`, `cos` the clamped cosine between the ball's way and the way to the
+enemy (0 for a zero vector), the first in range taken and later ones only with a smaller score; it
+homes on it that frame (≤ 3°) and picks again next frame. A ball cast at a target flies straight once
+that target is dead (no pick).
+
+Built in the Fire script (KH2's VM runs it): at the release the ball keeps whether the cast had a
+target (`trap_target_is_exist` on the battle target's copy). Without one, each frame: KH2's target
+searcher (table 6, nearest first from the ball, as Thunder's list) lists the enemies; the first out of
+500 ends the list; KH1's score from `trap_vector_len` and the ball's unit way; the best one's position
+goes to the same homing as a targeted ball (`trap_vector_homing`, 3°). Test VM: turns toward an enemy
+ahead over a nearer one behind; nothing within 500 flies straight.
+
+- **Assumptions:** the enemy's part centre for KH1's actor position (as Thunder); KH2's battle target
+  that is already gone at the release counts as "no target" (KH1 would keep a dead argument and not
+  pick); exact score ties take the nearer (KH1: actor-array order).

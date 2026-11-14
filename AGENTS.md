@@ -1,3 +1,8 @@
+### 2026-11-14: Stage 87 (testing branch: KH1's Fire re-picks a target)
+- **Ask** (owner, 2026-11-14): "Make these all 1:1" (Fire: KH1's re-pick).
+- **Change**: `kh1_assets::spells` Fire: a ball cast with no target picks, each frame, KH1's best enemy within 500 of it (score d x (1 + 2(1 - cos)), the first taken, later ones only if smaller) from KH2's target searcher, and homes on it at KH1's 3 degrees; a ball cast at a target keeps KH2's / KH1's dead-target rule (straight on).
+- **Checked (files + decomp)**: KH1's pick (KH1-in-ReCom 7.4b, `0x1402B0E90`), the script's `L000fc` / `L0013e`. Test VM. **Assumption**: part centres for KH1's actor positions; a target already gone at the release counts as none.
+
 ### 2026-11-14: Stage 86 (testing branch: KH1's Gravity squash and flatten on KH2's enemies)
 - **Ask** (owner, 2026-11-14): "Make these all 1:1" (Gravity: KH1's effect under the falling sphere).
 - **Change**: KH1 has no slow there: it squashes (KH1-in-ReCom M7 f2, Checked (decomp + files)). `stop` table kinds 0x22 (under the sphere, no flags) and 0x23 (flattened, flag 1). The Gravity script marks every enemy within 170 x the sphere's scale each fall frame (`trap_obj_stop`, one frame). The Gravity hit (t85's deliveries) flattens through KH2's `0x1403B6730` (68 ground / 75 air by `0x1403BA9A0`); a reacting hit knocks it out. `win/squash.rs` wraps KH2's stop tick `0x14040A830`: KH1's height step (`squash.rs`) on the object's scale `+0x34`.

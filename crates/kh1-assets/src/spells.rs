@@ -229,6 +229,8 @@ pub mod fire {
     pub const FADE: f32 = 20.0;
     /// KH2's Fire attack (ATKP 502, its rows by the sub; Checked (files): `FIRE_1.mag`'s script).
     pub const ATKP: i32 = 502;
+    /// KH1's pick for a ball cast with no target: enemies within this of the ball (`0x1402B0E90`).
+    pub const PICK_RANGE: f32 = 500.0;
 }
 
 /// KH1's Blizzard (`xm_blizzard0n.mag`'s script, the same reading; KH1-in-ReCom's
@@ -586,10 +588,13 @@ fn fire_code(a: &mut Asm) {
     // Trigger 21, the cast event (KH1's release): from the Keyblade's middle, along his facing
     // (KH1 faces the target at the cast); the flash there; the ball's block and thread.
     release_point(a, MIDDLE, Some(0.0));
-    new_block(a);
+    new_block_of(a, T_BLOCK);
     a.push_v(Sp, 0).push_i(B_TARGET as i32).bin("add").push_v(Sp, 0).sys("trap_btlobj_target").sys("trap_target_dup").store();
     a.push_a(Wp, W_POINT).memcpy(SpD, 16, B_POS);
     a.push_a(Wp, W_FACING).memcpy(SpD, 16, B_DIR);
+    // KH1 re-picks only for a ball cast with no target (`L000fc`: the thread's target argument
+    // 0); a ball whose target dies flies straight on (`L0013e`).
+    a.push_v(SpD, B_TARGET).sys("trap_target_is_exist").un("seqz").pop(SpD, F_NO_TARGET);
     a.push_v(Sp, 0).push_i(B_THREAD as i32).bin("add").push_pc("ball").push_v(Sp, 0).sys("trap_magic_start_thread").store();
     a.ret();
 
@@ -607,10 +612,50 @@ fn fire_code(a: &mut Asm) {
     a.push_f(fire::LIFE).pop(Sp, 4).push_i(0).pop(Sp, 8);
     a.label("fly");
     a.push_v(Sp, 4).un("sgtz.s").beqz("ball_end");
+    a.push_v(SpD, F_NO_TARGET).bnez("pick");
     a.push_v(SpD, B_TARGET).sys("trap_target_is_exist").beqz("fade");
     a.push_v(SpD, B_TARGET).sys("trap_target_pos").memcpy(Sp, 16, 16);
+    a.label("home");
     a.push_a(Sp, 16).push_a(SpD, B_POS).sys("trap_vector_sub").memcpy(Sp, 16, 32);
     a.push_a(SpD, B_DIR).push_a(Sp, 32).push_f(fire::TURN).sys("trap_vector_homing");
+    a.b("fade");
+    // KH1's pick for a ball cast with no target (sys 78 → `0x1402B0E90`), this frame only: every
+    // enemy within 500 of the ball (KH2's target searcher, nearest first: the first out of reach
+    // ends the list), score d × (1 + 2 × (1 − cos)) with cos between the ball's way and the way to
+    // it (0 for a zero vector); the first taken, later ones only with a smaller score.
+    a.label("pick");
+    for k in 0..4u16 {
+        a.push_i(0).pop(SpD, T_FAKE + 4 * k);
+    }
+    a.push_a(SpD, T_SEARCH).push_i(T_HISTORY).sys("trap_target_searcher_init");
+    a.push_f(1.0e9).pop(SpD, T_SEARCH + 0x14);
+    a.push_i(0).pop(SpD, T_TRIES).push_f(-1.0).pop(SpD, F_BEST);
+    a.label("pick_next");
+    a.push_v(SpD, T_TRIES).push_i(T_HISTORY).bin("sub").un("sltz").beqz("picked");
+    a.push_v(SpD, T_TRIES).push_i(1).bin("add").pop(SpD, T_TRIES);
+    a.push_a(SpD, T_SEARCH).push_a(SpD, T_REC).push_a(SpD, B_POS).push_a(SpD, B_POS).push_i(1).push_i(0).push_i(1).sys("trap_target_seracher_search");
+    a.push_a(SpD, T_REC).sys("trap_target_is_exist").beqz("picked");
+    a.push_a(SpD, T_REC).sys("trap_target_pos").memcpy(SpD, 16, B_SCRATCH);
+    a.push_a(SpD, B_SCRATCH).push_a(SpD, B_POS).sys("trap_vector_sub").memcpy(Sp, 16, 32);
+    a.push_a(Sp, 32).sys("trap_vector_len").pop(Sp, 48);
+    a.push_v(Sp, 48).push_f(fire::PICK_RANGE).bin("sub.s").un("sltz.s").beqz("picked");
+    // cos: (dir · way) / d, 0 when d is 0, kept to [−1, 1].
+    a.push_f(0.0).pop(Sp, 52);
+    a.push_v(Sp, 48).un("sgtz.s").beqz("pick_cos");
+    a.push_v(SpD, B_DIR).push_v(Sp, 32).bin("mul.s").push_v(SpD, B_DIR + 4).push_v(Sp, 36).bin("mul.s").bin("add.s").push_v(SpD, B_DIR + 8).push_v(Sp, 40).bin("mul.s").bin("add.s");
+    a.push_v(Sp, 48).bin("div.s").pop(Sp, 52);
+    a.push_v(Sp, 52).push_f(1.0).bin("sub.s").un("sgtz.s").beqz("pick_lo").push_f(1.0).pop(Sp, 52);
+    a.label("pick_lo").push_v(Sp, 52).push_f(-1.0).bin("sub.s").un("sltz.s").beqz("pick_cos").push_f(-1.0).pop(Sp, 52);
+    a.label("pick_cos");
+    a.push_v(Sp, 48).push_f(3.0).push_v(Sp, 52).push_f(2.0).bin("mul.s").bin("sub.s").bin("mul.s").pop(Sp, 56);
+    a.push_v(SpD, F_BEST).un("sltz.s").bnez("pick_take");
+    a.push_v(Sp, 56).push_v(SpD, F_BEST).bin("sub.s").un("sltz.s").beqz("pick_next");
+    a.label("pick_take").push_v(Sp, 56).pop(SpD, F_BEST);
+    a.push_a(SpD, B_SCRATCH).memcpy(SpD, 16, T_ORIGIN);
+    a.b("pick_next");
+    a.label("picked");
+    a.push_v(SpD, F_BEST).un("sltz.s").bnez("fade");
+    a.push_a(SpD, T_ORIGIN).memcpy(Sp, 16, 16).b("home");
     a.label("fade").push_v(Sp, 8).bnez("move");
     a.push_v(Sp, 4).push_f(fire::FADE).bin("sub.s").un("sltz.s").beqz("move");
     a.push_v(SpD, B_FX).push_f(fire::FADE).push_i(1).sys("trap_effect_fadeout").push_i(1).pop(Sp, 8);
@@ -721,6 +766,9 @@ const T_SEARCH: u16 = 176;
 const T_HISTORY: i32 = 64;
 const T_LIST: u16 = 720;
 const T_BLOCK: i32 = 1216;
+/// Fire's ball: cast with no target; the best score this frame (−1 none).
+const F_NO_TARGET: u16 = T_I;
+const F_BEST: u16 = T_J;
 
 fn thunder_code(a: &mut Asm) {
     use Mode::*;
@@ -1488,6 +1536,10 @@ mod tests {
                     vm.mem.set_vec4(self.slot2, [0.0, -200.0, -300.0, 1.0]).unwrap();
                     args[0] = Cell::addr(self.slot2)
                 }
+                "trap_vector_len" => {
+                    let p = v(vm, args[0]);
+                    args[0] = Cell::float((p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt())
+                }
                 "trap_vector_normalize" => {
                     let p = v(vm, args[0]);
                     let l = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
@@ -1659,6 +1711,24 @@ mod tests {
             let turn = (a[0] * b[0] + a[1] * b[1]) / ((a[0].hypot(a[1])) * (b[0].hypot(b[1])));
             assert!(turn.clamp(-1.0, 1.0).acos() <= fire::TURN + 1e-4, "{k}");
         }
+    }
+
+    #[test]
+    fn kh1_fire_with_no_target_picks_as_kh1s() {
+        // Cast with no target: each frame KH1's best within 500 of the ball, d × (1 + 2(1 − cos)).
+        // 1 ahead and to the right at ~300, 2 just behind the start at 150 (nearer, but behind:
+        // score × 5), 3 far ahead out of reach. The ball turns right, toward 1.
+        let mut w = World::new(None, None);
+        w.enemies = vec![(1, [250.0, -100.0, 200.0], true), (2, [0.0, -100.0, -135.0], true), (3, [0.0, -100.0, 1500.0], true)];
+        let w = cast_with(&fire_script(), 0, w);
+        let p = w.positions();
+        assert!(p[10][0] > 5.0, "turned toward 1: {:?}", p[10]);
+        // Nothing within 500: straight.
+        let mut w = World::new(None, None);
+        w.enemies = vec![(3, [600.0, -100.0, 0.0], true)];
+        let w = cast_with(&fire_script(), 0, w);
+        let p = w.positions();
+        assert!(p[0][0].abs() < 1e-3, "{:?}", p[0]);
     }
 
     #[test]
