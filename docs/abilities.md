@@ -74,6 +74,22 @@ settings (`kh1_assets::build_text`).
 - Each KH1 ability does nothing yet when equipped: its move arrives in its own version (next:
   Sonic Blade).
 
+## Where KH1's specials will run (research for the next version)
+
+- KH2 already runs multi-part specials with Triangle follow-ups: Limit Form's Sonic Rave, Strike
+  Raid, Last Arcanum, Infinity (`cmd` 698 / 704 / 701 / 683, execute 707) and the party Limits
+  (execute 81). Sora's command run `0x140405440` sends both executes to `0x1403D8B40(limit id =
+  *(Sora +0xDD0) + 10, Sora)`: the command's `limt` row (`0x1403E7800`, table `0x142AE5690`, rows
+  of 64) makes a limit object (0x128 bytes, `0x1403D7FA0`) that runs the special, takes its MP
+  (`0x1403D3CF0`), and a second press sends that object event 0x17 (the follow-up; "Raid" is cmd
+  705). Checked (decomp + files).
+- Plan (native): each KH1 special is a `limt` row of ours with its own limit script and KH1's
+  motions, run by KH2's limit engine for base Sora; KH1's offer (range, MP, target) as a candidate
+  in KH2's reaction-command choice, below any real Reaction Command; KH1's follow-ups as the limit
+  object's own follow-up commands. To read next: the limit object's step and script loading
+  (`0x1403D7FA0`, `0x1403D9130`), the reaction-command choice, and the Drive fallback it already
+  offers with no object.
+
 ## Next versions (one system each)
 
 1. Sonic Blade: KH1's offer on Triangle in KH2's reaction-command slot, its rows, motions, damage.
