@@ -155,6 +155,28 @@ submenus (Checked (exe, emulated)); in-game: Assumption until tested.
   `0x142A23C68`: element, level, file name, item, command, motions) and their spell files with
   KH1's behaviour, one spell a version.
 
+## Step 4c: Gravity (in progress; plan and findings)
+
+- **Owner (2026-11-14, "a for now")**: the Drive Forms that cast magic cast Gravity, Stop and Aero
+  as base Sora does (KH1's version), so our spell files run KH1's script for every sub.
+- **KH1's Gravity** (KH1-in-ReCom `recom-m7-magic.md` §7.8, Checked (files + decomp) there; the
+  owner's `xm_gravity01..03.mag` disassembled here agree: entry `func_8cc(…, S, N)` with
+  (1, 60) / (1.5, 70) / (1.6, 60), `func_3ea`'s 170 / −230 / 0.01 / 80 / 20 / 1.02 / 28):
+  cast on Blizzard's motions (KH1 55 / 80, already on KH2's Blizzard rows 59 / 61 with the release
+  at 28, t69); charge effect 0 on the Keyblade; a marker (effect 2) 240 above the point for 28
+  frames (point: the target's part if alive, else the caster + 200 along his facing, the offset
+  taken at the cast); release: hand effect 1; the sphere (effect 3) from 240 above the point, 230
+  down over N frames, scale 0.01 → S; each frame enemies touching 170 × scale are slowed (time ×
+  0.8: not in KH2 yet); impact: one attack struck on every enemy touching 170 × S at the centre,
+  floor-contact effect 4 (near the floor) or 5, then a 20-frame fade growing × 1.02 a frame, then
+  killed. MP 100.
+- **Damage** (KH1 `0x1402BFA80`, element 8): current HP × (power + 5 × max MP bars)% × resist[8],
+  power 40 / 55 / 70; no Defence, no cap; at least 1. In KH2: KH2's damage function
+  `0x1403C12F0(target status, attacker, ATKP row, …)` (Checked (decomp): ATKP `+4` type (5, 6 the
+  heals), `+5` stat source, `+6` power, `+9` element; status `+0` HP, `+4` max HP, `+0x1A8 + e`
+  element resistances, `+0x1AE` general) gets a new ATKP type for Gravity, computed KH1's way by a
+  wrapper on that function. KH2's enemies have no Gravity resistance: owner question (bosses).
+
 ## The plan (one step a version)
 
 1. (done, t77) Map every read and write of a submenu's tail (`+0x74`, `+0x78`) and every "submenu by number"
