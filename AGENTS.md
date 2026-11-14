@@ -1,3 +1,8 @@
+### 2026-11-14: Stage 92 (testing branch: KH1's combo modifier motions in their pairs' motion slots)
+- **Ask** (owner, 2026-11-14): "Finish this phase" (Phase 5: KH1's abilities and specials).
+- **Change**: `kh1_assets::MODIFIERS`: with abilities = kh1 the asset build writes KH1's Sliding Dash (106), Vortex (109), Aerial Sweep (112), Hurricane Blast (107), Blitz (108), Ripple Drive (113), Stun Impact (114), Gravity Break (115), Zantetsuken (116) and Counterattack (111) into the paired KH2 abilities' motion slots (164, 163, 191, 192, 169, 166, 165, 167, 172, 171), each with KH1's hit, combo and trail windows and the slot's other KH2 triggers moved with the hit (swing_triggers, as the swings). The Config's Abilities row rebuilds.
+- **Checked (files)**: the slots (each only row id x 4); KH1's frames and windows (the owner's xa_ex_0010.mset, as KH1-in-ReCom's kh1_core); W_EX010 266,304 and P_EX100 (KH1 model) 2,582,224 under KH2's. **Assumption**: the KH2-skeleton build stays under KH2's size too (not run offline). Nothing picks these motions until the rows (next version).
+
 ### 2026-11-14: Stage 91 (testing branch: No KH2 combo modifiers or finishers at abilities = kh1)
 - **Ask** (owner, 2026-11-14): "With abilities set to KH1 I don't want to see any KH2 combo modifiers or finishers at all".
 - **Change**: `kh1_assets::abilities::HIDDEN`: Slapshot, Horizontal Slash, Aerial Dive, Combo Boost, Air Combo Boost, Finishing Plus, Negative Combo, Berserk Charge. `win/abilities.rs` wraps KH2's ability screen list build `0x140360920` (ids 0 for the call) and the ability block build `0x1404014A0` (equipped bit clear for the call), both putting Sora's entries back after; their AP is 0 in the KH1 item table. The save keeps them; at kh2 everything is back.

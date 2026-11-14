@@ -283,6 +283,25 @@ pub fn cast_at(row: usize) -> Option<(&'static [(i16, i16)], i16)> {
     CASTS.iter().find(|c| c.0 == row).map(|c| (c.2, c.3))
 }
 
+/// KH1's combo modifiers and Counterattack in their KH2 pairs' motion slots (`abilities = kh1`,
+/// `docs/abilities.md` t92): KH2 motion id ← KH1 motion. Each KH2 slot is the paired KH2 ability's
+/// own motion (its `ptya` row's, Checked (files): Slide Dash 164, Dodge Slash 163, Aerial Sweep
+/// 191, Aerial Spiral 192, Flash Step 169, Explosion 166, Guard Break 165, Finishing Leap 167,
+/// Retaliating Slash 172, Counterguard 171; each only row `id × 4` holds a motion). KH1's motions
+/// by its request (`0xC8 + n` → motion `98 + n`, Checked (files) in KH1-in-ReCom's `kh1_core::data`):
+/// Sliding Dash 208 → 106, Vortex 211 → 109, Aerial Sweep 214 → 112, Hurricane Blast 209 → 107,
+/// Blitz 210 → 108, Ripple Drive 215 → 113, Stun Impact 216 → 114, Gravity Break 217 → 115,
+/// Zantetsuken 218 → 116, Counterattack 213 → 111. Each slot keeps its KH2 triggers moved to
+/// KH1's hit, as the swings' (`swing_triggers`).
+pub const MODIFIERS: [(usize, usize); 10] = [(164, 106), (163, 109), (191, 112), (192, 107), (169, 108), (166, 113), (165, 114), (167, 115), (172, 116), (171, 111)];
+
+static ABILITIES_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether builds write [`MODIFIERS`] (`abilities = kh1`).
+pub fn select_kh1_abilities(on: bool) {
+    ABILITIES_ON.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
 static CASTS_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Whether the next `select_kh1_slots` takes KH1's casts (`magic = kh1`).
@@ -395,6 +414,9 @@ pub fn select_kh1_slots(swings: bool, guard: bool, moves: bool) {
     }
     if CASTS_ON.load(std::sync::atomic::Ordering::Relaxed) {
         v.extend(CASTS.iter().map(|c| (c.0, c.1)));
+    }
+    if ABILITIES_ON.load(std::sync::atomic::Ordering::Relaxed) {
+        v.extend(MODIFIERS.iter().map(|&(id, k)| (id * 4, k)));
     }
     if let Ok(mut s) = SLOTS.write() {
         *s = Some(v);
@@ -680,8 +702,10 @@ pub fn build_text(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>) -> Result<b
     Ok(true)
 }
 
-pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str, kh1_model: bool, kh1_swings: bool, kh1_guard: bool, kh1_moves: bool, kh1_casts: bool) -> Result<Option<Built>> {
+#[allow(clippy::too_many_arguments)]
+pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str, kh1_model: bool, kh1_swings: bool, kh1_guard: bool, kh1_moves: bool, kh1_casts: bool, kh1_abilities: bool) -> Result<Option<Built>> {
     select_kh1_casts(kh1_casts);
+    select_kh1_abilities(kh1_abilities);
     select_kh1_slots(kh1_swings, kh1_guard, kh1_moves);
     let kh1_swings = !kh1_slots().is_empty();
     let (root, mod_dir) = (root.as_ref(), mod_dir.as_ref());

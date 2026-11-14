@@ -173,7 +173,7 @@ pub fn switch(i: usize, on: bool) {
             _ => {}
         }
     }
-    if matches!(i, MOVEMENT | COMBOS | DEFENCE | MAGIC) {
+    if matches!(i, MOVEMENT | COMBOS | DEFENCE | MAGIC | ABILITIES) {
         let dir = MOD_PATH.lock().map(|g| g.clone()).unwrap_or_default();
         if !dir.is_empty() {
             std::thread::spawn(move || assets(&dir));
@@ -198,12 +198,12 @@ fn assets(mod_path: &str) {
         Ok(false) => {}
         Err(e) => log!("assets: our names not written ({e}); KH1's abilities and spells show no names"),
     }
-    use crate::settings::{kh1, COMBOS, DEFENCE, MAGIC, MOVEMENT};
-    let (combos, defence, movement, magic) = (kh1(COMBOS), kh1(DEFENCE), kh1(MOVEMENT), kh1(MAGIC));
+    use crate::settings::{kh1, ABILITIES, COMBOS, DEFENCE, MAGIC, MOVEMENT};
+    let (combos, defence, movement, magic, abilities) = (kh1(COMBOS), kh1(DEFENCE), kh1(MOVEMENT), kh1(MAGIC), kh1(ABILITIES));
     let model = BOOT_MODEL.load(Ordering::Relaxed);
-    if combos || model || defence || movement || magic {
+    if combos || model || defence || movement || magic || abilities {
         let t = std::time::Instant::now();
-        match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION, model, combos, defence, movement, magic) {
+        match kh1_assets::build_into(exe_dir(), &dir, crate::VERSION, model, combos, defence, movement, magic, abilities) {
             Ok(Some(b)) => {
                 log!("assets: built {} bytes into {} in {} ms: KH1 swings (KH1 motion, KH2 slot, frames) {:?}; model = {}", b.bytes, dir.join("obj").display(), t.elapsed().as_millis(), b.motions, if model { "kh1" } else { "kh2" });
                 for n in &b.notes {
@@ -224,7 +224,7 @@ fn assets(mod_path: &str) {
             let _ = std::fs::remove_dir_all(dir.join("remastered").join("obj").join("P_EX100.mdlx"));
             let _ = std::fs::remove_file(&stamp);
             kh1_assets::remove_spells(&dir);
-            log!("assets: combos, defence, movement, magic and model = kh2: our built files removed (KH2 loads its own)");
+            log!("assets: combos, defence, movement, magic, abilities and model = kh2: our built files removed (KH2 loads its own)");
         }
     }
 }

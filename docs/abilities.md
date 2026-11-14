@@ -89,6 +89,29 @@ Slapshot (262), Horizontal Slash (271), Aerial Dive (560), Combo Boost (390), Ai
 The save keeps the entries and their equipped bits; at `kh2` they are back as they were.
 Kept: Combo Plus, Air Combo Plus, Combo Master (KH1 has them).
 
+## t92: KH1's modifier motions in their pairs' motion slots
+
+`kh1_assets::MODIFIERS` (`abilities = kh1`, the asset build): each paired KH2 ability's own motion
+(its `ptya` row's; only row `id × 4` holds one, Checked (files)) holds KH1's motion, with KH1's hit,
+combo and trail windows and the slot's other KH2 triggers moved with the hit (`swing_triggers`, as
+the swings). Checked (files, the owner's `xa_ex_0010.mset`):
+
+| KH2 slot (pair) | KH1 motion (request) | frames | hit | combo window |
+|---|---|---|---|---|
+| 164 Slide Dash | 106 Sliding Dash (208) | 94 | 26–58 | 28–86 |
+| 163 Dodge Slash | 109 Vortex (211) | 76 | 18–42 | 38–66 |
+| 191 Aerial Sweep | 112 Aerial Sweep (214) | 56 | 6–28 | 20–44 |
+| 192 Aerial Spiral | 107 Hurricane Blast (209) | 76 | 4–54 | — |
+| 169 Flash Step | 108 Blitz (210) | 80 | 30–38 | — |
+| 166 Explosion | 113 Ripple Drive (215) | 100 | 34–46 | — |
+| 165 Guard Break | 114 Stun Impact (216) | 94 | 34–50 | — |
+| 167 Finishing Leap | 115 Gravity Break (217) | 66 | 32–38 | — |
+| 172 Retaliating Slash | 116 Zantetsuken (218) | 100 | 36–50 | — |
+| 171 Counterguard | 111 Counterattack (213) | 86 | 8–24 | 18–56 |
+
+Sizes with these (the owner's files, KH1 model): `W_EX010.mset` 266,304 and `P_EX100.mset`
+2,582,224, both under KH2's (270,224 / 2,611,760). Nothing picks these motions until t93.
+
 ## Where KH1's specials will run (research for the next version)
 
 - KH2 already runs multi-part specials with Triangle follow-ups: Limit Form's Sonic Rave, Strike
