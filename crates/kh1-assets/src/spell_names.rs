@@ -1,6 +1,8 @@
-//! Names for Gravity, Stop and Aero in KH2's own text (`msg/us/sys.bar`), built from the
-//! player's file: KH2's messages unchanged, ours added after them (ids past KH2's last, so the
-//! table stays sorted). Step 4 of `docs/command-menu-rows.md`.
+//! Our names in KH2's own text (`msg/us/sys.bar`), built from the player's file: KH2's messages
+//! unchanged, ours added after them (ids past KH2's last, so the table stays sorted). Gravity, Stop
+//! and Aero (step 4 of `docs/command-menu-rows.md`) and KH1's abilities (`docs/abilities.md`).
+//! Built at every launch whatever the settings (`crate::build_text`), so a switch in the Config
+//! menu finds them: KH2 reads this file once, at boot (Assumption).
 //!
 //! KH2's text (Checked (files): `msg/us/sys.bar`, its `sys` entry): `1`, a count, then (id,
 //! offset) pairs sorted by id, then 0-ended strings in KH2's own letters: `A`–`Z` from `0x2E`,
@@ -32,14 +34,25 @@ pub fn item_name(k: usize) -> u16 {
 pub fn item_description(k: usize) -> u16 {
     FIRST + 10 + 2 * k as u16
 }
+/// KH1's abilities ([`crate::abilities::PAIRS`]): name `FIRST + 0x20 + 2k`, description `+ 1`.
+pub fn ability_name(k: usize) -> u16 {
+    FIRST + 0x20 + 2 * k as u16
+}
+pub fn ability_description(k: usize) -> u16 {
+    FIRST + 0x21 + 2 * k as u16
+}
 
-/// KH2's letters for plain text (letters, space, `.`).
+/// KH2's letters for plain text (letters, digits, space, `.`, `-`, a new line). Checked (files):
+/// KH2's own descriptions (`-` `0x66`, digits from `0x90`, a new line `0x02`).
 pub fn encode(s: &str) -> Vec<u8> {
     s.chars()
         .map(|c| match c {
             'A'..='Z' => 0x2E + (c as u8 - b'A'),
             'a'..='z' => 0x9A + (c as u8 - b'a'),
+            '0'..='9' => 0x90 + (c as u8 - b'0'),
             '.' => 0x4F,
+            '-' => 0x66,
+            '\n' => 0x02,
             _ => 0x01,
         })
         .collect()
@@ -58,6 +71,10 @@ pub fn messages() -> Vec<(u16, Vec<u8>)> {
         let mut d = encode(text);
         d.extend_from_slice(TAIL);
         out.push((item_description(k), d));
+    }
+    for (k, a) in crate::abilities::PAIRS.iter().enumerate() {
+        out.push((ability_name(k), encode(a.name)));
+        out.push((ability_description(k), encode(a.description)));
     }
     out
 }
@@ -154,7 +171,7 @@ mod tests {
         m.extend([0x33, 0xA2, 0xAB, 0x9E, 0, 0x33, 0xA2, 0xAB, 0x9A, 0]);
         let t = add_to_table(&m).unwrap();
         let n = u32_at(&t, 4).unwrap() as usize;
-        assert_eq!(n, 2 + 15);
+        assert_eq!(n, 2 + 15 + 2 * crate::abilities::PAIRS.len());
         let get = |id: u32| {
             let i = (0..n).find(|&i| u32_at(&t, 8 + 8 * i) == Some(id)).unwrap();
             let o = u32_at(&t, 12 + 8 * i).unwrap() as usize;
@@ -165,6 +182,8 @@ mod tests {
         assert_eq!(get(0x5700), encode("Gravity"));
         assert_eq!(get(0x5708), encode("Aeroga"));
         assert!(get(0x570A).ends_with(TAIL));
+        assert_eq!(get(0x5720), encode("Sonic Blade"));
+        assert_eq!(get(ability_description(13) as u32), encode(crate::abilities::PAIRS[13].description));
         let ids: Vec<u32> = (0..n).map(|i| u32_at(&t, 8 + 8 * i).unwrap()).collect();
         assert!(ids.windows(2).all(|w| w[0] < w[1]));
         assert!(add_to_table(&t).is_none());
@@ -180,7 +199,7 @@ mod tests {
         let ((o1, s1), (o2, s2)) = (e(&bar), e(&out));
         let (a, b) = (&bar[o1..o1 + s1], &out[o2..o2 + s2]);
         let (na, nb) = (u32_at(a, 4).unwrap() as usize, u32_at(b, 4).unwrap() as usize);
-        assert_eq!(nb, na + 15);
+        assert_eq!(nb, na + messages().len());
         for i in 0..na {
             let (oa, ob) = (u32_at(a, 12 + 8 * i).unwrap() as usize, u32_at(b, 12 + 8 * i).unwrap() as usize);
             let za = a[oa..].iter().position(|&x| x == 0).unwrap();

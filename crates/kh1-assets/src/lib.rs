@@ -16,6 +16,7 @@ pub mod player_model;
 pub mod swing_triggers;
 pub mod spells;
 pub mod spell_names;
+pub mod abilities;
 pub mod kh1_records;
 
 use kh1_data::{Kh1Install, Source};
@@ -567,7 +568,7 @@ pub fn build_kh1_model(root: impl AsRef<Path>, kh1_swings: bool) -> Result<(Vec<
 /// the game's own list: Assumption, not checked).
 /// Each spell on its own: one that can't be built is noted and left to KH2's own file; nothing
 /// else in the build depends on it (t75's whole build stopped on one unreadable archive entry).
-/// KH2's English system text with the names of Gravity, Stop and Aero (`spell_names`).
+/// KH2's English system text with our names: Gravity, Stop, Aero, KH1's abilities (`spell_names`).
 pub const SPELL_NAMES_FILE: &str = "msg/us/sys.bar";
 /// KH2's system sound bank (bank 0: its spells' sounds; loaded at boot, Checked (exe): the path in
 /// `0x1401DC770`), built with KH1's spell sounds added (`kh2_formats::scd_merge`). It stays at
@@ -600,10 +601,6 @@ fn spell_sounds(kh1: &Kh1Install, kh2: &Kh2Install) -> Result<(Vec<u8>, Vec<(u16
 }
 
 fn build_spells(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, files: &mut Vec<(std::path::PathBuf, Vec<u8>)>, notes: &mut Vec<String>) {
-    match kh2.read(SPELL_NAMES_FILE).ok().and_then(|b| spell_names::add_to_bar(&b)) {
-        Some(b) => files.push((mod_dir.join(SPELL_NAMES_FILE), b)),
-        None => notes.push(format!("{SPELL_NAMES_FILE}: not read or not one we know; Gravity, Stop and Aero have no names")),
-    }
     let sounds = match spell_sounds(kh1, kh2) {
         Ok((bank, map)) => {
             notes.push(format!("{SOUND_BANK}: KH2's with KH1's {} spell sounds added ({} bytes)", map.len(), bank.len()));
@@ -662,7 +659,25 @@ pub fn remove_spells(mod_dir: &Path) {
         let _ = std::fs::remove_file(mod_dir.join(kh2_name));
         let _ = std::fs::remove_dir_all(mod_dir.join("remastered").join(kh2_name));
     }
-    let _ = std::fs::remove_file(mod_dir.join(SPELL_NAMES_FILE));
+}
+
+/// KH2's English system text with our names added (`spell_names`), written into the mod folder
+/// when it differs from what is there. Run at every launch, whatever the settings: the names are
+/// only shown at a KH1 setting, but KH2 reads the file once and a setting can change in the game.
+/// Returns whether it wrote the file.
+pub fn build_text(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>) -> Result<bool> {
+    let kh2 = Kh2Install::locate(root)?;
+    let bar = spell_names::add_to_bar(&kh2.read(SPELL_NAMES_FILE)?).ok_or_else(|| Error::Format(format!("{SPELL_NAMES_FILE}: not one we know")))?;
+    let path = mod_dir.as_ref().join(SPELL_NAMES_FILE);
+    if std::fs::read(&path).ok().as_deref() == Some(bar.as_slice()) {
+        return Ok(false);
+    }
+    let io = |e: std::io::Error| Error::Format(e.to_string());
+    std::fs::create_dir_all(path.parent().unwrap()).map_err(io)?;
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, &bar).map_err(io)?;
+    std::fs::rename(&tmp, &path).map_err(io)?;
+    Ok(true)
 }
 
 pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str, kh1_model: bool, kh1_swings: bool, kh1_guard: bool, kh1_moves: bool, kh1_casts: bool) -> Result<Option<Built>> {
@@ -683,7 +698,7 @@ pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &s
     if !kh1_casts {
         remove_spells(mod_dir);
     }
-    let spells_built = spells::SPELLS.iter().all(|s| mod_dir.join(s.1).is_file()) && mod_dir.join(SPELL_NAMES_FILE).is_file();
+    let spells_built = spells::SPELLS.iter().all(|s| mod_dir.join(s.1).is_file());
     if out.is_file() && mdlx.is_file() == kh1_model && blade.is_file() == kh1_swings && spells_built == kh1_casts && std::fs::read_to_string(&stamp_file).ok().as_deref() == Some(want.as_str()) {
         return Ok(None);
     }

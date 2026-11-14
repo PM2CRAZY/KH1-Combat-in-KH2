@@ -249,6 +249,7 @@ unsafe extern "system" fn loader() {
     let o: unsafe extern "system" fn() = std::mem::transmute(O_LOADER.load(Ordering::Acquire));
     o();
     super::menu_rows::extend_tables(BASE.load(Ordering::Relaxed));
+    super::abilities::extend(BASE.load(Ordering::Relaxed));
     LOADED.store(true, Ordering::Relaxed);
     SAVED_COMBOS.forget();
     SAVED_GUARD.forget();

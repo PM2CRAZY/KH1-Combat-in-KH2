@@ -13,6 +13,7 @@ mod hook;
 mod prty;
 mod menu_rows;
 mod gravity;
+mod abilities;
 mod held_hits;
 mod damage;
 mod squash;
@@ -167,6 +168,7 @@ pub fn switch(i: usize, on: bool) {
             DEFENCE => combo_tables::apply_guard(on),
             MP => mp::apply(on),
             MAGIC => combo_tables::apply_spells(on),
+            ABILITIES => abilities::apply(on),
             CAMERA => camera::apply(on),
             _ => {}
         }
@@ -190,6 +192,12 @@ fn assets(mod_path: &str) {
         return;
     }
     let dir = std::path::PathBuf::from(mod_path);
+    // Our names in KH2's text, whatever the settings (KH2 reads the file once; a switch may need them).
+    match kh1_assets::build_text(exe_dir(), &dir) {
+        Ok(true) => log!("assets: our names written into {}", kh1_assets::SPELL_NAMES_FILE),
+        Ok(false) => {}
+        Err(e) => log!("assets: our names not written ({e}); KH1's abilities and spells show no names"),
+    }
     use crate::settings::{kh1, COMBOS, DEFENCE, MAGIC, MOVEMENT};
     let (combos, defence, movement, magic) = (kh1(COMBOS), kh1(DEFENCE), kh1(MOVEMENT), kh1(MAGIC));
     let model = BOOT_MODEL.load(Ordering::Relaxed);

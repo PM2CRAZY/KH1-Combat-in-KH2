@@ -36,7 +36,8 @@ through KH2's magic system (`magc`), with Gravity, Stop and Aero built into it.
 
 ## Phase 5: abilities and specials
 KH1's Sonic Blade, Ars Arcanum, Strike Raid, Ragnarok and the other MP specials as KH2 commands;
-KH1's ability list as a swap of KH2's.
+KH1's ability list as a swap of KH2's. Plan, findings and versions: `docs/abilities.md` (t90: KH1's
+action abilities stand in their KH2 pairs' slots).
 
 ## Phase 6: camera and lock-on
 KH1's field camera and lock-on as KH2 camera modes, checked against traces.
