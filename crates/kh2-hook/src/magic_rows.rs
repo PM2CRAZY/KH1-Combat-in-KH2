@@ -99,6 +99,18 @@ pub const GRAVITY_TYPE: u8 = 7;
 /// KH1's Gravity powers (btltbl `0x6468` / `0x64D8` / `0x6548`, Checked (files) in KH1-in-ReCom).
 pub const GRAVITY_POWER: [u16; 3] = [40, 55, 70];
 const ATKP_TEMPLATE: u16 = 248;
+/// Stop's attack: Thunder's burst rows (250, every sub) with type `STOP_TYPE` (KH2's own stop on
+/// the struck object for KH1's time, in the damage function), no power, no reaction, no element.
+pub const STOP_ATKP: u16 = kh1_assets::spells::stop::ATKP as u16;
+pub const STOP_TYPE: u8 = 8;
+const STOP_ATKP_TEMPLATE: u16 = 250;
+/// KH2's stop kinds (`00battle.bin` `stop`, pointer `0x142AE59D8`: `1`, a count, rows of (`u16`
+/// id, `u16` flags) sorted by id, `bsearch`; Checked (decomp) `0x1403EED10`): an object's stop
+/// block (`+0x64C`: flags, then 4 (id, frames left) slots, `0x14040A920` / `0x14040A830`) ORs
+/// the flags of its ids; flag 1 is "stopped" (`0x14040A910`; the object update `0x1403BFD30`
+/// then skips its think and motion). KH1's Stop gets an id of its own (`STOP_ID`) with flag 1.
+pub const STOP_ID: u16 = 0x20;
+pub const STOP_FLAGS: u16 = 1;
 
 /// KH2's `atkp` table with Gravity's rows added.
 pub fn extend_atkp(t: &[u8]) -> Option<Vec<u8>> {
@@ -124,6 +136,17 @@ pub fn extend_atkp(t: &[u8]) -> Option<Vec<u8>> {
         out.extend_from_slice(&g);
         added += 1;
     }
+    for r in rows.iter().filter(|r| id(r) == STOP_ATKP_TEMPLATE) {
+        let mut g = r.to_vec();
+        g[2..4].copy_from_slice(&STOP_ATKP.to_le_bytes());
+        g[4] = STOP_TYPE;
+        g[6..8].copy_from_slice(&0u16.to_le_bytes());
+        g[9] = 0;
+        g[0x0A] = 0;
+        g[0x0B] = kh1_assets::spells::HIT_GROUP;
+        out.extend_from_slice(&g);
+        added += 1;
+    }
     if added == 0 {
         return None;
     }
@@ -143,13 +166,41 @@ pub fn gravity_damage(hp: i32, power: i32, bars: i32, general: u8) -> i32 {
     ((hp as i64 * (power + 5 * bars) as i64 / 100) as i32).max(1)
 }
 
+/// KH1's Stop time in KH2 frames (`0x1402BEEE0`, element 9: (2 + max MP bars) × 60 ×
+/// resist[9]; every enemy KH2 lets be stopped at KH1's full share, as Gravity, owner
+/// 2026-11-14; KH2's own "can't be stopped", object `+0x9B8` bit 2, still holds, `0x1403B6730`).
+pub fn stop_frames(bars: i32) -> f32 {
+    ((2 + bars) * 60) as f32
+}
+
+/// KH2's `stop` table with KH1's Stop kind added.
+pub fn extend_stop(t: &[u8]) -> Option<Vec<u8>> {
+    let n = count(t)?;
+    if t.len() < 8 + n * 4 {
+        return None;
+    }
+    let last = u16::from_le_bytes(t[8 + (n - 1) * 4..][..2].try_into().ok()?);
+    if last >= STOP_ID {
+        return None;
+    }
+    let mut out = t[..8 + n * 4].to_vec();
+    out.extend_from_slice(&STOP_ID.to_le_bytes());
+    out.extend_from_slice(&STOP_FLAGS.to_le_bytes());
+    out[4..8].copy_from_slice(&((n + 1) as u32).to_le_bytes());
+    Some(out)
+}
+
 /// MAGC (`00battle.bin` `magc`, pointer `0x142A23C68`, rows of `0x38` from `+8`; `0x1403C5DC0`
 /// takes an element's rows in order, the highest level the item count reaches; Checked
 /// (decomp)): `+0` element, `+1` level, `+2` world (0 any), `+4` file name (32), `+0x24` item,
 /// `+0x26` command, then the cast motions. Gravity's: Blizzard's base rows (KH1 casts Gravity on
 /// Blizzard's motions), element 6, `magic/GRAVITY_n.mag`, item 84, commands 797..799.
 pub const MAGC_ROW: usize = 0x38;
-const MAGC_TEMPLATE_ELEMENT: u8 = 1;
+/// The KH2 spell whose cast rows a new one takes (KH1 casts Gravity on Blizzard's motions, Stop
+/// on Thunder's).
+pub fn cast_like(element: u8) -> u8 {
+    if element == STOP { 2 } else { 1 }
+}
 
 pub fn extend_magc(t: &[u8], element: u8, file: &str, k: usize) -> Option<Vec<u8>> {
     let n = count(t)?;
@@ -162,7 +213,7 @@ pub fn extend_magc(t: &[u8], element: u8, file: &str, k: usize) -> Option<Vec<u8
     }
     let mut out = t[..8 + n * MAGC_ROW].to_vec();
     for level in 1..=3u8 {
-        let mut r = rows.iter().find(|r| r[0] == MAGC_TEMPLATE_ELEMENT && r[1] == level && r[2] == 0)?.to_vec();
+        let mut r = rows.iter().find(|r| r[0] == cast_like(element) && r[1] == level && r[2] == 0)?.to_vec();
         r[0] = element;
         let name = format!("magic/{file}_{level}.mag");
         r[4..0x24].fill(0);
@@ -234,6 +285,13 @@ mod tests {
         assert!(ids.windows(2).all(|w| w[0] <= w[1]));
         let g: Vec<_> = (0..count(&a).unwrap()).map(|i| &a[8 + i * 0x30..8 + (i + 1) * 0x30]).filter(|r| u16::from_le_bytes([r[2], r[3]]) == GRAVITY_ATKP).collect();
         assert_eq!(g.len(), 21);
+        let st: Vec<_> = (0..count(&a).unwrap()).map(|i| &a[8 + i * 0x30..8 + (i + 1) * 0x30]).filter(|r| u16::from_le_bytes([r[2], r[3]]) == STOP_ATKP).collect();
+        assert!(!st.is_empty() && st.iter().all(|r| r[4] == STOP_TYPE && r[0x0A] == 0));
+        let sp = extend_stop(&bget("stop")).unwrap();
+        assert_eq!(count(&sp), Some(16));
+        let m2 = extend_magc(&extend_magc(&bget("magc"), GRAVITY, "GRAVITY", 0).unwrap(), STOP, "STOP", 1).unwrap();
+        let last = &m2[8 + 41 * MAGC_ROW..8 + 42 * MAGC_ROW];
+        assert_eq!((last[0], last[1], u16::from_le_bytes([last[0x24], last[0x25]]), u16::from_le_bytes([last[0x26], last[0x27]]), i16::from_le_bytes([last[0x28], last[0x29]])), (7, 3, 85, 802, 62));
         assert!(g.iter().all(|r| r[4] == GRAVITY_TYPE && r[9] == 0));
         assert_eq!(u16::from_le_bytes([g[5][6], g[5][7]]), 70);
         let m = extend_magc(&bget("magc"), GRAVITY, "GRAVITY", 0).unwrap();

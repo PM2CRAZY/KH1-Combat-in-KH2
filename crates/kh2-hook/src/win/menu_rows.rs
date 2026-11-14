@@ -17,6 +17,7 @@ const CMD_TABLE: usize = 0x2A1_61E8;
 const ITEM_TABLE: usize = 0x2A2_5370;
 const ATKP_TABLE: usize = 0x2AE_57B0;
 const MAGC_TABLE: usize = 0x2A2_3C68;
+const STOP_TABLE: usize = 0x2AE_59D8;
 
 /// After KH2's table loader (`combo_tables`): its `cmd` and `item` tables copied with Gravity's,
 /// Stop's and Aero's rows (`crate::magic_rows`), KH2's pointers set to the copies. The copies are
@@ -44,10 +45,13 @@ pub unsafe fn extend_tables(base: usize) {
     // Gravity's MAGC rows only when its files are in the mod folder (KH2 loads the file of the
     // level Sora has; a missing one would fail).
     let dir = super::mod_path();
-    let gravity = (1..=3).all(|l| std::path::Path::new(&dir).join(format!("magic/GRAVITY_{l}.mag")).is_file());
-    let mut more: Vec<(usize, usize, Box<dyn Fn(&[u8]) -> Option<Vec<u8>>>, &str)> = vec![(ATKP_TABLE, crate::magic_rows::ATKP_ROW, Box::new(crate::magic_rows::extend_atkp), "atkp")];
-    if gravity {
-        more.push((MAGC_TABLE, crate::magic_rows::MAGC_ROW, Box::new(|t: &[u8]| crate::magic_rows::extend_magc(t, GRAVITY, "GRAVITY", 0)), "magc gravity"));
+    let built = |file: &str| (1..=3).all(|l| std::path::Path::new(&dir).join(format!("magic/{file}_{l}.mag")).is_file());
+    let mut more: Vec<(usize, usize, Box<dyn Fn(&[u8]) -> Option<Vec<u8>>>, &str)> =
+        vec![(ATKP_TABLE, crate::magic_rows::ATKP_ROW, Box::new(crate::magic_rows::extend_atkp), "atkp"), (STOP_TABLE, 4, Box::new(crate::magic_rows::extend_stop), "stop")];
+    for (k, (element, file)) in [(GRAVITY, "GRAVITY"), (STOP, "STOP"), (AERO, "AERO")].into_iter().enumerate() {
+        if built(file) {
+            more.push((MAGC_TABLE, crate::magic_rows::MAGC_ROW, Box::new(move |t: &[u8]| crate::magic_rows::extend_magc(t, element, file, k)), file));
+        }
     }
     for (at, row, f, what) in more {
         let p = (base + at) as *mut usize;
@@ -151,11 +155,13 @@ pub fn debug_spells() {
     if level == 0 || !APPLIED.load(Ordering::Relaxed) || !crate::settings::kh1(crate::settings::MAGIC) {
         return;
     }
-    let at = (BASE.load(Ordering::Relaxed) + ITEM_COUNTS + crate::magic_rows::SLOTS[0] as usize) as *mut u8;
-    unsafe {
-        if *at < level {
-            *at = level;
-            log!("debug: Gravity given at level {level} (new_spells)");
+    for (slot, name) in crate::magic_rows::SLOTS.iter().zip(["Gravity", "Stop", "Aero"]) {
+        let at = (BASE.load(Ordering::Relaxed) + ITEM_COUNTS + *slot as usize) as *mut u8;
+        unsafe {
+            if *at < level {
+                *at = level;
+                log!("debug: {name} given at level {level} (new_spells)");
+            }
         }
     }
 }

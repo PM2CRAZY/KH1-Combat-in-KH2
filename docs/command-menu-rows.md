@@ -203,6 +203,30 @@ share, "(c) Everyone full"):
   element resistances, `+0x1AE` general) gets a new ATKP type for Gravity, computed KH1's way by a
   wrapper on that function. KH2's enemies have no Gravity resistance: owner question (bosses).
 
+## Step 4d: Stop (t82)
+
+- **KH2 already has a stop** (Checked (decomp + exe)): an object's stop block at `+0x64C` (flags,
+  then 4 (kind, frames left) slots); `0x14040A920` adds a kind for a time, `0x14040A830` counts
+  them down in the object update `0x1403BFD30`, which skips the object's think and motion while
+  flag 1 is set (`0x1403BAAD0` → `0x14040A910`); the kinds' flags come from `00battle.bin`'s `stop`
+  table (pointer `0x142AE59D8`, `bsearch`, `0x1403EED10`). Scripts reach it through
+  `trap_obj_stop` / `trap_obj_is_stop` (table 6, 6 / 49); `0x1403B6730` refuses an object KH2
+  marks unstoppable (`+0x9B8` bit 2).
+- **Built**: KH1's Stop gets a kind of its own in that table (`0x20`, flag 1). ATKP 2067 (Thunder's
+  burst rows 250, every sub; type 8 of ours, no power, no reaction, no element): the damage
+  function wrapper (`win/gravity.rs`) stops the struck object with KH2's `0x1403B6730` for KH1's
+  (2 + max MP bars) × 60 frames and deals 0. MAGC rows for element 7 on Thunder's cast rows (KH1's
+  Stop cast motions 56 / 81), `magic/STOP_1..3.mag` on KH2's `THUNDER_n.mag`.
+- **Script** (KH1 `L00890`, `0x44..0x206`, `func_208`): wait 4, the charge (effect 0 on the body
+  centre); 24 frames of "still casting?" (cut: the charge fades over 4, nothing more); at 28 effect 1
+  and the strike thread (KH2's own release event at 30 is not used); the centre on the target if it
+  lives, else Sora; every enemy nearest first; in the cylinder (250 / 350 / 500 by level, ±300)
+  KH1's look (effect 2) bound to it and one strike, then 4 frames; the look ends when KH2's stop
+  ends. Test VM: strikes at 28 / 32 on the two in reach, none out of reach, too high or dead, the
+  looks ended, a cut cast fades at 20 and strikes nothing.
+- Every enemy KH2 lets be stopped takes KH1's full time (as Gravity: owner, "(c)"). Not yet:
+  KH1 holds the hits a stopped enemy takes until Stop ends (KH2 lands them at once); KH1's sounds.
+
 ## The plan (one step a version)
 
 1. (done, t77) Map every read and write of a submenu's tail (`+0x74`, `+0x78`) and every "submenu by number"

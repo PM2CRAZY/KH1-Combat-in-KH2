@@ -135,7 +135,7 @@ pub fn mag(name: &[u8; 4], pax: &[u8], bdx: &[u8]) -> Vec<u8> {
 /// KH2's `magic/<SPELL>_n.mag` is level n (its MAGC rows; the Drive Forms cast the same files,
 /// the sister's `drive-model.md`); KH1's `xm_<spell>0n.mag` likewise (Checked (files): the scripts
 /// differ only in the level's numbers, Blizzard's shard speed 20 / 30 / 40).
-pub const SPELLS: [(&str, &str, Kind, usize); 15] = [
+pub const SPELLS: [(&str, &str, Kind, usize); 18] = [
     ("xm_fire01.mag", "magic/FIRE_1.mag", Kind::Fire, 0),
     ("xm_fire02.mag", "magic/FIRE_2.mag", Kind::Fire, 1),
     ("xm_fire03.mag", "magic/FIRE_3.mag", Kind::Fire, 2),
@@ -151,18 +151,21 @@ pub const SPELLS: [(&str, &str, Kind, usize); 15] = [
     ("xm_gravity01.mag", "magic/GRAVITY_1.mag", Kind::Gravity, 0),
     ("xm_gravity02.mag", "magic/GRAVITY_2.mag", Kind::Gravity, 1),
     ("xm_gravity03.mag", "magic/GRAVITY_3.mag", Kind::Gravity, 2),
+    ("xm_stop01.mag", "magic/STOP_1.mag", Kind::Stop, 0),
+    ("xm_stop02.mag", "magic/STOP_2.mag", Kind::Stop, 1),
+    ("xm_stop03.mag", "magic/STOP_3.mag", Kind::Stop, 2),
 ];
 
 /// The KH2 file a spell's file is built on: its own, or for a spell KH2 doesn't have, the KH2
 /// spell cast on the same motions (Gravity: Blizzard's, KH1's 55 / 80), whose script, elements and
 /// effects stay in the file unused (our script takes every sub).
 pub fn kh2_base(kh2_name: &str) -> String {
-    kh2_name.replace("GRAVITY", "BLIZZARD")
+    kh2_name.replace("GRAVITY", "BLIZZARD").replace("STOP", "THUNDER")
 }
 
 /// A spell KH2 doesn't have: our script for every sub, the Drive Forms too (owner, 2026-11-14).
 pub fn kh1_only(kind: Kind) -> bool {
-    kind == Kind::Gravity
+    matches!(kind, Kind::Gravity | Kind::Stop)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -172,6 +175,7 @@ pub enum Kind {
     Thunder,
     Cure,
     Gravity,
+    Stop,
 }
 
 /// KH2's own spell file (`kh2`, `magic/<SPELL>_n.mag`) with KH1's spell added (`kh1`, the matching
@@ -296,6 +300,25 @@ pub mod gravity {
     pub const ATKP: i32 = 2066;
 }
 
+/// KH1's Stop (`xm_stop0n.mag`; KH1-in-ReCom §7.9, Checked (files + decomp) there; our
+/// disassembly agrees: `L00890`, `func_280`, `func_208`).
+pub mod stop {
+    /// The charge after 4 frames; the cast motion checked each frame for 24 more (cut: the charge
+    /// fades, no spell); the release at 28.
+    pub const CHARGE_AT: f32 = 4.0;
+    pub const CHECK: f32 = 24.0;
+    /// The cylinder round the target (else Sora): radius by level, ±300.
+    pub const RADIUS: [f32; 3] = [250.0, 350.0, 500.0];
+    pub const HALF_HEIGHT: f32 = 300.0;
+    /// Frames between enemies.
+    pub const BETWEEN: f32 = 4.0;
+    /// Our ATKP (type 8: KH2's own stop on the struck object for KH1's time, `kh2-hook`).
+    pub const ATKP: i32 = 2067;
+    /// KH1's Stop look on a stopped enemy is killed when KH2's stop ends; checked from this many
+    /// frames after the strike (KH2 applies the hit after the script's frame).
+    pub const LOOK_FROM: f32 = 2.0;
+}
+
 /// KH1's Cure (`xm_cure0n.mag`, the same in all three files, Checked (files); KH1-in-ReCom §7.7).
 pub mod cure {
     /// KH2's Cure heal on the caster (ATKP 708, kind 6: heals by Magic; rows by the sub; Checked
@@ -355,6 +378,10 @@ pub fn elements(kind: Kind, kh1: u16) -> Vec<Element> {
             el(POINT, 4, 0, 0, 0, -1),
             el(SHOT_B, 5, 0, 0, 0, -1),
         ],
+        // KH1 Stop: 0 the charge (KH1 on Sora's bone 12: the body centre here, Assumption), 1 at
+        // the release (on the Keyblade's tip, Assumption), 2 the look on each stopped enemy
+        // (bound to it). Thunder's cast sound stands in.
+        Kind::Stop => vec![el(CAST, 0, 0x4001, 0x2A1, 0, 126), el(HAND, 1, 0x4003, 0x2A1, 0, -1), el(MARK, 2, 0, 0x2A1, 0, -1)],
     }
 }
 
@@ -434,8 +461,12 @@ pub fn onto(kind: Kind, level: usize, kh2: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn code(kind: Kind, level: usize, a: &mut Asm) {
+    if kind == Kind::Stop {
+        return stop_code(level.min(2), a);
+    }
     cast_code(a, kind == Kind::Thunder, kind == Kind::Gravity);
     match kind {
+        Kind::Stop => unreachable!(),
         Kind::Gravity => gravity_code(level.min(2), a),
         Kind::Fire => fire_code(a),
         Kind::Blizzard => blizzard_code(level.min(2), a),
@@ -899,6 +930,114 @@ fn gravity_code(level: usize, a: &mut Asm) {
     a.ret();
 }
 
+fn stop_code(level: usize, a: &mut Asm) {
+    use Mode::*;
+    // Trigger 20 (KH1 `L00890`): wait 4; the charge; each frame for 24 the cast motion still
+    // playing (else the charge fades and nothing more); at 28 the release.
+    a.label("cast").pop(Sp, 0).pop(Sp, 4).pop(Sp, 8).pop(Sp, 12);
+    a.push_v(Sp, 12).memcpy(Wp, 16, W_CASTER);
+    a.push_v(Sp, 8).pop(Wp, W_RES);
+    a.push_v(Sp, 4).pop(Wp, W_SUB);
+    a.push_v(Sp, 0).pop(Wp, W_MAGI);
+    a.push_a(Wp, W_CASTER).push_dpop(4).sys("trap_sysobj_motion_id").pop(Wp, W_MOTION);
+    a.push_a(Wp, W_CASTER).sys("trap_btlobj_target").sys("trap_target_dup").pop(Wp, W_TARGET);
+    a.push_f(stop::CHARGE_AT).pop(Sp, 16);
+    a.label("st_wait").halt().push_v(Sp, 16).sys("trap_frametime").bin("sub.s").pop(Sp, 16);
+    a.push_v(Sp, 16).un("sgtz.s").bnez("st_wait");
+    a.push_v(Wp, W_RES).push_i(CAST).push_a(Wp, W_CASTER).push_i(1).push_i(0).sys("trap_pax_start_bind").pop(Wp, W_CAST_FX);
+    a.push_f(stop::CHECK).pop(Sp, 16);
+    a.label("st_check");
+    a.push_a(Wp, W_CASTER).push_dpop(4).sys("trap_sysobj_motion_id").push_v(Wp, W_MOTION).bin("sub").un("seqz").bnez("st_still");
+    a.push_v(Wp, W_CAST_FX).push_f(4.0).push_i(0).sys("trap_effect_fadeout");
+    a.push_v(Wp, W_TARGET).sys("trap_target_free");
+    a.ret();
+    // KH1: the check, the step, the frame's end; out of the loop the next frame (28).
+    a.label("st_still").push_v(Sp, 16).sys("trap_frametime").bin("sub.s").pop(Sp, 16);
+    a.halt();
+    a.push_v(Sp, 16).un("sgtz.s").bnez("st_check");
+    // The release: effect 1; the strike thread.
+    a.label("st_release");
+    a.push_v(Wp, W_RES).push_i(HAND).push_a(Wp, W_CASTER).push_i(1).push_i(0).sys("trap_pax_start_bind").drop();
+    new_block_of(a, T_BLOCK);
+    a.push_v(Sp, 0).push_i(B_THREAD as i32).bin("add").push_pc("st_strikes").push_v(Sp, 0).sys("trap_magic_start_thread").store();
+    a.ret();
+    // KH2's own release event (trigger 21, at KH1 Thunder's 30 on these motions): KH1's Stop
+    // released at 28 by itself.
+    a.label("release").ret();
+
+    // The strikes (KH1 `0x44..0x206`): the centre on the target if it lives, else Sora; every
+    // enemy nearest first (KH2's target searcher, one entry an enemy); down the list, each one in
+    // the cylinder gets KH1's look, bound to it, and one strike (ATKP 2067: KH2 stops it for
+    // KH1's time, `kh2-hook`), then 4 frames; one outside is passed over at once.
+    a.label("st_strikes").pop(Sp, 0);
+    a.push_v(Wp, W_TARGET).sys("trap_target_is_exist").beqz("st_alone");
+    a.push_v(Wp, W_TARGET).sys("trap_target_pos").memcpy(SpD, 16, B_POS).b("st_centred");
+    a.label("st_alone").push_a(Wp, W_CASTER).sys("trap_obj_pos").memcpy(SpD, 16, B_POS);
+    a.label("st_centred");
+    a.push_a(Wp, W_CASTER).push_i(stop::ATKP).push_i(-1).push_v(Wp, W_SUB).sys("trap_attack_new").pop(SpD, B_ATK);
+    a.push_v(SpD, B_ATK).push_v(Wp, W_RES).sys("trap_attack_set_pax");
+    a.push_v(SpD, B_ATK).push_a(SpD, B_POS).sys("trap_attack_set_pos");
+    for k in 0..4u16 {
+        a.push_i(0).pop(SpD, T_FAKE + 4 * k);
+    }
+    a.push_a(SpD, T_SEARCH).push_i(T_HISTORY).sys("trap_target_searcher_init");
+    a.push_f(1.0e9).pop(SpD, T_SEARCH + 0x14);
+    a.push_i(0).pop(SpD, T_TRIES).push_i(0).pop(SpD, T_N);
+    a.label("st_next");
+    a.push_v(SpD, T_TRIES).push_i(T_HISTORY).bin("sub").un("sltz").beqz("st_done");
+    a.push_v(SpD, T_TRIES).push_i(1).bin("add").pop(SpD, T_TRIES);
+    a.push_a(SpD, T_SEARCH).push_a(SpD, T_REC).push_a(SpD, B_POS).push_a(SpD, B_POS).push_i(1).push_i(0).push_i(1).sys("trap_target_seracher_search");
+    a.push_a(SpD, T_REC).sys("trap_target_is_exist").beqz("st_done");
+    a.push_i(0).pop(SpD, T_J);
+    a.label("st_dedupe");
+    a.push_v(SpD, T_J).push_v(SpD, T_N).bin("sub").un("sltz").beqz("st_new");
+    a.push_v(Sp, 0).push_i(T_LIST as i32).bin("add").push_v(SpD, T_J).push_i(4).bin("mul").bin("add").push_dpop(0);
+    a.push_v(SpD, T_REC).bin("sub").un("seqz").bnez("st_next");
+    a.push_v(SpD, T_J).push_i(1).bin("add").pop(SpD, T_J).b("st_dedupe");
+    a.label("st_new");
+    a.push_v(SpD, T_N).push_i(thunder::MAX).bin("sub").un("sltz").beqz("st_done");
+    a.push_v(Sp, 0).push_i(T_LIST as i32).bin("add").push_v(SpD, T_N).push_i(4).bin("mul").bin("add").push_v(SpD, T_REC).store();
+    a.push_v(SpD, T_N).push_i(1).bin("add").pop(SpD, T_N);
+    // In the cylinder (KH1 `sys 90` type 2 on its bodies: the part's centre here, Assumption)?
+    a.push_a(SpD, T_REC).sys("trap_target_pos").memcpy(SpD, 16, B_SCRATCH);
+    for (k, at) in [(0u16, 8u16), (8, 12), (4, 16)] {
+        a.push_v(SpD, B_SCRATCH + k).push_v(SpD, B_POS + k).bin("sub.s").pop(Sp, at);
+    }
+    let r = stop::RADIUS[level];
+    a.push_v(Sp, 8).push_v(Sp, 8).bin("mul.s").push_v(Sp, 12).push_v(Sp, 12).bin("mul.s").bin("add.s");
+    a.push_f(r * r).bin("sub.s").un("sgtz.s").bnez("st_next");
+    a.push_v(Sp, 16).un("abs.s").push_f(stop::HALF_HEIGHT).bin("sub.s").un("sgtz.s").bnez("st_next");
+    a.push_v(SpD, T_REC).pop(SpD, T_FAKE + 4);
+    // KH1's look on it, in a block of its own with its watcher.
+    a.push_i(32).sys("trap_memory_alloc").pop(Sp, 4);
+    for k in 0..4u16 {
+        a.push_v(Sp, 4).push_i(4 * k as i32).bin("add").push_v(SpD, T_FAKE + 4 * k).store();
+    }
+    a.push_v(Sp, 4).push_i(16).bin("add").push_v(Wp, W_RES).push_i(MARK).push_v(Sp, 4).push_i(1).push_i(0).sys("trap_pax_start_bind").store();
+    a.push_pc("st_look").push_v(Sp, 4).sys("trap_magic_start_thread").drop();
+    a.push_v(SpD, B_ATK).push_a(SpD, T_FAKE).push_i(0).push_i(0).sys("trap_attack_strike");
+    a.push_f(stop::BETWEEN).pop(Sp, 20);
+    a.label("st_between").halt().push_v(Sp, 20).sys("trap_frametime").bin("sub.s").pop(Sp, 20);
+    a.push_v(Sp, 20).un("sgtz.s").bnez("st_between");
+    a.b("st_next");
+    a.label("st_done");
+    a.push_v(SpD, B_ATK).sys("trap_attack_free");
+    a.push_v(Wp, W_TARGET).sys("trap_target_free");
+    a.push_v(Sp, 0).sys("trap_memory_free");
+    a.ret();
+
+    // A stopped enemy's look: from 2 frames on, while KH2 holds it stopped; then it ends.
+    a.label("st_look").pop(Sp, 0);
+    a.push_f(stop::LOOK_FROM).pop(Sp, 4);
+    a.label("st_look_wait").halt().push_v(Sp, 4).sys("trap_frametime").bin("sub.s").pop(Sp, 4);
+    a.push_v(Sp, 4).un("sgtz.s").bnez("st_look_wait");
+    a.label("st_look_on").push_v(Sp, 0).sys("trap_obj_is_stop").beqz("st_look_end");
+    a.halt().b("st_look_on");
+    a.label("st_look_end").push_v(SpD, 16).sys("trap_effect_loop_end");
+    a.push_v(Sp, 0).sys("trap_memory_free");
+    a.ret();
+}
+
 fn cure_code(a: &mut Asm) {
     use Mode::*;
     // Trigger 21 (KH1's release, frame 36; `xm_cure01.mag` `0x56`): the heal struck straight onto
@@ -1040,6 +1179,8 @@ mod tests {
         pub(super) strikes: Vec<(usize, i32)>,
         pub(super) light: Vec<(usize, &'static str, f32)>,
         pub(super) scales: Vec<(usize, i32, f32)>,
+        /// Stop: each struck enemy stays stopped until this frame (KH2's stop, set by the hook).
+        pub(super) stopped_until: HashMap<i32, usize>,
     }
 
     impl World {
@@ -1069,6 +1210,7 @@ mod tests {
                 strikes: vec![],
                 light: vec![],
                 scales: vec![],
+                stopped_until: HashMap::new(),
             }
         }
 
@@ -1233,6 +1375,7 @@ mod tests {
                 }
                 "trap_attack_strike" => {
                     let o = vm.mem.u32(args[1].v + 4).unwrap() as i32;
+                    self.stopped_until.insert(o, self.frame + 30);
                     self.strikes.push((self.frame, o));
                 }
                 "trap_vector_sub" => {
@@ -1265,6 +1408,10 @@ mod tests {
                     self.fx_alive.insert(args[0].i(), false);
                 }
                 "trap_attack_free" => {}
+                "trap_obj_is_stop" => {
+                    let o = vm.mem.u32(args[0].v + 4).unwrap() as i32;
+                    args[0] = Cell::int(self.stopped_until.get(&o).is_some_and(|&u| self.frame < u) as i32)
+                }
                 "trap_effect_set_scale" => {
                     let p = v(vm, args[1]);
                     self.scales.push((self.frame, args[0].i(), p[0]));
@@ -1306,14 +1453,17 @@ mod tests {
                 vm.run(r, &mut w).unwrap();
                 release = Some(r);
             }
-            for t in w.threads.clone() {
+            // Threads a thread starts run from the next frame (their argument is on their stack
+            // until then).
+            let ran = w.threads.clone();
+            for &t in &ran {
                 if !vm.ctxs[t].done && vm.run(t, &mut w).unwrap() != kh2_bdx::Status::Yield {
                     vm.ctxs[t].done = true;
                 }
             }
             // Every trap call took what it was given: nothing left on any value stack between frames.
-            for c in [cast].into_iter().chain(release).chain(w.threads.iter().copied()) {
-                assert!(vm.ctxs[c].tp.is_empty(), "frame {f}: {:?} left on context {c}", vm.ctxs[c].tp);
+            for c in [cast].into_iter().chain(release).chain(ran.iter().copied()) {
+                assert!(vm.ctxs[c].tp.is_empty(), "frame {f}: {:?} left on context {c} at pc {} ({})", vm.ctxs[c].tp, vm.ctxs[c].pc, kh2_bdx::disasm::decode(&vm.prog, vm.ctxs[c].pc.saturating_sub(1)).0);
             }
         }
         assert!(release.is_some());
@@ -1464,6 +1614,28 @@ mod tests {
     }
 
     #[test]
+    fn kh1_stop_stops_as_kh1s() {
+        for level in 0..3 {
+            let r = stop::RADIUS[level];
+            let mut w = World::new(Some([0.0, -80.0, 400.0]), None);
+            w.motion_end = 60;
+            // Nearest first from the target: 1 at it, 2 just in, 3 out of reach, 4 too high, 5 dead.
+            w.enemies = vec![(1, [0.0, -90.0, 400.0], true), (2, [r - 10.0, -90.0, 400.0], true), (3, [r + 10.0, -90.0, 400.0], true), (4, [0.0, -500.0, 400.0], true), (5, [5.0, -90.0, 400.0], false)];
+            let w = cast_with(&script(Kind::Stop, level), 2 * level as i32, w);
+            assert_eq!(w.strikes, vec![(28, 1), (32, 2)], "level {level}");
+            // KH1's look on each struck one, ended when its stop ends (30 frames here).
+            assert_eq!(w.started.len(), 0);
+            assert_eq!(w.loop_ended, 2);
+        }
+        // A cast cut before 28: the charge fades, nothing struck.
+        let mut w = World::new(Some([0.0, -80.0, 400.0]), None);
+        w.motion_end = 20;
+        w.enemies = vec![(1, [0.0, -90.0, 400.0], true)];
+        let w = cast_with(&script(Kind::Stop, 0), 0, w);
+        assert!(w.strikes.is_empty() && w.faded_at == Some(20));
+    }
+
+    #[test]
     fn kh1_cure_heals_sora_as_kh1s() {
         let mut w = World::new(None, None);
         w.motion_end = 68;
@@ -1489,7 +1661,7 @@ mod tests {
     fn script_avoids_the_games_30_fps_patches() {
         // KH2 replaces some float pushes at fixed code positions (`kh2_bdx::vm::pc_patch`); none of
         // ours may sit there.
-        for kind in [Kind::Fire, Kind::Blizzard, Kind::Thunder, Kind::Cure, Kind::Gravity] {
+        for kind in [Kind::Fire, Kind::Blizzard, Kind::Thunder, Kind::Cure, Kind::Gravity, Kind::Stop] {
             for level in 0..3 {
                 let p = kh2_bdx::Program::parse(&script(kind, level)).unwrap();
                 let mut pc = (12 + 8 * (p.triggers.len() as u32 + 1)) / 2;
