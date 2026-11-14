@@ -206,7 +206,26 @@ Checked (decomp) unless tagged:
   Sonic Blade, Checked (files) there), not in Sora's `xa_ex_0010.mset`: they need KH2 motion slots
   of their own (free ids, as the knock-downs' 20 / 21).
 
-Plan, one version each: (1) the specials' KH1 motions into free KH2 slots; (2) Sonic Blade: its
+- **The motion budget** (2026-11-14): Sora's `P_EX100.mset` can't take the specials' 35 KH1
+  motions: KH2 loads it into an area of `0x280000` bytes (t34, Assumption: `0x142A0F7B0`) and ours
+  is already 2,582,224 (KH2's own 2,611,760). KH1 swaps a separate motion set in for its specials.
+- **KH2's own vehicle for that: the limit files.** Each `limt` row (table `0x142AE5690`, 64 bytes)
+  names a file at `+4`, loaded from `limit/us/<name>` (`limit/%s/%s`, `limit/fm/%s`, Checked (exe
+  strings + the player's packages)): Limit Form's own `sonic_rave.bar`, `strike_raid.bar`,
+  `last_alcanam.bar`, `ragnarok.bar` (rows 0x15..0x18), the party Limits (`trinity.bar` …). A
+  party Limit's file (Checked (files), `trinity.bar`, 1,272,064 bytes): `limi` (type 3, its BDX
+  script), `LIMI` (type 20, a motion set of 258 entries whose filled ones, 252..257, are nested motion
+  sets of each member's motions: the same capture form KH2's Reaction Commands use), `limi` (type
+  18, its effects), the member lists `00` / `10`, `wave` / `se40` (its sounds), `comd` / `comb` /
+  `gage` (its command and gauge layouts). Limit Form's own four hold only their layouts (their
+  motions are the form's set).
+- So each KH1 special becomes a limit file of ours built from the player's files: KH1's `xl_limit`
+  motions in its nested motion set (loaded only for the special, outside Sora's budget), its KH1
+  logic as the file's BDX script on KH2's limit functions, KH1's effects and sounds later, run by a
+  `limt` row of ours from a `cmd` of ours (execute 0x51 / 0x2C3, `0x1403D8B40`), offered on Triangle
+  in `0x1404081C0`.
+
+Plan, one version each: (1) read KH2's limit file and its script interface (trinity / sonic_rave), then Sonic Blade's limit file with KH1's three `xl_limit` motions; (2) Sonic Blade: its
 `cmd` rows (Sonic, Rave, Blast), KH1's offer in `0x1404081C0`, a run for our execute in
 `0x140405440` (KH1's MP on the press, KH1's no-damage / no-reaction flags), its rows 0x1B..0x21 in
 Sora's set played by `0x1403D78D0`, the follow-up offered in the dash's combo window; (3) Strike
