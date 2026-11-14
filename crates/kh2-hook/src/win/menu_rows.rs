@@ -151,7 +151,11 @@ pub fn set_debug_spells(level: u8) {
 /// Each frame (debug only): Gravity's item count up to the debug level, once our rows are in,
 /// with `magic = kh1` (a save loaded later still gets it).
 pub fn debug_spells() {
-    if !APPLIED.load(Ordering::Relaxed) || !crate::settings::kh1(crate::settings::MAGIC) {
+    if !APPLIED.load(Ordering::Relaxed) {
+        return;
+    }
+    magic_menu_log();
+    if !crate::settings::kh1(crate::settings::MAGIC) {
         return;
     }
     earned_spells();
@@ -167,6 +171,44 @@ pub fn debug_spells() {
                 log!("debug: {name} given at level {level} (new_spells)");
             }
         }
+    }
+}
+
+static MAGIC_SEEN: std::sync::Mutex<Vec<u16>> = std::sync::Mutex::new(Vec::new());
+
+/// Diagnostic (the owner, t94: "on saves that are finished the magic submenu is a ?"): each time
+/// the command menu's Magic list (ours, `MAGIC_LIST`) or the Magic submenu's rows (submenu 1 in our
+/// slots: `+0x10` count, rows of 12 from `+0x14`, `+2` the command) change, their command ids and
+/// each command's message are logged. Reads only; a compare a frame.
+fn magic_menu_log() {
+    let mem = MEMORY.load(Ordering::Relaxed);
+    if mem == 0 {
+        return;
+    }
+    unsafe {
+        let list: Vec<u16> = (0..=ELEMENTS).map(|i| *((mem + MAGIC_LIST + 2 * i) as *const u16)).collect();
+        let sub = header(mem as u64, 1) as usize;
+        let n = (*((sub + 0x10) as *const u32)).min(12) as usize;
+        let rows: Vec<u16> = (0..n).map(|i| *((sub + 0x14 + 12 * i + 2) as *const u16)).collect();
+        let mut now = list.clone();
+        now.push(0xFFFF);
+        now.extend_from_slice(&rows);
+        let Ok(mut seen) = MAGIC_SEEN.lock() else { return };
+        if *seen == now {
+            return;
+        }
+        *seen = now;
+        let base = BASE.load(Ordering::Relaxed);
+        let cmd = *((base + CMD_TABLE) as *const usize);
+        let msg = |id: u16| -> i32 {
+            if cmd == 0 || id == 0 {
+                return 0;
+            }
+            let count = (*((cmd + 4) as *const i32)).clamp(0, 0x4000) as usize;
+            (0..count).map(|i| cmd + 8 + i * 0x30).find(|&r| *(r as *const u16) == id).map_or(-1, |r| *((r + 8) as *const i32))
+        };
+        let named = |v: &[u16]| v.iter().map(|&c| format!("{c}:{:#x}", msg(c))).collect::<Vec<_>>().join(" ");
+        log!("menu: Magic list [{}]; Magic submenu {n} rows [{}]", named(&list), named(&rows));
     }
 }
 

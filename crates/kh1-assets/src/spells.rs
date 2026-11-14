@@ -1078,11 +1078,27 @@ fn gravity_code(level: usize, a: &mut Asm) {
     a.ret();
 }
 
+/// A spell cast by its trigger-20 thread keeps that thread until KH2's release event (trigger 21,
+/// `W_RELEASED`) or the cast motion ends. KH2 frees a spell's record (`0x1403C55F0`, each frame)
+/// once its code has finished, but Sora keeps the record (`+0xDA0`, `0x1403A9DD0`) and his cast
+/// motion's magic-cast trigger (17) hands it to `0x1403C6150` at the release frame: a record freed
+/// before then is read freed (the owner's Aero crash, t94 log: `0x1403C6161`, from `0x14040DD70`
+/// case 0x11). Checked (decomp).
+fn hold_for_release(a: &mut Asm, l: &str) {
+    use Mode::*;
+    let end = format!("{l}_end");
+    a.label(l).push_v(Wp, W_RELEASED).bnez(&end);
+    a.push_a(Wp, W_CASTER).push_dpop(4).sys("trap_sysobj_motion_id").push_v(Wp, W_MOTION).bin("sub").bnez(&end);
+    a.halt().b(l);
+    a.label(&end).ret();
+}
+
 fn stop_code(level: usize, a: &mut Asm) {
     use Mode::*;
     // Trigger 20 (KH1 `L00890`): wait 4; the charge; each frame for 24 the cast motion still
     // playing (else the charge fades and nothing more); at 28 the release.
     a.label("cast").pop(Sp, 0).pop(Sp, 4).pop(Sp, 8).pop(Sp, 12);
+    a.push_i(0).pop(Wp, W_RELEASED);
     a.push_v(Sp, 12).memcpy(Wp, 16, W_CASTER);
     a.push_v(Sp, 8).pop(Wp, W_RES);
     a.push_v(Sp, 4).pop(Wp, W_SUB);
@@ -1108,10 +1124,10 @@ fn stop_code(level: usize, a: &mut Asm) {
     a.push_v(Wp, W_RES).push_i(HAND).push_a(Wp, W_CASTER).push_i(1).push_i(0).sys("trap_pax_start_bind").drop();
     new_block_of(a, T_BLOCK);
     a.push_v(Sp, 0).push_i(B_THREAD as i32).bin("add").push_pc("st_strikes").push_v(Sp, 0).sys("trap_magic_start_thread").store();
-    a.ret();
+    hold_for_release(a, "st_hold");
     // KH2's own release event (trigger 21, at KH1 Thunder's 30 on these motions): KH1's Stop
-    // released at 28 by itself.
-    a.label("release").ret();
+    // released at 28 by itself; this only lets the cast thread end (`hold_for_release`).
+    a.label("release").push_i(1).pop(Wp, W_RELEASED).ret();
 
     // The strikes (KH1 `0x44..0x206`): the centre on the target if it lives, else Sora; every
     // enemy nearest first (KH2's target searcher, one entry an enemy); down the list, each one in
@@ -1191,6 +1207,7 @@ fn aero_code(level: usize, a: &mut Asm) {
     // Trigger 20 (KH1 `0x4C4..0x674`): the charge; up to 30 frames while the cast motion plays;
     // then (or at once when it changes: never dropped) the cast.
     a.label("cast").pop(Sp, 0).pop(Sp, 4).pop(Sp, 8).pop(Sp, 12);
+    a.push_i(0).pop(Wp, W_RELEASED);
     a.push_v(Sp, 12).memcpy(Wp, 16, W_CASTER);
     a.push_v(Sp, 8).pop(Wp, W_RES);
     a.push_v(Sp, 4).pop(Wp, W_SUB);
@@ -1213,9 +1230,10 @@ fn aero_code(level: usize, a: &mut Asm) {
     a.push_v(SpD, B_ATK).sys("trap_attack_get_reflect_count").un("cvt.s.w").push_f(aero::BASE).bin("add.s").push_f(60.0).bin("mul.s").pop(SpD, B_SCRATCH);
     a.push_v(SpD, B_ATK).sys("trap_attack_free");
     a.push_v(Sp, 0).push_i(B_THREAD as i32).bin("add").push_pc("ae_barrier").push_v(Sp, 0).sys("trap_magic_start_thread").store();
-    a.ret();
-    // KH2's own release event (trigger 21): Aero is cast by the trigger above.
-    a.label("release").ret();
+    hold_for_release(a, "ae_hold");
+    // KH2's own release event (trigger 21): Aero is cast by the trigger above; it only lets the
+    // cast thread end (`hold_for_release`).
+    a.label("release").push_i(1).pop(Wp, W_RELEASED).ret();
 
     // The barrier's look (from 24 frames) and, from Aerora, the wind, while it lasts.
     a.label("ae_barrier").pop(Sp, 0);

@@ -1,3 +1,9 @@
+### 2026-11-14: Stage 95 (testing branch: Aero's crash: the spell record lives to the release)
+- **Ask** (owner, 2026-11-14): "Aero crashes the game, also on saves that are finished the magic submenu is a ?".
+- **Cause** (t94 log + decomp): KH2's magic-cast trigger (17) hands Sora's spell record (+0xDA0) to `0x1403C6150` at the release frame; KH2 frees a record once its spell's code has finished (`0x1403C55F0`) and never clears +0xDA0. KH1's Aero (and Stop) cast in their trigger-20 thread and ended it before the release frame: the record was read freed (`0x1403C6161`).
+- **Change**: `spells::hold_for_release`: Aero's and Stop's cast thread waits for KH2's release (trigger 21) or the end of the cast motion. `win/cast_guard.rs`: `0x1403C6150` (prologue 40 53 48 83 EC 20) runs only for a record in KH2's live list (0x142A23A70). Diagnostic: the Magic list and submenu rows (command ids, messages) logged when they change.
+- **Checked (decomp)**: the record, its list and free, the trigger. **Assumption**: the '?' needs the new log line to find (not reproduced here).
+
 ### 2026-11-14: Stage 94 (testing branch: KH1's modifiers hit at KH1's frames with KH1's damage)
 - **Ask** (owner, 2026-11-14): "Finish this phase".
 - **Change**: `swing_triggers::modifier`: in the modifier slots KH2's own attack windows on Sora (bursts, guard windows) and its no-hurt range go; where the Keyblade has no hit in the KH2 slot (Explosion, Finishing Leap, Counterguard) KH1's hit goes on Sora with the slot's own attack and group (Ripple Drive 34-46, Gravity Break 32-38, Counterattack 8-24). `kh1dmg::MODIFIER_ATKP` + `win/damage.rs`: at damage = kh1 and abilities = kh1 the slots' attacks (968, 1007, 909, 1131, 1896, 911, 876, 854, 1582, 1581) take KH1's rows: Sliding Dash, Vortex / Aerial Sweep, Hurricane Blast, Blitz, Ripple Drive (+ max MP x 3), Stun Impact (element 10), Gravity Break and Zantetsuken (% of HP), Counterattack.

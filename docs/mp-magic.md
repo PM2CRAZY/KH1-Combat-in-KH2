@@ -514,3 +514,21 @@ Built:
   build), its new ids fail through `SslSeCreate`'s own error path (silent).
 - **Not done:** KH1's spell voice at the command (`0x1402A3600`: voice group 7 + the spell, Sora's
   "Fire!"): KH2's cast motions still play KH2's own voice triggers.
+
+
+## t95: the Aero crash (a spell record read after KH2 freed it)
+
+The owner (2026-11-14): "Aero crashes the game". t94 log: `0x1403C6161` reading `0x6C7` (a handle
+resolved to −1), from `0x14040DD70` case 0x11: Sora's cast motion's magic-cast trigger (17) hands
+his spell record (`+0xDA0`, set at the cast by `0x1403A9DD0` → `0x1403C5170`, a 16-byte record
+`0x1403C4E90`: the spell's code, the caster, a live-list link `+0xC` from `0x142A23A70`) to
+`0x1403C6150`, which sends the spell its release (event 0x15 = trigger 21). KH2 frees a record each
+frame once its spell's code has finished (`0x1403C55F0`) and never clears `+0xDA0`. KH1's Aero and
+Stop cast in their trigger-20 thread (Aero at 30, Stop at 28) and that thread then ended before the
+release frame (30 on Thunder's cast rows): their record was freed and read freed. Checked (decomp).
+- `kh1_assets::spells::hold_for_release`: Aero's and Stop's cast thread now waits for KH2's release
+  (trigger 21 sets `W_RELEASED`) or the end of the cast motion before it ends, as KH2's own spells do.
+- `win/cast_guard.rs`: a guard on `0x1403C6150` runs KH2's function only for a record still in
+  KH2's live list (logged the first time it skips). Nothing changes for a live record.
+- Diagnostic for "on saves that are finished the magic submenu is a ?": `menu_rows::magic_menu_log`
+  logs the Magic list's and the Magic submenu's command ids and their messages whenever they change.

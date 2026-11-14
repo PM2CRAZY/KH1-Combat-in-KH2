@@ -14,6 +14,7 @@ mod prty;
 mod menu_rows;
 mod gravity;
 mod abilities;
+mod cast_guard;
 mod modifiers;
 mod held_hits;
 mod damage;
@@ -284,6 +285,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         combo_tables::install(base, model);
         menu_rows::install(base);
         abilities::install(base);
+        cast_guard::install(base);
         modifiers::install(base);
         gravity::install(base);
         damage::load(base, exe_dir());
