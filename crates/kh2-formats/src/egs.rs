@@ -191,7 +191,9 @@ impl Archive {
             let stored_len = r.i32()?;
             let real_len = r.i32()?;
             if offset < 0 || stored_len < 0 || real_len < 0 {
-                return bad("negative value in hed entry");
+                // An entry no file can be read through (seen: the owner's kh1_fifth.hed, one entry
+                // with real length 0xFDFDFDFD, stored length 0): passed, the rest of the archive kept.
+                continue;
             }
             entries.push(HedEntry { md5, offset: offset as u64, stored_len: stored_len as u32, real_len: real_len as u32 });
         }
@@ -430,6 +432,25 @@ impl Archive {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_unreadable_hed_entry_is_passed() {
+        // The owner's kh1_fifth.hed: one entry with real length 0xFDFDFDFD and stored length 0.
+        let dir = std::env::temp_dir().join(format!("hedtest{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut hed = Vec::new();
+        for (name, real) in [("a", 16i32), ("b", -33686019), ("c", 32)] {
+            hed.extend_from_slice(&name_hash(name));
+            hed.extend_from_slice(&0i64.to_le_bytes());
+            hed.extend_from_slice(&(if real < 0 { 0 } else { real }).to_le_bytes());
+            hed.extend_from_slice(&real.to_le_bytes());
+        }
+        let p = dir.join("x.hed");
+        std::fs::write(&p, &hed).unwrap();
+        let a = Archive::open(&p).unwrap();
+        assert!(a.find("a").is_some() && a.find("c").is_some() && a.find("b").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn index_read_once_until_it_changes() {
         let dir = std::env::temp_dir().join(format!("egs-cache-test-{}", std::process::id()));

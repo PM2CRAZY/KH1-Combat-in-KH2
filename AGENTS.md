@@ -1,3 +1,10 @@
+### 2026-11-14: Stage 76 (testing branch: The asset build survives an unreadable archive entry)
+The owner (2026-11-14): "sora's animations and model have reverted to KH2 animations for some reason". His t75 log: assets: could not build: negative value in hed entry.
+
+- Cause (Checked (files)): kh1_fifth.hed entry 660 has stored length 0, real length 0xFDFDFDFD; t70's spell step searches KH1's archives past the ones Sora's files sit in, and the hed reader refused the whole archive, so the whole build stopped (no KH1 model or motions).
+- kh2_formats::egs: such an entry is passed, the rest of the archive read (tested).
+- kh1_assets: each spell built on its own; one that fails is a log note and KH2's own file stays; the rest of the build never depends on it.
+
 ### 2026-11-13: Stage 75 (testing branch: Phase 4: KH1's Cure inside KH2's own Cure)
 The owner: "perfect finish phase 4 now".
 

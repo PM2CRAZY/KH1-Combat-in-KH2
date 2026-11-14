@@ -563,8 +563,21 @@ pub fn build_kh1_model(root: impl AsRef<Path>, kh1_swings: bool) -> Result<(Vec<
 /// Panacea source: `ScanRemasteredFolder` sorts a mod's files and uses them when there are as many as
 /// the file's textures). Without KH1's HD textures for a set, none are written (Panacea then gives
 /// the game's own list: Assumption, not checked).
-fn build_spells(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, files: &mut Vec<(std::path::PathBuf, Vec<u8>)>, notes: &mut Vec<String>) -> Result<()> {
+/// Each spell on its own: one that can't be built is noted and left to KH2's own file; nothing
+/// else in the build depends on it (t75's whole build stopped on one unreadable archive entry).
+fn build_spells(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, files: &mut Vec<(std::path::PathBuf, Vec<u8>)>, notes: &mut Vec<String>) {
     for (kh1_name, kh2_name, kind, level) in spells::SPELLS {
+        let mut one = Vec::new();
+        match build_spell(kh1, kh2, mod_dir, kh1_name, kh2_name, kind, level, &mut one, notes) {
+            Ok(()) => files.extend(one),
+            Err(e) => notes.push(format!("{kh2_name}: KH1's {kh1_name} not built ({e}); KH2's own kept")),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_spell(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, kh1_name: &str, kh2_name: &str, kind: spells::Kind, level: usize, files: &mut Vec<(std::path::PathBuf, Vec<u8>)>, notes: &mut Vec<String>) -> Result<()> {
+    {
         let src = kh1.read(Source::Original, kh1_name)?;
         let set = spells::kh1_effect_set(&src).ok_or_else(|| Error::Format(format!("{kh1_name}: no effect set")))?;
         let own = kh2.read(kh2_name)?;
@@ -625,7 +638,10 @@ pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &s
     let mut files: Vec<(std::path::PathBuf, Vec<u8>)> = Vec::new();
     let mut notes = Vec::new();
     if kh1_casts {
-        build_spells(&Kh1Install::locate(root)?, &Kh2Install::locate(root)?, mod_dir, &mut files, &mut notes)?;
+        match (Kh1Install::locate(root), Kh2Install::locate(root)) {
+            (Ok(kh1), Ok(kh2)) => build_spells(&kh1, &kh2, mod_dir, &mut files, &mut notes),
+            (a, b) => notes.push(format!("spells not built: {:?} {:?}", a.err(), b.err())),
+        }
     }
     if kh1_swings {
         // The Keyblade's hit windows and trail at KH1's times (`swing_triggers`), same motions.

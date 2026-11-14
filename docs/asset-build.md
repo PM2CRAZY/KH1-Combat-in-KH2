@@ -218,3 +218,13 @@ helpers with them. Not compared with KH1's own pose in game yet.
   - After: KH1's swings lean median 35° / 95th percentile 60° (KH2's), hip bend 97° / 135°. Arms,
     timing, travel and hit frames are unchanged. Edges stretch 16–23 at the deepest frames (KH2's
     own A300: 13).
+
+## t76: one unreadable archive entry no longer stops the build
+
+The owner's t75 log: `assets: could not build: negative value in hed entry`, so nothing was built and
+Sora was back on KH2's model and motions. The owner's `kh1_fifth.hed` has one entry (index 660) with
+stored length 0 and real length `0xFDFDFDFD` (Checked (files): every `.hed` of the install scanned;
+`Recom.hed` has 76 such, every KH2 archive none). t70's spell step was the first to search KH1's
+archives past the ones Sora's own files sit in, and the reader refused the whole archive. Now such an
+entry is passed and the rest of the archive read (`kh2_formats::egs`, tested), and each spell is built
+on its own: one that fails is noted in the log and KH2's own file kept, never the rest of the build.
