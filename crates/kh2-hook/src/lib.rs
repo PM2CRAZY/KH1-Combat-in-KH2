@@ -18,11 +18,12 @@ pub mod kh1cam;
 pub mod menu_rows;
 pub mod magic_rows;
 pub mod held_hits;
+pub mod squash;
 pub mod settings;
 
 /// The mod's version as the user sees it (the log): the stage of the latest `AGENTS.md` entry,
 /// bumped with every change to the source (a test checks). `t` for the testing branch.
-pub const VERSION: &str = "t85";
+pub const VERSION: &str = "t86";
 
 #[cfg(all(windows, target_arch = "x86_64"))]
 mod win;

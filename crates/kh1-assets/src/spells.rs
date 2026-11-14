@@ -303,6 +303,10 @@ pub mod gravity {
     /// Our ATKP (KH2's last is 2065, Checked (files)): `kh2-hook::magic_rows` adds its rows,
     /// a KH2 attack type of ours (7) for KH1's % of HP.
     pub const ATKP: i32 = 2066;
+    /// KH1's mark on an enemy under the falling sphere (`+0x88 |= 4`, each fall frame): a KH2 stop
+    /// kind of ours with no flags, one frame long (`kh2-hook` `magic_rows::SQUASH_ID` and its
+    /// height step on KH2's stop tick).
+    pub const SQUASH_KIND: i32 = 0x22;
 }
 
 /// KH1's Stop (`xm_stop0n.mag`; KH1-in-ReCom §7.9, Checked (files + decomp) there; our
@@ -895,6 +899,31 @@ fn gravity_code(level: usize, a: &mut Asm) {
     }
     a.push_v(SpD, B_FX).push_a(SpD, B_POS).sys("trap_effect_set_pos");
     a.push_v(SpD, B_FX).push_a(SpD, B_DIR).sys("trap_effect_set_scale");
+    // KH1's `L0055c` each fall frame: every enemy touching the sphere (170 × its scale now round
+    // its centre) is marked for its next update: KH2's own stop with our squash kind, one frame.
+    for k in 0..4u16 {
+        a.push_i(0).pop(SpD, T_FAKE + 4 * k);
+    }
+    a.push_a(SpD, T_SEARCH).push_i(T_HISTORY).sys("trap_target_searcher_init");
+    a.push_f(1.0e9).pop(SpD, T_SEARCH + 0x14);
+    a.push_i(0).pop(SpD, T_TRIES);
+    a.label("gr_sq_next");
+    a.push_v(SpD, T_TRIES).push_i(T_HISTORY).bin("sub").un("sltz").beqz("gr_sq_done");
+    a.push_v(SpD, T_TRIES).push_i(1).bin("add").pop(SpD, T_TRIES);
+    a.push_a(SpD, T_SEARCH).push_a(SpD, T_REC).push_a(SpD, B_POS).push_a(SpD, B_POS).push_i(1).push_i(0).push_i(1).sys("trap_target_seracher_search");
+    a.push_a(SpD, T_REC).sys("trap_target_is_exist").beqz("gr_sq_done");
+    a.push_a(SpD, T_REC).sys("trap_target_pos").memcpy(SpD, 16, B_SCRATCH);
+    for (k, at) in [(0u16, 8u16), (4, 12), (8, 16)] {
+        a.push_v(SpD, B_SCRATCH + k).push_v(SpD, B_POS + k).bin("sub.s").pop(Sp, at);
+    }
+    a.push_v(Sp, 8).push_v(Sp, 8).bin("mul.s").push_v(Sp, 12).push_v(Sp, 12).bin("mul.s").bin("add.s").push_v(Sp, 16).push_v(Sp, 16).bin("mul.s").bin("add.s");
+    // (170 × scale)²; nearest first: the first one out of reach ends the list.
+    a.push_v(SpD, B_DIR).push_f(gravity::RADIUS).bin("mul.s").pop(Sp, 8);
+    a.push_v(Sp, 8).push_v(Sp, 8).bin("mul.s").bin("sub.s").un("sgtz.s").bnez("gr_sq_done");
+    a.push_v(SpD, T_REC).pop(SpD, T_FAKE + 4);
+    a.push_a(SpD, T_FAKE).push_i(gravity::SQUASH_KIND).push_f(1.0).sys("trap_obj_stop");
+    a.b("gr_sq_next");
+    a.label("gr_sq_done");
     a.push_v(SpD, T_I).sys("trap_frametime").bin("sub.s").pop(SpD, T_I);
     a.push_v(SpD, T_I).un("sgtz.s").bnez("gr_falling");
     // The impact effect: near the floor (a ray of 100 down finds it) 4, else 5.
@@ -1290,6 +1319,8 @@ mod tests {
         /// Attacks made: (frame, ATKP).
         pub(super) made: Vec<(usize, i32)>,
         pub(super) bound: Vec<(usize, i32)>,
+        /// KH2's stop put on an object by the script: (frame, object, kind, frames).
+        pub(super) obj_stops: Vec<(usize, i32, i32, f32)>,
     }
 
     impl World {
@@ -1322,6 +1353,7 @@ mod tests {
                 stopped_until: HashMap::new(),
                 made: vec![],
                 bound: vec![],
+                obj_stops: vec![],
             }
         }
 
@@ -1487,6 +1519,10 @@ mod tests {
                     if let Some(o) = best {
                         self.history.get_mut(&args[0].v).unwrap().push(o);
                     }
+                }
+                "trap_obj_stop" => {
+                    let o = vm.mem.u32(args[0].v + 4).unwrap() as i32;
+                    self.obj_stops.push((self.frame, o, args[1].v as i32, args[2].f()));
                 }
                 "trap_attack_strike" => {
                     let o = vm.mem.u32(args[1].v + 4).unwrap() as i32;
@@ -1718,6 +1754,16 @@ mod tests {
             let at = w.strikes[0].0;
             assert_eq!(at, 28 + n, "impact frame, level {level}");
             // The scale reaches S at the impact, then × 1.02 for 20 frames.
+            // KH1's `L0055c` each fall frame (N of them, 29..28 + N; not the impact run): the
+            // enemies touching the sphere of 170 × its scale that frame, each for one frame.
+            let marked = |f: usize| -> Vec<i32> { w.obj_stops.iter().filter(|x| x.0 == f).map(|x| x.1).collect() };
+            assert!(w.obj_stops.iter().all(|x| x.2 == gravity::SQUASH_KIND && x.3 == 1.0));
+            assert!(w.obj_stops.iter().all(|x| (29..=28 + n).contains(&x.0)), "{:?}", w.obj_stops.iter().map(|x| x.0).collect::<Vec<_>>());
+            // Near the end of the fall the sphere is big enough for the one just inside; at the
+            // start (scale 0.01 → 1.7 cm reach, centre 230 up) for none.
+            assert!(marked(29).is_empty());
+            let last = marked(28 + n);
+            assert!(last.contains(&1) && last.contains(&2) && !last.contains(&3) && !last.contains(&4), "{last:?}");
             let s_at = w.scales.iter().filter(|x| x.0 == at).map(|x| x.2).fold(0.0f32, f32::max);
             assert!((s_at - s).abs() < 1e-3, "{s_at} {s}");
             let last = w.scales.iter().map(|x| x.2).fold(0.0f32, f32::max);

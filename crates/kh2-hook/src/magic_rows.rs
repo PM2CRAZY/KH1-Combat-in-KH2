@@ -114,6 +114,11 @@ pub const STOP_FLAGS: u16 = 1;
 /// KH1's Aero barrier: a kind with no flags, so KH2 only counts it down on Sora (his damage
 /// taken is halved while it runs, `aero_halve`).
 pub const AERO_ID: u16 = 0x21;
+/// KH1's Gravity on an enemy's height (`crate::squash`): under the falling sphere (the script
+/// puts this kind on each enemy touching it, one frame at a time: KH1's `+0x88 |= 4`), no flags;
+/// and flattened by the hit (KH1's reaction kind 8: its 68 / 75 frames it does nothing), flag 1.
+pub const SQUASH_ID: u16 = kh1_assets::spells::gravity::SQUASH_KIND as u16;
+pub const FLATTEN_ID: u16 = 0x23;
 /// Aero's barrier strike (Cure's 708 rows: type `AERO_TYPE` of ours, nothing else) and its wind
 /// (Thunder's burst rows 250: KH2's damage, no element; KH1's power not ported yet, as the other
 /// spells').
@@ -209,11 +214,12 @@ pub fn extend_stop(t: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let mut out = t[..8 + n * 4].to_vec();
-    for (id, flags) in [(STOP_ID, STOP_FLAGS), (AERO_ID, 0)] {
+    let ours = [(STOP_ID, STOP_FLAGS), (AERO_ID, 0), (SQUASH_ID, 0), (FLATTEN_ID, 1)];
+    for (id, flags) in ours {
         out.extend_from_slice(&id.to_le_bytes());
         out.extend_from_slice(&flags.to_le_bytes());
     }
-    out[4..8].copy_from_slice(&((n + 2) as u32).to_le_bytes());
+    out[4..8].copy_from_slice(&((n + ours.len()) as u32).to_le_bytes());
     Some(out)
 }
 
@@ -354,7 +360,7 @@ mod tests {
         assert_eq!(w.len(), 9);
         assert_eq!(w.iter().filter(|x| x.1 == 84).count(), 3);
         let sp = extend_stop(&bget("stop")).unwrap();
-        assert_eq!(count(&sp), Some(17));
+        assert_eq!(count(&sp), Some(19));
         let ids: Vec<u16> = (0..count(&a).unwrap()).map(|i| u16::from_le_bytes([a[8 + i * 0x30 + 2], a[8 + i * 0x30 + 3]])).collect();
         assert!(ids.contains(&AERO_ATKP) && ids.contains(&WIND_ATKP) && ids.windows(2).all(|w| w[0] <= w[1]));
         let m2 = extend_magc(&extend_magc(&bget("magc"), GRAVITY, "GRAVITY", 0).unwrap(), STOP, "STOP", 1).unwrap();

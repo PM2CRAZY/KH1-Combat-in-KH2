@@ -66,6 +66,30 @@ unsafe fn slot(cls: usize) -> extern "system" fn(usize, usize, usize) -> usize {
     std::mem::transmute(*((*(cls as *const usize) + 0xC0) as *const usize))
 }
 
+/// KH2's reaction group of a record's reaction (`0x1403CE980`, `+0x26`): 0 none.
+const REACTION_GROUP: usize = 0x3C_E980;
+
+/// The hit through the object's own slot, then KH1's Gravity on it: its hit flattens (reaction
+/// kind 8); any other hit with a reaction knocks a flattened enemy out of it (KH1 `0x1402B8B90`).
+unsafe fn apply(cls: usize, obj: usize, rec: usize) -> usize {
+    let gravity = {
+        let row = from_handle(*((rec + 0x20) as *const u32));
+        row != 0 && *((row + 4) as *const u8) == crate::magic_rows::GRAVITY_TYPE
+    };
+    let group: extern "system" fn(u8) -> u32 = std::mem::transmute(BASE.load(Ordering::Relaxed) + REACTION_GROUP);
+    let reacts = *((rec + 0x18) as *const u32) & 1 == 0 && group(*((rec + 0x26) as *const u8)) != 0;
+    let r = slot(cls)(cls, obj, rec);
+    let status = *((obj + 0x5C0) as *const usize);
+    if status != 0 && *(status as *const i32) > 0 {
+        if gravity && *((rec + 0x28) as *const i32) > 0 {
+            super::squash::flatten(obj);
+        } else if reacts && super::squash::flattened(obj) {
+            super::squash::knock_out(obj);
+        }
+    }
+    r
+}
+
 /// Each delivery site's call: `(class object, struck object, record)`.
 unsafe extern "system" fn deliver(cls: usize, obj: usize, rec: usize) -> usize {
     if obj != 0 && rec != 0 && ON.load(Ordering::Relaxed) && held_by_stop(obj) && !is_stop_strike(rec) {
@@ -94,7 +118,7 @@ unsafe extern "system" fn deliver(cls: usize, obj: usize, rec: usize) -> usize {
             }
         }
     }
-    slot(cls)(cls, obj, rec)
+    apply(cls, obj, rec)
 }
 
 /// Whether `obj` is still one of KH2's live objects.
@@ -168,7 +192,7 @@ unsafe fn land(obj: usize, held: &crate::held_hits::Held) {
     }
     let cls = from_handle(*(obj as *const u32));
     if cls != 0 {
-        slot(cls)(cls, obj, rec);
+        apply(cls, obj, rec);
     }
     let free: extern "system" fn(usize) = std::mem::transmute(base + RECORD_FREE);
     free(rec);

@@ -419,3 +419,37 @@ Built (`win/held_hits.rs`, `held_hits.rs`; no hook on a function, six call sites
   held hit lands the frame after Stop (KH1's); KH2's hit sparks and attacker-side events stay at the
   contact (KH1's spark timing not read); the random's law only (6..11 evenly), not KH1's sequence.
 - **Tests:** KH1's delay law and pool, the landing frames (`held_hits` tests).
+
+## t86: KH1's Gravity on the enemy's height: the squash under the sphere and the hit's flatten
+
+KH1 has no slow under the falling sphere (Checked (files + decomp), KH1-in-ReCom "M7 f2"; the
+earlier "slow" was a research-note Assumption): each fall frame the sphere's thread marks every
+enemy touching it (`+0x88 |= 4`), and the actor update eases its height (`+0x480`, the world matrix's
+y scale, its only reader) toward 0.8 with a 4-frame wobble, back +0.05 a frame without the mark. Its
+hit (reaction kind 8, `0x1402B7DE0`) flattens: 68 frames on the ground (75 in the air), squashed over
+7 frames to 0.1, held, then the get-up's ease ×0.3 a frame; a flinch knocks it out of it.
+
+KH2 (Checked (decomp)): the object's scale is `+0x30` (a vector, `+0x34` the height), read when the
+world matrix is built (`0x1403CCB90` → `0x1401AA7D0`); its stop block is ticked once a frame by the
+object update (`0x14040A830`, only caller `0x1403BFDCD`).
+
+Built:
+- `stop` table: two more kinds of ours, `0x22` (under the sphere, no flags) and `0x23` (flattened,
+  flag 1: KH2 skips the enemy's think and motion while it runs, as KH1's flattened actor does
+  nothing).
+- The Gravity script, each fall frame (KH1's `L0055c`, not the impact run): every enemy whose part
+  centre is within 170 × the sphere's scale of its centre gets kind `0x22` for one frame through
+  KH2's `trap_obj_stop` (table 6 entry 6 → `0x1403B6730`).
+- The Gravity hit, through the hit deliveries of t85 (so a hit held by Stop flattens when it lands):
+  KH2's stop with kind `0x23` for 68 frames, or 75 when KH2 says the enemy is in the air
+  (`0x1403BA9A0`). Any other hit with a reaction (`0x1403CE980` group ≠ 0) on a flattened enemy ends
+  the kind (knocked out).
+- `win/squash.rs` wraps KH2's stop tick (prologue checked): an object with kind `0x22` or `0x23`, or
+  one still coming back, takes KH1's height step (`squash.rs`, tested frame by frame against KH1's
+  numbers) on `+0x34` = its own height × KH1's `+0x480`, before KH2's tick; nothing while KH1's Stop
+  holds it (KH1 skips that update while stopped). Back at full height its own `+0x34` is put back.
+- **Assumptions:** KH2's "can't be stopped" (`+0x9B8` bit 2, `0x1403B6730`) stands for KH1's per-actor
+  reaction rules and the param-block exemption: those enemies neither squash nor flatten; the enemy's
+  part centre for KH1's bodies (as the impact); KH2 enemies have no KH1 get-up motion (0x67), so its
+  ease runs until 0.95, then the +0.05 spring; a stop block holds 4 kinds (KH2's own limit).
+- Per frame: a 4-slot read per object tick; the height step only for squashed or flattened enemies.
