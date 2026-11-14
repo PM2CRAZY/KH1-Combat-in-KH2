@@ -112,6 +112,41 @@ the swings). Checked (files, the owner's `xa_ex_0010.mset`):
 Sizes with these (the owner's files, KH1 model): `W_EX010.mset` 266,304 and `P_EX100.mset`
 2,582,224, both under KH2's (270,224 / 2,611,760). Nothing picks these motions until t93.
 
+## t93: KH1's modifier rows in KH2's own combo picker
+
+`modifiers` + `win/modifiers.rs` (abilities = kh1). KH2's picker (Checked (decomp)): the pick
+`0x140402D20` builds a context (`0x1404028D0`: `+0` the target, `+8` its part, radius `+0xC`,
+centre `+0x20`; `+0x30` the aim; `+0x40` Sora; `+0x50` his position), tests the kind-2 rows for
+every enemy part and the kind-1 rows for the target (`0x1404029F0` → `0x140402750` ability / air /
+stage, `0x1404027F0` windows: `near ≤ gap < far`, `high ∓ r < dy ≤ low ± r`, `min < dot ≤ max`),
+then the kind-3 rows (`0x140402750` alone), and `0x140402C50` takes the first valid row in set
+order whose motion isn't playing: KH1's own rule (`0x1402A6EE0` / `0x1402A6C70`: the lowest flagged
+row whose request isn't playing).
+
+- **The rows**: Sora's set (37 rows) rewritten in place in KH1's order: Aerial Sweep; Stun Impact,
+  Gravity Break, Zantetsuken, Blitz, Ripple Drive (KH1 rows 3..7, before the finisher 8);
+  Hurricane Blast (15, before the air finisher 16); Sliding Dash, Vortex (target), Vortex (side
+  enemies) (9, 10, before 11..14); then KH2's plain rows in KH2's order, the kind-0 rows
+  (Counterguard's id 39 → Counterattack, which KH2 takes after a guard: `0x1403A76B0`), then KH2's
+  ability rows, dead at kh1. Each of ours on a KH2 template of its kind, our ability number, the
+  pair's motion slot (t92). KH2's bytes back at kh2; taken off around the combos patch (which
+  finds rows by id). Test with the player's `00battle.bin`.
+- **KH1's tests** (our rows only; KH2's code for every other row):
+  - the finisher press draws one r: Stun Impact, Gravity Break, Zantetsuken (equipped, in order)
+    each take the next 0.3; none → Blitz, unless the scan found a side enemy; Ripple Drive always;
+  - with a target (gap = flat distance less the part's radius, h = its height above Sora): h ≤ 160
+    or h ≥ reach + 150 or gap ≥ 300 → (gap ≥ 300 or ≤ 180 → Sliding Dash (equipped, gap ≥ 300, h <
+    160) else the scan; between: Vortex); else Aerial Sweep (the jump-up attack);
+  - the scan's side enemy: cos 120° < dot ≤ cos 22°, gap < 180 (Vortex's side row; Blitz);
+  - Hurricane Blast: a target no more than 100 above.
+  Checked (decomp) through KH1-in-ReCom's `kh1_core::combo` (its tests' cases are ours).
+- **Assumptions**: KH2's aim (`ctx +0x30`, toward the target, else his facing) is KH1's; reach =
+  KH2's jump height of Sora (`0x1403B5A40`: KH1's 190 / 290 at movement = kh1); KH1's "state 2"
+  for Hurricane Blast is any air pick; Aerial Sweep's hop and speed are KH2's jump approach's (as
+  the plain jump-up today), not KH1's computed ones; Counterattack when KH2's Counterguard would
+  be taken.
+- Still KH2's on these motions: the ATKP rows of the slots (power, reaction): next version.
+
 ## Where KH1's specials will run (research for the next version)
 
 - KH2 already runs multi-part specials with Triangle follow-ups: Limit Form's Sonic Rave, Strike

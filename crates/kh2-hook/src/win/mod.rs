@@ -14,6 +14,7 @@ mod prty;
 mod menu_rows;
 mod gravity;
 mod abilities;
+mod modifiers;
 mod held_hits;
 mod damage;
 mod squash;
@@ -168,7 +169,10 @@ pub fn switch(i: usize, on: bool) {
             DEFENCE => combo_tables::apply_guard(on),
             MP => mp::apply(on),
             MAGIC => combo_tables::apply_spells(on),
-            ABILITIES => abilities::apply(on),
+            ABILITIES => {
+                abilities::apply(on);
+                modifiers::apply(on);
+            }
             CAMERA => camera::apply(on),
             _ => {}
         }
@@ -280,6 +284,7 @@ pub unsafe extern "system" fn DllMain(_inst: *mut c_void, reason: u32, _reserved
         combo_tables::install(base, model);
         menu_rows::install(base);
         abilities::install(base);
+        modifiers::install(base);
         gravity::install(base);
         damage::load(base, exe_dir());
         held_hits::install(base);

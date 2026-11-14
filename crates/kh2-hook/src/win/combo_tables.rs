@@ -254,6 +254,7 @@ unsafe extern "system" fn loader() {
     SAVED_COMBOS.forget();
     SAVED_GUARD.forget();
     SAVED_SPELLS.forget();
+    super::modifiers::forget();
     super::mp::forget_costs();
     use crate::settings::{kh1, COMBOS, DEFENCE, MAGIC, MP};
     if kh1(COMBOS) {
@@ -273,6 +274,8 @@ unsafe extern "system" fn loader() {
     if kh1(MAGIC) {
         patch_spells();
     }
+    // After the combos patch (which finds Sora's rows by id): KH1's rows in KH1's order.
+    super::modifiers::apply(crate::settings::kh1(crate::settings::ABILITIES));
 }
 
 /// The Config menu switched combos: KH1's swing powers and air rows, or KH2's back.
@@ -280,6 +283,8 @@ pub unsafe fn apply_combos(kh1: bool) {
     if !LOADED.load(Ordering::Relaxed) {
         return;
     }
+    // KH1's modifier rows move Sora's rows: off around the combos patch, back after.
+    super::modifiers::unapply();
     if kh1 {
         if SAVED_COMBOS.is_empty() {
             patch();
@@ -289,6 +294,7 @@ pub unsafe fn apply_combos(kh1: bool) {
         let n = SAVED_COMBOS.restore();
         log!("combos kh2: KH2's swing powers and air rows back ({n} changes undone)");
     }
+    super::modifiers::apply(crate::settings::kh1(crate::settings::ABILITIES));
 }
 
 /// The Config menu switched defence: KH1's guard arc, or KH2's back.
