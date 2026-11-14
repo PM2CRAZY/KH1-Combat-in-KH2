@@ -1,3 +1,8 @@
+### 2026-11-14: Stage 96 (testing branch: The root's Magic row reads our Magic list (no more ?))
+- **Ask** (owner, 2026-11-14): "on saves that are finished the magic submenu is a ?"; "I can't open the magic submenu because it's a ?".
+- **Cause** (Checked (decomp)): the root menu shows KH2's Magic (cmd 2) only while the Magic list's first entry is non-zero, else cmd 0x68, "?" (`cmp word [rdi+0xB68], 0` at 0x1403F2E34 in 0x1403F29E0). t79 moved the list into our memory; this test and its twins (0x1403F27C0, 0x1403F3774), KH2's second list builder 0x1403F2910 (writes and count) and 0x1403F3460's hand-over still read KH2's old +0xB68.
+- **Change**: `menu_rows::MAGIC_LIST_SITES` +6, `MAGIC_COUNTS` +1: all point at our list (bytes checked against the Steam exe, tests). **Assumption**: why only finished saves showed it.
+
 ### 2026-11-14: Stage 95 (testing branch: Aero's crash: the spell record lives to the release)
 - **Ask** (owner, 2026-11-14): "Aero crashes the game, also on saves that are finished the magic submenu is a ?".
 - **Cause** (t94 log + decomp): KH2's magic-cast trigger (17) hands Sora's spell record (+0xDA0) to `0x1403C6150` at the release frame; KH2 frees a record once its spell's code has finished (`0x1403C55F0`) and never clears +0xDA0. KH1's Aero (and Stop) cast in their trigger-20 thread and ended it before the release frame: the record was read freed (`0x1403C6161`).

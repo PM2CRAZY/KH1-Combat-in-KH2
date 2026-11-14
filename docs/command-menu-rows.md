@@ -283,3 +283,16 @@ share, "(c) Everyone full"):
    row (every Sora row has `BonusItem2 = 0`): Gravity at Phil's Training (OC1), Oogie Boogie (HT1),
    Hades (OC2); Stop at the Cornerstone of Light (TR), Pete (TR), Luxord; Aero at Dark Thorn (BC1),
    Storm Rider (LoD2), Transport to Remembrance.
+
+
+## t96: the root's Magic row read KH2's old list ("?")
+
+The owner (2026-11-14): "on saves that are finished the magic submenu is a ?", "I can't open the
+magic submenu because it's a ?". The root menu's second row is KH2's Magic (cmd 2) only while the
+Magic list's first entry is non-zero, else cmd 0x68 (message 0x503, "?"): `cmp word [rdi+0xB68], 0`
+at `0x1403F2E34` in `0x1403F29E0` (Checked (decomp)). t79 moved the list into our memory
+(`MAGIC_LIST`) but this test, the same tests at `0x1403F27C0` (`0x1403F26F0`) and `0x1403F3774`
+(`0x1403F36C0`), KH2's second list builder `0x1403F2910` (its writes and its count of 6) and
+`0x1403F3460`'s hand-over still used KH2's old `+0xB68`, which nothing fills any more: the row was
+"?". All now point at our list (`MAGIC_LIST_SITES`, `MAGIC_COUNTS`; bytes checked against the exe).
+Assumption: why only finished saves showed it (stale bytes at the old place) is not settled.

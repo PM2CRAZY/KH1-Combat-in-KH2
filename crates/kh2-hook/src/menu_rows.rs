@@ -340,6 +340,7 @@ const MAGIC_COUNTS: &[(u32, &[u8])] = &[
     (0x3c5b9a, &[65, 131, 255, 6]),
     (0x3c5dab, &[131, 255, 6]),
     (0x3f283c, &[131, 251, 6]),   // the command menu's Magic list
+    (0x3f2956, &[131, 251, 6]),   // its second builder `0x1403F2910` (t96)
     (0x35b803, &[131, 251, 6]),   // the pause menu's Magic page (0x14035B440)
     (0x35b843, &[72, 131, 248, 6]),
     (0x35b8af, &[131, 254, 6]),
@@ -350,6 +351,18 @@ const MAGIC_LIST_SITES: &[(u32, &[u8], usize)] = &[
     (0x3f281c, &[72, 141, 189, 104, 11, 0, 0], 3),
     (0x3f2852, &[102, 68, 137, 180, 69, 104, 11, 0, 0], 5),
     (0x3f2b8f, &[72, 141, 151, 104, 11, 0, 0], 3),
+    // t96 (the owner: "I can't open the magic submenu because it's a ?"): the root's Magic row is
+    // KH2's Magic (cmd 2) only while the list's first entry is non-zero, else cmd 0x68 ("?",
+    // message 0x503): `cmp word [rdi+0xB68], 0` in `0x1403F29E0` (Checked (decomp)), and the same
+    // test in `0x1403F26F0` / `0x1403F36C0`. t79 moved the list but left these reading KH2's old
+    // one. Also KH2's second list builder `0x1403F2910` and `0x1403F3460`'s hand-over (no caller
+    // found; moved for safety, as their count).
+    (0x3f2e34, &[102, 131, 191, 104, 11, 0, 0, 0], 3),
+    (0x3f27c0, &[102, 131, 185, 104, 11, 0, 0, 0], 3),
+    (0x3f3774, &[102, 131, 191, 104, 11, 0, 0, 0], 3),
+    (0x3f292d, &[72, 141, 185, 104, 11, 0, 0], 3),
+    (0x3f296d, &[102, 68, 137, 180, 69, 104, 11, 0, 0], 5),
+    (0x3f3479, &[72, 141, 151, 104, 11, 0, 0], 3),
 ];
 
 fn magic_patches(base: u64, mem: u64) -> Result<Vec<Patch>, String> {
@@ -692,7 +705,7 @@ mod tests {
     #[test]
     fn plan_covers_every_site_once() {
         let p = plan(BASE, MEMAT).unwrap();
-        assert_eq!(p.patches.len(), CURSOR_SITES.len() + NUMBER_SITES.len() + SHORT_SITES.len() + hud_patches().len() + 29);
+        assert_eq!(p.patches.len(), CURSOR_SITES.len() + NUMBER_SITES.len() + SHORT_SITES.len() + hud_patches().len() + 36);
         assert_eq!((CURSOR_SITES.len(), NUMBER_SITES.len(), SHORT_SITES.len(), hud_patches().len()), (58, 32, 23, 28));
         let mut spans: Vec<(u32, u32)> = p.patches.iter().map(|x| (x.rva, x.rva + x.expect.len() as u32)).collect();
         spans.sort();
