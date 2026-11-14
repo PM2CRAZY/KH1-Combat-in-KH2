@@ -11,6 +11,36 @@ static MEMORY: AtomicUsize = AtomicUsize::new(0);
 /// KH2's static init had already run when we loaded (we set up the magic elements ourselves).
 static LATE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static PLAN: OnceLock<Plan> = OnceLock::new();
+/// The move happened (KH2 has 9 magic elements): our `cmd` / `item` rows may go in.
+static APPLIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+const CMD_TABLE: usize = 0x2A1_61E8;
+const ITEM_TABLE: usize = 0x2A2_5370;
+
+/// After KH2's table loader (`combo_tables`): its `cmd` and `item` tables copied with Gravity's,
+/// Stop's and Aero's rows (`crate::magic_rows`), KH2's pointers set to the copies. The copies are
+/// kept for the session (KH2 may hold a row of an older one).
+pub unsafe fn extend_tables(base: usize) {
+    if !APPLIED.load(Ordering::Relaxed) {
+        return;
+    }
+    let mut done = Vec::new();
+    for (at, row, f, what) in [
+        (CMD_TABLE, crate::magic_rows::CMD_ROW, crate::magic_rows::extend_commands as fn(&[u8]) -> Option<Vec<u8>>, "cmd"),
+        (ITEM_TABLE, crate::magic_rows::ITEM_ROW, crate::magic_rows::extend_items, "item"),
+    ] {
+        let p = (base + at) as *mut usize;
+        if *p == 0 {
+            continue;
+        }
+        let n = (*((*p + 4) as *const i32)).clamp(0, 0x4000) as usize;
+        let old = std::slice::from_raw_parts(*p as *const u8, 8 + n * row);
+        if let Some(new) = f(old) {
+            *p = Box::leak(new.into_boxed_slice()).as_ptr() as usize;
+            done.push(what);
+        }
+    }
+    log!("magic: Gravity, Stop and Aero rows in KH2's tables: {done:?}");
+}
 
 pub unsafe fn install(base: usize) {
     let Some(mem) = hook::alloc_near(base + CTOR_RVA as usize, MEM) else {
@@ -79,5 +109,6 @@ unsafe fn apply() {
             done += 1;
         }
     }
+    APPLIED.store(done == plan.patches.len(), Ordering::Relaxed);
     log!("menu rows: KH2's {SUBMENUS} command submenus moved to {mem:#x} with room for {ROWS} rows each, the HUD draws {HUD_LEVEL} sprites a level, {ELEMENTS} magic elements in KH1's order ({done} of {} sites)", plan.patches.len());
 }

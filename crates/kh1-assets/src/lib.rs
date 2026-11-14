@@ -15,6 +15,7 @@ pub mod convert;
 pub mod player_model;
 pub mod swing_triggers;
 pub mod spells;
+pub mod spell_names;
 
 use kh1_data::{Kh1Install, Source};
 use kh2_formats::bar::Bar;
@@ -565,7 +566,14 @@ pub fn build_kh1_model(root: impl AsRef<Path>, kh1_swings: bool) -> Result<(Vec<
 /// the game's own list: Assumption, not checked).
 /// Each spell on its own: one that can't be built is noted and left to KH2's own file; nothing
 /// else in the build depends on it (t75's whole build stopped on one unreadable archive entry).
+/// KH2's English system text with the names of Gravity, Stop and Aero (`spell_names`).
+pub const SPELL_NAMES_FILE: &str = "msg/us/sys.bar";
+
 fn build_spells(kh1: &Kh1Install, kh2: &Kh2Install, mod_dir: &Path, files: &mut Vec<(std::path::PathBuf, Vec<u8>)>, notes: &mut Vec<String>) {
+    match kh2.read(SPELL_NAMES_FILE).ok().and_then(|b| spell_names::add_to_bar(&b)) {
+        Some(b) => files.push((mod_dir.join(SPELL_NAMES_FILE), b)),
+        None => notes.push(format!("{SPELL_NAMES_FILE}: not read or not one we know; Gravity, Stop and Aero have no names")),
+    }
     for (kh1_name, kh2_name, kind, level) in spells::SPELLS {
         let mut one = Vec::new();
         match build_spell(kh1, kh2, mod_dir, kh1_name, kh2_name, kind, level, &mut one, notes) {
@@ -610,6 +618,7 @@ pub fn remove_spells(mod_dir: &Path) {
         let _ = std::fs::remove_file(mod_dir.join(kh2_name));
         let _ = std::fs::remove_dir_all(mod_dir.join("remastered").join(kh2_name));
     }
+    let _ = std::fs::remove_file(mod_dir.join(SPELL_NAMES_FILE));
 }
 
 pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &str, kh1_model: bool, kh1_swings: bool, kh1_guard: bool, kh1_moves: bool, kh1_casts: bool) -> Result<Option<Built>> {
@@ -630,7 +639,7 @@ pub fn build_into(root: impl AsRef<Path>, mod_dir: impl AsRef<Path>, version: &s
     if !kh1_casts {
         remove_spells(mod_dir);
     }
-    let spells_built = spells::SPELLS.iter().all(|s| mod_dir.join(s.1).is_file());
+    let spells_built = spells::SPELLS.iter().all(|s| mod_dir.join(s.1).is_file()) && mod_dir.join(SPELL_NAMES_FILE).is_file();
     if out.is_file() && mdlx.is_file() == kh1_model && blade.is_file() == kh1_swings && spells_built == kh1_casts && std::fs::read_to_string(&stamp_file).ok().as_deref() == Some(want.as_str()) {
         return Ok(None);
     }

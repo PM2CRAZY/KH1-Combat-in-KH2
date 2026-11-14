@@ -149,6 +149,7 @@ name = "kh2-hook"
 version = "0.1.0"
 dependencies = [
  "kh1-assets",
+ "kh2-formats",
 ]
 
 [[package]]

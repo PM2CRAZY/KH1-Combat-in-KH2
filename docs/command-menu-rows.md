@@ -137,6 +137,24 @@ submenus (Checked (exe, emulated)); in-game: Assumption until tested.
   patched code (KH1's order, an element without a spell skipped).
 - Nothing changes on screen until the new elements have MAGC, item and command rows (step 4b).
 
+## Step 4b: Gravity, Stop and Aero in KH2's tables and text (t80; Checked (files + decomp))
+
+- **Commands** (`kh2-hook::magic_rows`): after KH2's table loader, its `cmd` table (pointer
+  `0x142A161E8`, `bsearch` by id) is copied with 9 rows: 797–799 Gravity / Gravira / Graviga,
+  800–802 Stop / Stopra / Stopga, 803–805 Aero / Aerora / Aeroga, each Thunder's row of that level
+  (51, 123, 124) with element 6 / 7 / 8 in `+4`, our name in `+8`, KH2's cost 18 (Assumption: no
+  KH2 cost exists for these; with `mp = kh1` KH1's 100 / 200 / 200 go in, `kh1mp::KH1_SPELL_COSTS`).
+- **Items**: `item` (pointer `0x142A25370`) copied with items 84 / 85 / 86 (kind `0x12`, element,
+  names, the level-1 command, count slots 75 / 76 / 77), on Fire's row. Both copies only once
+  step 4a's patches are all in.
+- **Names** (`kh1-assets::spell_names`): the build writes `msg/us/sys.bar` (with `magic = kh1`):
+  KH2's English system text with ours at ids `0x5700`–`0x570E` (KH2's letters, Checked (files):
+  `A` `0x2E`, `a` `0x9A`, space `0x01`, `.` `0x4F`; the items' "Use from the Magic Command." line
+  copied from KH2's). Other languages: not yet (they'd show no name).
+- Still to come for the spells to be cast: their MAGC rows (`00battle.bin` `magc`, pointer
+  `0x142A23C68`: element, level, file name, item, command, motions) and their spell files with
+  KH1's behaviour, one spell a version.
+
 ## The plan (one step a version)
 
 1. (done, t77) Map every read and write of a submenu's tail (`+0x74`, `+0x78`) and every "submenu by number"

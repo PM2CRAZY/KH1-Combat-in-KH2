@@ -127,8 +127,8 @@ pub fn max_bars(level: u8, kh2_max_mp: i32) -> i32 {
 /// KH1's costs on KH2's magic commands (`cmd` rows with execute 2, by argument: 0 Fire, 1
 /// Blizzard, 2 Thunder, 3 Cure), in KH1's hundredths (Checked (files): `btltbl.bin` attack data
 /// `+0x30`, every level: Fire 30, Blizzard 30, Thunder 100, Cure 100; also Gravity 100, Stop 200,
-/// Aero 200). Magnet (4) and Reflect (5) keep their KH2 bytes (30, 10), read as KH1 units.
-pub const KH1_SPELL_COSTS: [(i16, u8); 4] = [(0, 30), (1, 30), (2, 100), (3, 100)];
+/// Aero 200: elements 6, 7, 8 since t80). Magnet (4) and Reflect (5) keep their KH2 bytes (30, 10), read as KH1 units.
+pub const KH1_SPELL_COSTS: [(i16, u8); 7] = [(0, 30), (1, 30), (2, 100), (3, 100), (6, 100), (7, 200), (8, 200)];
 
 /// KH1's MP for a hit Sora lands (attack data `+0x2C`, Checked (files): his plain swings 3, his
 /// finishers 6, the spells 0), added as gauge units (`0x1402BF330`). KH1 scales it by the two levels
