@@ -57,6 +57,27 @@ pub const PAIRS: [Pair; 14] = [
     p(268, 19, 2, "Counterattack", "Strikes back right after you block\nan attack."),
 ];
 
+/// KH2's own combo modifiers and finisher abilities left after the pairs (owner, 2026-11-14:
+/// "With abilities set to KH1 I don't want to see any KH2 combo modifiers or finishers at all"):
+/// at `abilities = kh1` they are off the ability screen, cost no AP and do nothing (their entries
+/// stay in the save, so KH2's scripts still see them). KH2 item ids, names from the player's
+/// sys.bar. Checked (files).
+pub const HIDDEN: [(u16, &str); 8] = [
+    (262, "Slapshot"),
+    (271, "Horizontal Slash"),
+    (560, "Aerial Dive"),
+    (390, "Combo Boost"),
+    (391, "Air Combo Boost"),
+    (393, "Finishing Plus"),
+    (394, "Negative Combo"),
+    (395, "Berserk Charge"),
+];
+
+/// Whether KH2 item `id` is off at `abilities = kh1` ([`HIDDEN`]).
+pub fn hidden(id: u16) -> bool {
+    HIDDEN.iter().any(|h| h.0 == id)
+}
+
 /// The ability number (the ability block's bit) of pair `k`.
 pub const fn number(k: usize) -> u16 {
     FIRST_NUMBER + k as u16
@@ -95,6 +116,7 @@ mod tests {
             assert!(PAIRS[i + 1..].iter().all(|b| b.kh2_item != a.kh2_item && b.kh1_id != a.kh1_id));
             // KH2's ability switch keys these on the item id: never pair one of them.
             assert!(!matches!(a.kh2_item, 0xA2 | 0xA3 | 0x186..=0x19E | 0x1A3 | 0x1A5 | 0x1A6 | 0x21C | 0x21E));
+            assert!(!hidden(a.kh2_item));
         }
     }
 }

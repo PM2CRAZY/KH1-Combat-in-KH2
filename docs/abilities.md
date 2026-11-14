@@ -74,6 +74,21 @@ settings (`kh1_assets::build_text`).
 - Each KH1 ability does nothing yet when equipped: its move arrives in its own version (next:
   Sonic Blade).
 
+## t91: no KH2 combo modifiers or finishers at abilities = kh1
+
+The owner (2026-11-14): "With abilities set to KH1 I don't want to see any KH2 combo modifiers or
+finishers at all". KH2's combo abilities left after the pairs (`kh1_assets::abilities::HIDDEN`):
+Slapshot (262), Horizontal Slash (271), Aerial Dive (560), Combo Boost (390), Air Combo Boost
+(391), Finishing Plus (393), Negative Combo (394), Berserk Charge (395). At `kh1`:
+- off the ability screen: KH2's list build `0x140360920` runs with their ids at 0 (put back after);
+- no effect: the ability block build `0x1404014A0` runs with their equipped bit clear (put back
+  after), so neither their bits (their `ptya` rows) nor their item-id effects in `0x140401730`
+  apply (Checked (decomp): Finishing Plus `+0x32`, Negative Combo `+0x30/+0x31` −1, Berserk Charge
+  `+0x56`, Combo Boost `+0x4E`, Air Combo Boost `+0x50`);
+- no AP: their row's `+7` is 0 in the KH1 table (KH2's totals sum every equipped entry).
+The save keeps the entries and their equipped bits; at `kh2` they are back as they were.
+Kept: Combo Plus, Air Combo Plus, Combo Master (KH1 has them).
+
 ## Where KH1's specials will run (research for the next version)
 
 - KH2 already runs multi-part specials with Triangle follow-ups: Limit Form's Sonic Rave, Strike

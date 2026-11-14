@@ -16,7 +16,7 @@
 //! switch `0x140401730` keys on the item id, so no paired item has a case there
 //! (`kh1_assets::abilities`' test).
 
-use kh1_assets::abilities::{number, PAIRS};
+use kh1_assets::abilities::{hidden, number, PAIRS};
 use kh1_assets::spell_names::{ability_description, ability_name};
 
 pub const ITEM_ROW: usize = 24;
@@ -43,6 +43,14 @@ pub fn kh1_items(t: &[u8]) -> Option<Vec<u8>> {
         r[7] = p.ap;
         r[8..10].copy_from_slice(&(0x8000 | ability_name(k)).to_le_bytes());
         r[10..12].copy_from_slice(&(0x8000 | ability_description(k)).to_le_bytes());
+    }
+    // KH2's own combo modifiers and finishers (`HIDDEN`): no AP (KH2's AP totals sum every
+    // equipped entry's `+7`; `win::abilities` keeps them off the screen and out of the block).
+    for i in 0..n {
+        let r = &mut out[8 + i * ITEM_ROW..8 + (i + 1) * ITEM_ROW];
+        if r[2] == 0x13 && hidden(u16::from_le_bytes([r[0], r[1]])) {
+            r[7] = 0;
+        }
     }
     Some(out)
 }
@@ -72,6 +80,7 @@ mod tests {
     fn paired_rows_carry_kh1s_ability_and_the_rest_stays() {
         let mut rows: Vec<_> = PAIRS.iter().map(|p| (p.kh2_item, 0x13, 90, 2)).collect();
         rows.push((162, 0x13, 21, 1));
+        rows.push((393, 0x13, 105, 5));
         let t = table(&rows);
         let out = kh1_items(&t).unwrap();
         assert_eq!(out.len(), t.len());
@@ -85,7 +94,11 @@ mod tests {
             assert_eq!(r[0x17], 3);
         }
         let last = PAIRS.len();
-        assert_eq!(&out[8 + last * ITEM_ROW..], &t[8 + last * ITEM_ROW..]);
+        assert_eq!(&out[8 + last * ITEM_ROW..8 + (last + 1) * ITEM_ROW], &t[8 + last * ITEM_ROW..8 + (last + 1) * ITEM_ROW]);
+        // Finishing Plus: no AP, the rest KH2's.
+        let fp = &out[8 + (last + 1) * ITEM_ROW..];
+        assert_eq!(fp[7], 0);
+        assert_eq!(&fp[..7], &t[8 + (last + 1) * ITEM_ROW..][..7]);
         // A missing pair: nothing.
         assert!(kh1_items(&table(&rows[1..])).is_none());
     }
@@ -104,7 +117,10 @@ mod tests {
         for i in 0..n {
             let (a, b) = (&t[8 + i * ITEM_ROW..8 + (i + 1) * ITEM_ROW], &out[8 + i * ITEM_ROW..8 + (i + 1) * ITEM_ROW]);
             let id = u16::from_le_bytes([a[0], a[1]]);
-            if PAIRS.iter().any(|p| p.kh2_item == id) {
+            if hidden(id) {
+                assert_eq!((a[2], b[7]), (0x13, 0), "item {id}");
+                assert_eq!(&a[..7], &b[..7]);
+            } else if PAIRS.iter().any(|p| p.kh2_item == id) {
                 assert_eq!((a[2], a[6]), (0x13, 2), "item {id}");
                 assert_eq!(&a[..4], &b[..4]);
                 assert_eq!(&a[12..], &b[12..]);
