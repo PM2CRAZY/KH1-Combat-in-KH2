@@ -112,6 +112,31 @@ submenus (Checked (exe, emulated)); in-game: Assumption until tested.
   free, the clear, against KH2's own code. The pool (52) is enough: only the drawn levels hold
   sprites (root ≤ 11, a 12-row submenu 14). Assumption until tested in game.
 
+## Step 4a: KH2's magic elements 6 → 9, in KH1's order (t79; Checked (exe + decomp), emulated)
+
+- **What KH2 has.** One entry of `0x50` per magic element at `0x142A23A80`, 6 of them (Fire 0,
+  Blizzard 1, Thunder 2, Cure 3, Magnet 4, Reflect 5): `+0x00` the loaded spell file, `+0x08` /
+  `+0x10` its parts, `+0x18` the effect set (ctor `0x1402C4050`), `+0x48` the MAGC row of the
+  level Sora has. Made by the static init `0x140025690` (dtor `0x140577600`); filled by
+  `0x1403C5DC0` (the MAGC row per element: rows with that element id, the highest level the
+  element's item count reaches) and `0x1403C5A90` (loads each element's file); read by the cast
+  `0x1403C5170` (element by command id), `0x1403C5900` (element → command), `0x1403C5940` /
+  `0x1403C5C50`; freed by `0x1403C5440` / `0x1403C5750`; `0x1403C5CE0` preloads.
+  Element → item: `0x1403C4840`, a table of 6 at `0x1405C5D18` (21, 22, 23, 24, 87, 88); the
+  item's count (`item +0x12` = its slot in `0x1409ACE30`) is the level.
+- **Menus.** The command menu's Magic list (`+0xB68`, room for 6 and a 0; `0x1403F27D0`, handed
+  to `0x1403B1840` at `0x1403F2B8F`) and the pause menu's Magic page (`0x14035B440`, items of the
+  6 elements into a stack array, then its 18-entry output) both go by element number.
+- **The change.** The 9 entries, the item table and the Magic list (room for 9 and the 0) are in
+  our memory; every reference (12 RIP-relative, 2 image-relative, the two ends) and every count
+  of 6 (11) is changed; the command menu's and the pause menu's loops take element
+  `ORDER[i]` = Fire, Blizzard, Thunder, Cure, **Gravity (6), Stop (7), Aero (8)**, Magnet, Reflect
+  (three stubs). Items 84, 85, 86 for the new elements (unused ids in KH2's `item` table, Checked
+  (files)). `0x1403F2910` and `0x1403F3460` (no caller) are left alone.
+- **Checked (emulated)**: the command menu's list loop and the pause menu's first loop on the
+  patched code (KH1's order, an element without a spell skipped).
+- Nothing changes on screen until the new elements have MAGC, item and command rows (step 4b).
+
 ## The plan (one step a version)
 
 1. (done, t77) Map every read and write of a submenu's tail (`+0x74`, `+0x78`) and every "submenu by number"

@@ -174,6 +174,10 @@ pub const SHORT_SITES: &[(u32, &[u8])] = &[
     (0x3b1002, &[0x48, 0xC1, 0xE0, 0x07, 0x48, 0x03, 0x43, 0x08]), // shl rax,7; add rax,[rbx+8]
     (0x3b193a, &[0x48, 0xC1, 0xE0, 0x07, 0x48, 0x03, 0x43, 0x08]), // shl rax,7; add rax,[rbx+8]
     (0x3b1acd, &[0x48, 0xC1, 0xE0, 0x07, 0x48, 0x03, 0x43, 0x08]), // shl rax,7; add rax,[rbx+8]
+    // element -> Magic list, in KH1's order (`0x1403F27D0`, the pause menu's `0x14035B440`)
+    (0x3f2826, &[0x8B, 0xCB, 0xE8, 0xD3, 0x30, 0xFD, 0xFF]), // mov ecx,ebx; call 0x1403c5900
+    (0x35b7f4, &[0x8B, 0xCB, 0xE8, 0x45, 0x90, 0x06, 0x00]), // mov ecx,ebx; call 0x1403c4840
+    (0x35b88f, &[0x8B, 0xCE, 0xE8, 0xAA, 0xA0, 0x06, 0x00]), // mov ecx,esi; call 0x1403c5940
     // the HUD's slots (`0x14015D140`, `0x14015E800`)
     (0x15d1b2, &[0x48, 0x8B, 0x74, 0xF9, 0x20, 0x49, 0x8B, 0x8C, 0x24, 0x98, 0x03, 0, 0]), // mov rsi,[rcx+rdi*8+0x20]; mov rcx,[r12+0x398]
     (0x15d302, &[0x49, 0x89, 0x74, 0xFE, 0x20, 0xEB, 0x44]), // mov [r14+rdi*8+0x20],rsi; jmp 0x14015d34d
@@ -275,6 +279,136 @@ pub fn hud_patches() -> Vec<(u32, &'static [u8], Vec<u8>)> {
     out
 }
 
+
+// ---- KH2's magic elements: 6 -> 9 (step 4) ----------------------------------------------------
+
+/// KH2 keeps one entry of `0x50` per magic element at `0x142A23A80` (6: Fire, Blizzard, Thunder,
+/// Cure, Magnet, Reflect): `+0x00` the loaded spell file, `+0x08` / `+0x10` its parts, `+0x18` the
+/// effect set (ctor `0x1402C4050`, dtor `0x1402C40C0`), `+0x48` the MAGC row of the level Sora has.
+/// They move into our memory with room for 9: Gravity (6), Stop (7) and Aero (8) are KH2 magic
+/// elements like the others. Checked (decomp + exe): every reference to the array (12 by address,
+/// 2 by the image base), its end (the static init's dtor, `0x1403C5DC0`), and every count of 6.
+pub const ELEMENTS: usize = 9;
+pub const ELEMENT: usize = 0x50;
+pub const GRAVITY: u8 = 6;
+pub const STOP: u8 = 7;
+pub const AERO: u8 = 8;
+/// KH1's order in the Magic menus (the command menu and the pause menu's Magic page).
+pub const ORDER: [u8; ELEMENTS] = [0, 1, 2, 3, GRAVITY, STOP, AERO, 4, 5];
+/// The magic item of each element (KH2's `0x1405C5D18` has the first 6; the item's count is the
+/// spell's level). 84 to 86 are unused item ids in KH2's `item` table (Checked (files)).
+pub const ITEMS: [u16; ELEMENTS] = [21, 22, 23, 24, 87, 88, 84, 85, 86];
+/// Where they are in our memory.
+pub const MAGIC_ELEMS: usize = 0x1800;
+pub const MAGIC_ITEMS: usize = MAGIC_ELEMS + ELEMENTS * ELEMENT;
+pub const MAGIC_ORDER: usize = MAGIC_ITEMS + 0x20;
+/// The command menu's Magic list (KH2's `+0xB68` has room for 6 and the 0).
+pub const MAGIC_LIST: usize = MAGIC_ORDER + 0x10;
+const OLD_ELEMS: u32 = 0x2A2_3A80;
+const OLD_ELEMENTS: u32 = 6;
+const OLD_ITEMS: u32 = 0x5C_5D18;
+const OLD_LIST: u32 = 0xB68;
+const _: () = assert!(MAGIC_LIST + 2 * (ELEMENTS + 1) <= MEM && MAGIC_ELEMS >= CAVES + 0x600);
+
+/// `lea r, [rip + d]` to the array or its item table: (RVA, KH2's bytes).
+const MAGIC_RIP_SITES: &[(u32, &[u8])] = &[
+    (0x256a4, &[72, 141, 29, 29, 228, 159, 2]),   // static init: lea rbx,[+0x48]
+    (0x57760f, &[72, 141, 29, 98, 198, 74, 2]),   // its dtor: lea rbx,[end of the +0x18 sets]
+    (0x3c519d, &[72, 141, 61, 220, 232, 101, 2]), // the cast 0x1403C5170
+    (0x3c555f, &[72, 141, 29, 50, 229, 101, 2]),
+    (0x3c5875, &[72, 141, 61, 28, 226, 101, 2]),
+    (0x3c58b1, &[72, 141, 29, 200, 225, 101, 2]),
+    (0x3c590a, &[72, 141, 5, 183, 225, 101, 2]),
+    (0x3c592a, &[72, 141, 5, 151, 225, 101, 2]),
+    (0x3c5ace, &[76, 141, 53, 171, 223, 101, 2]),
+    (0x3c5ad5, &[76, 141, 37, 188, 223, 101, 2]),
+    (0x3c5ddb, &[72, 141, 53, 230, 220, 101, 2]),
+    (0x3c5de4, &[72, 141, 45, 189, 222, 101, 2]), // 0x1403C5DC0's end (+0x48 of a 7th)
+    (0x3c4843, &[72, 141, 13, 206, 20, 32, 0]),   // element -> item (0x1405C5D18)
+];
+
+/// `[image + index + 0x2A23AC8]`: (RVA, KH2's bytes); the displacement is at 4.
+const MAGIC_IMAGE_SITES: &[(u32, &[u8])] = &[(0x3c5966, &[72, 139, 132, 214, 200, 58, 162, 2]), (0x3c5c6d, &[72, 139, 132, 215, 200, 58, 162, 2])];
+
+/// Counts of 6 elements: (RVA, KH2's bytes); the 6 is the last byte, or byte 1 of a `mov r32`.
+const MAGIC_COUNTS: &[(u32, &[u8])] = &[
+    (0x2569f, &[191, 6, 0, 0, 0]),
+    (0x57760a, &[191, 6, 0, 0, 0]),
+    (0x3c51c9, &[65, 131, 249, 6]),
+    (0x3c5566, &[190, 6, 0, 0, 0]),
+    (0x3c587c, &[189, 6, 0, 0, 0]),
+    (0x3c5b9a, &[65, 131, 255, 6]),
+    (0x3c5dab, &[131, 255, 6]),
+    (0x3f283c, &[131, 251, 6]),   // the command menu's Magic list
+    (0x35b803, &[131, 251, 6]),   // the pause menu's Magic page (0x14035B440)
+    (0x35b843, &[72, 131, 248, 6]),
+    (0x35b8af, &[131, 254, 6]),
+];
+
+/// The Magic list at `object + disp32`: (RVA, KH2's bytes, where the displacement is).
+const MAGIC_LIST_SITES: &[(u32, &[u8], usize)] = &[
+    (0x3f281c, &[72, 141, 189, 104, 11, 0, 0], 3),
+    (0x3f2852, &[102, 68, 137, 180, 69, 104, 11, 0, 0], 5),
+    (0x3f2b8f, &[72, 141, 151, 104, 11, 0, 0], 3),
+];
+
+fn magic_patches(base: u64, mem: u64) -> Result<Vec<Patch>, String> {
+    let rel = |at: u64, len: u64, to: u64| i32::try_from(to as i64 - (at + len) as i64).map_err(|_| format!("{at:#x}: our memory is more than 2 GB away"));
+    let elem = |old_rva: u64| -> Option<u64> {
+        let off = old_rva.checked_sub(OLD_ELEMS as u64)?;
+        let off = if off >= (OLD_ELEMENTS as u64) * ELEMENT as u64 { off + (ELEMENTS as u64 - OLD_ELEMENTS as u64) * ELEMENT as u64 } else { off };
+        (off <= ((ELEMENTS + 1) * ELEMENT) as u64).then(|| mem + MAGIC_ELEMS as u64 + off)
+    };
+    let mut out = Vec::new();
+    for &(rva, bytes) in MAGIC_RIP_SITES {
+        let at = base + rva as u64;
+        let old = (at as i64 + 7 + i32::from_le_bytes(bytes[3..7].try_into().unwrap()) as i64) as u64 - base;
+        let to = if old == OLD_ITEMS as u64 { mem + MAGIC_ITEMS as u64 } else { elem(old).ok_or(format!("{rva:#x}: {old:#x} not the magic array"))? };
+        let mut new = bytes.to_vec();
+        new[3..7].copy_from_slice(&rel(at, 7, to)?.to_le_bytes());
+        out.push(Patch { rva, expect: bytes, new });
+    }
+    for &(rva, bytes) in MAGIC_IMAGE_SITES {
+        let old = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as u64;
+        let to = elem(old).ok_or("image site")?;
+        let mut new = bytes.to_vec();
+        new[4..8].copy_from_slice(&i32::try_from(to as i64 - base as i64).map_err(|_| "image site: too far".to_string())?.to_le_bytes());
+        out.push(Patch { rva, expect: bytes, new });
+    }
+    for &(rva, bytes) in MAGIC_COUNTS {
+        let mut new = bytes.to_vec();
+        let i = if bytes.len() == 5 { 1 } else { bytes.len() - 1 };
+        if new[i] != OLD_ELEMENTS as u8 {
+            return Err(format!("{rva:#x}: not a count of 6"));
+        }
+        new[i] = ELEMENTS as u8;
+        out.push(Patch { rva, expect: bytes, new });
+    }
+    let pc = base + PC_RVA as u64;
+    for &(rva, bytes, at) in MAGIC_LIST_SITES {
+        let mut new = bytes.to_vec();
+        if u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) != OLD_LIST {
+            return Err(format!("{rva:#x}: not the Magic list"));
+        }
+        new[at..at + 4].copy_from_slice(&i32::try_from(mem as i64 + MAGIC_LIST as i64 - pc as i64).map_err(|_| "list: too far".to_string())?.to_le_bytes());
+        out.push(Patch { rva, expect: bytes, new });
+    }
+    Ok(out)
+}
+
+/// Our magic data, written into our memory once (`mem` = all `MEM` bytes).
+pub fn magic_data(mem: &mut [u8]) {
+    mem[MAGIC_ELEMS..MAGIC_ELEMS + ELEMENTS * ELEMENT].fill(0);
+    for (i, item) in ITEMS.iter().enumerate() {
+        mem[MAGIC_ITEMS + 2 * i..MAGIC_ITEMS + 2 * i + 2].copy_from_slice(&item.to_le_bytes());
+    }
+    mem[MAGIC_ORDER..MAGIC_ORDER + ELEMENTS].copy_from_slice(&ORDER);
+    mem[MAGIC_LIST..MAGIC_LIST + 2 * (ELEMENTS + 1)].fill(0);
+}
+
+/// KH2's ctor of an element's effect set (for the elements when KH2's static init already ran).
+pub const ELEMENT_SET_CTOR_RVA: u32 = 0x2C_4050;
+
 /// `object + D0` is submenu 0's header in the block.
 fn d0(pc: u64, mem: u64) -> Result<i32, String> {
     i32::try_from(header(mem, 0) as i64 - pc as i64).map_err(|_| format!("our memory {mem:#x} is more than 2 GB from the menu {pc:#x}"))
@@ -335,7 +469,7 @@ pub mod x86 {
 
 /// What a stub does in place of KH2's bytes at a short site (then it jumps back to the
 /// instruction after them). `at` is where the stub starts; `base` is KH2's image.
-fn stub(rva: u32, base: u64, at: u64, d0: i32) -> Result<Vec<u8>, String> {
+fn stub(rva: u32, base: u64, at: u64, d0: i32, mem: u64) -> Result<Vec<u8>, String> {
     use x86::*;
     let slot = SLOT as i32;
     let mut v: Vec<u8> = Vec::new();
@@ -409,6 +543,19 @@ fn stub(rva: u32, base: u64, at: u64, d0: i32) -> Result<Vec<u8>, String> {
             v.extend([0x48, 0x03, 0x43, 0x08]); // add rax,[rbx+8]
             v.extend(add(RAX, d0 - OLD_FIRST as i32));
         }
+        // element = ORDER[i] (`rbx` or `rsi` the counter), then KH2's call
+        0x3f2826 | 0x35b7f4 | 0x35b88f => {
+            let order = mem + MAGIC_ORDER as u64;
+            v.extend([0x48, 0x8D, 0x0D]); // lea rcx,[rip+order]
+            v.extend(i32::try_from(order as i64 - (at as i64 + 7)).map_err(|_| "order: too far".to_string())?.to_le_bytes());
+            v.extend([0x0F, 0xB6, 0x0C, if rva == 0x35b88f { 0x31 } else { 0x19 }]); // movzx ecx,byte [rcx+rbx/rsi]
+            let callee = match rva {
+                0x3f2826 => 0x3c5900,
+                0x35b7f4 => 0x3c4840,
+                _ => 0x3c5940,
+            };
+            v.extend(rel(CALL, at + v.len() as u64, site(callee))?);
+        }
         0x15d1b2 => {
             v.extend([0x48, 0x8B, 0xB4, 0xF9]); // mov rsi,[rcx+rdi*8+disp32]
             v.extend(HUD_SPRITES.to_le_bytes());
@@ -472,10 +619,11 @@ pub fn plan(base: u64, mem: u64) -> Result<Plan, String> {
     for (rva, expect, new) in hud_patches() {
         patches.push(Patch { rva, expect, new });
     }
+    patches.extend(magic_patches(base, mem)?);
     let mut stubs = Vec::new();
     for &(rva, bytes) in SHORT_SITES {
         let at = mem + CAVES as u64 + stubs.len() as u64;
-        let mut s = stub(rva, base, at, d0)?;
+        let mut s = stub(rva, base, at, d0, mem)?;
         let back = base + rva as u64 + bytes.len() as u64;
         s.extend(x86::rel(x86::JMP, at + s.len() as u64, back)?);
         while s.len() % 16 != 0 {
@@ -544,8 +692,8 @@ mod tests {
     #[test]
     fn plan_covers_every_site_once() {
         let p = plan(BASE, MEMAT).unwrap();
-        assert_eq!(p.patches.len(), CURSOR_SITES.len() + NUMBER_SITES.len() + SHORT_SITES.len() + hud_patches().len());
-        assert_eq!((CURSOR_SITES.len(), NUMBER_SITES.len(), SHORT_SITES.len(), hud_patches().len()), (58, 32, 20, 28));
+        assert_eq!(p.patches.len(), CURSOR_SITES.len() + NUMBER_SITES.len() + SHORT_SITES.len() + hud_patches().len() + 29);
+        assert_eq!((CURSOR_SITES.len(), NUMBER_SITES.len(), SHORT_SITES.len(), hud_patches().len()), (58, 32, 23, 28));
         let mut spans: Vec<(u32, u32)> = p.patches.iter().map(|x| (x.rva, x.rva + x.expect.len() as u32)).collect();
         spans.sort();
         for w in spans.windows(2) {
@@ -612,6 +760,27 @@ mod tests {
         assert_eq!(pc.wrapping_add(i32::from_le_bytes(s[3..7].try_into().unwrap()) as i64 as u64), header(MEMAT, 0));
         let call_at = MEMAT + CAVES as u64 + o as u64 + 7;
         assert_eq!((call_at + 5).wrapping_add(i32::from_le_bytes(s[8..12].try_into().unwrap()) as i64 as u64), BASE + 0x3b1b70);
+    }
+
+    #[test]
+    fn magic_sites_point_at_our_elements() {
+        let p = plan(BASE, MEMAT).unwrap();
+        let target = |rva: u32| {
+            let x = p.patches.iter().find(|x| x.rva == rva).unwrap();
+            (BASE + rva as u64 + 7).wrapping_add(i32::from_le_bytes(x.new[3..7].try_into().unwrap()) as i64 as u64)
+        };
+        let e = MEMAT + MAGIC_ELEMS as u64;
+        assert_eq!(target(0x3c519d), e);
+        assert_eq!(target(0x256a4), e + 0x48);
+        assert_eq!(target(0x57760f), e + 0x18 + 9 * 0x50);
+        assert_eq!(target(0x3c5de4), e + 0x48 + 9 * 0x50);
+        assert_eq!(target(0x3c4843), MEMAT + MAGIC_ITEMS as u64);
+        let x = p.patches.iter().find(|x| x.rva == 0x3c5966).unwrap();
+        assert_eq!(BASE.wrapping_add(i32::from_le_bytes(x.new[4..8].try_into().unwrap()) as i64 as u64), e + 0x48);
+        let mut m = vec![0u8; MEM];
+        magic_data(&mut m);
+        assert_eq!(&m[MAGIC_ORDER..MAGIC_ORDER + 9], &[0, 1, 2, 3, 6, 7, 8, 4, 5]);
+        assert_eq!(u16::from_le_bytes([m[MAGIC_ITEMS + 12], m[MAGIC_ITEMS + 13]]), 84);
     }
 
     #[test]
