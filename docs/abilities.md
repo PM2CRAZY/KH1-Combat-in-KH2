@@ -183,6 +183,36 @@ row whose request isn't playing).
   (`0x1403D7FA0`, `0x1403D9130`), the reaction-command choice, and the Drive fallback it already
   offers with no object.
 
+## The specials: where KH2 offers and runs them (research, 2026-11-14)
+
+Checked (decomp) unless tagged:
+- **KH2's reaction-command choice** is `0x1404081C0` (from `0x140408520`, each frame): candidates
+  go through `0x140408080` → `0x140408BD0(ctx, cmd row, target ref, priority, score)` (priority
+  wins, then the smaller score; `ctx +0x58` the priority held, `ctx +0x28` the score): Sora's own
+  `+0xDD8` command (priority 0xC9), the command menu's (0xCB), an attack's (0xCC), every object's
+  type-5 collision areas (`0x140407DE0`, the area's argument the command id), then, with nothing
+  else, the low-HP Drive list (`0x1404077F0(ctx, Sora, 0x1405CCA40, 5)`), the summon list
+  (`0x1405CCA50`, 4) and the Limit (`0x1403E7950`), each with a self target ref built by
+  `0x1403BEE60(ref, object, 0)`. `0x140402120(ctx + 8)` says whether one was chosen. KH1's offer
+  (a special only when no real RC holds the slot: owner's answer) goes in at the end of this
+  choice, the way KH2's own Drive / Limit fallbacks do.
+- **Running a command**: Sora's `0x140405440(Sora, cmd row)` by execute `+2`: 0x49 / 4 / 5 / 0x48,
+  the Limits (0x51) and Limit Form's specials (0x2C3) through `0x1403D8B40` (the `limt` row's limit
+  object, `0x1403D7FA0`, MP paid by `0x1403D3CF0`), everything else `0x1403A8B10`. KH2 plays a row
+  of Sora's set by id with `0x1403D78D0(Sora, row, …)` (as Counterguard's row 0x27 after a guard,
+  `0x1403A76B0`).
+- **KH1's specials' motions** are in KH1's specials motion set, swapped in for the special (KH1
+  `0x14028D800`; KH1-in-ReCom: `xl_limit.dat`'s clips, wind-up 0xC8, dash 0xC9, finisher 0xCA for
+  Sonic Blade, Checked (files) there), not in Sora's `xa_ex_0010.mset`: they need KH2 motion slots
+  of their own (free ids, as the knock-downs' 20 / 21).
+
+Plan, one version each: (1) the specials' KH1 motions into free KH2 slots; (2) Sonic Blade: its
+`cmd` rows (Sonic, Rave, Blast), KH1's offer in `0x1404081C0`, a run for our execute in
+`0x140405440` (KH1's MP on the press, KH1's no-damage / no-reaction flags), its rows 0x1B..0x21 in
+Sora's set played by `0x1403D78D0`, the follow-up offered in the dash's combo window; (3) Strike
+Raid (the throws, the catch, the clash); (4) Ars Arcanum (seven hits by themselves, the
+follow-ups); (5) Ragnarok (the rising hits, the charge, the homing shots from the Keyblade's tip).
+
 ## Next versions (one system each)
 
 1. Sonic Blade: KH1's offer on Triangle in KH2's reaction-command slot, its rows, motions, damage.
